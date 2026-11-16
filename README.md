@@ -16,7 +16,8 @@ ViralReplica.app  ──拉起──>  workbench/server.py（本地服务，用�
 
 | 路径 | 说明 |
 |---|---|
-| `build/main.js` | Electron 主进程：启动本地服务、就绪后开窗、退出时清理 |
+| `build/main.js` | Electron 主进程：启动本地服务、就绪后开窗、退出时清理，并处理原生对话框 |
+| `build/preload.js` | 覆盖被 Electron 禁用的 prompt/confirm/alert（新建项目等按钮依赖） |
 | `build/package.json` | Electron 版本声明 |
 | `build/build.sh` | macOS 一键打包脚本（产出 .dmg） |
 | `build/build.bat` | Windows 打包脚本（产出 .exe，需在 Windows 运行） |

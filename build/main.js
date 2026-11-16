@@ -2,7 +2,7 @@
 // 职责：启动随包分发的 workbench 本地服务，就绪后开窗显示网页，退出时干净关闭服务。
 // 所有拆解/复刻/Key 都在用户本地，Electron 只做一个可见窗口，不上传任何数据。
 
-const { app, BrowserWindow, dialog, shell } = require('electron');
+const { app, BrowserWindow, dialog, shell, ipcMain } = require('electron');
 const { spawn } = require('child_process');
 const path = require('path');
 const fs = require('fs');
@@ -78,6 +78,60 @@ function startServer(workbench) {
   });
 }
 
+// ---- 原生对话框：替代 Electron 默认禁用的 prompt/confirm/alert ----
+// alert / confirm 用同步原生 box，直接返回。
+ipcMain.on('dlg-alert', (event, { message }) => {
+  dialog.showMessageBoxSync(mainWindow, { type: 'info', buttons: ['知道了'], message: message || '' });
+  event.returnValue = undefined;
+});
+ipcMain.on('dlg-confirm', (event, { message }) => {
+  const r = dialog.showMessageBoxSync(mainWindow, {
+    type: 'question', buttons: ['取消', '确认'], defaultId: 1, cancelId: 0, message: message || ''
+  });
+  event.returnValue = (r === 1);
+});
+// prompt 需要输入框：弹一个带 input 的模态窗口。
+// sendSync 只阻塞渲染进程，主进程事件循环继续运行，模态窗口可正常交互。
+ipcMain.on('dlg-prompt', (event, { message, defaultValue }) => {
+  const modal = new BrowserWindow({
+    parent: mainWindow, modal: true, show: false,
+    width: 460, height: 170, resizable: false, maximizable: false,
+    title: '输入',
+    webPreferences: { nodeIntegration: true, contextIsolation: false }
+  });
+  const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const html = `<!doctype html><html><head><meta charset="utf-8"><style>
+    body{font:14px -apple-system,sans-serif;margin:0;padding:18px;background:#fff;color:#222}
+    p{margin:0 0 12px;line-height:1.5} input{width:100%;box-sizing:border-box;padding:8px;font-size:14px;border:1px solid #ccc;border-radius:6px}
+    .row{margin-top:14px;text-align:right} button{padding:7px 16px;margin-left:8px;border:0;border-radius:6px;cursor:pointer}
+    .cancel{background:#eee;color:#333} .ok{background:#1a7f37;color:#fff}
+  </style></head><body>
+    <p>${esc(message)}</p>
+    <input id="v" value="${esc(defaultValue)}" autofocus>
+    <div class="row"><button class="cancel" id="c">取消</button><button class="ok" id="o">确定</button></div>
+    <script>
+      const {ipcRenderer}=require('electron');
+      const v=document.getElementById('v');
+      function done(val){ipcRenderer.send('dlg-prompt-result',val);}
+      document.getElementById('o').onclick=()=>done(v.value);
+      document.getElementById('c').onclick=()=>done(null);
+      v.addEventListener('keydown',e=>{if(e.key==='Enter')done(v.value);if(e.key==='Escape')done(null);});
+      v.focus();v.select();
+    <\/script>
+  </body></html>`;
+  let settled = false;
+  const finish = (val) => {
+    if (settled) return;
+    settled = true;
+    event.returnValue = val;
+    if (!modal.isDestroyed()) modal.close();
+  };
+  ipcMain.once('dlg-prompt-result', (e, val) => finish(val));
+  modal.on('closed', () => finish(null));
+  modal.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html));
+  modal.show();
+});
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1280,
@@ -87,7 +141,8 @@ function createWindow() {
     title: '爆款复刻工作台',
     webPreferences: {
       nodeIntegration: false,
-      contextIsolation: true
+      contextIsolation: true,
+      preload: path.join(__dirname, 'preload.js')
     }
   });
   // 外部链接用系统浏览器打开，不在应用内跳转

@@ -1,0 +1,13 @@
+node_modules/
+.stage/
+dist/
+*.dmg
+*.exe
+console.env
+projects/
+library/
+batches/
+runtime/
+.DS_Store
+__pycache__/
+*.log

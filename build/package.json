@@ -1,0 +1,11 @@
+{
+  "name": "viral-replica-desktop",
+  "version": "1.0.0",
+  "description": "爆款复刻工作台 - 桌面外壳（本地执行，Key 本地保存）",
+  "main": "main.js",
+  "author": "local-build",
+  "license": "SEE LICENSE IN workbench",
+  "devDependencies": {
+    "electron": "32.3.3"
+  }
+}

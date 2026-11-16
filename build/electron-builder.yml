@@ -1,0 +1,24 @@
+appId: com.local.viralreplica
+productName: ViralReplica
+directories:
+  output: dist
+files:
+  - main.js
+  - package.json
+extraResources:
+  - from: workbench
+    to: workbench
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  artifactName: ViralReplica-Setup-${version}.${ext}
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+mac:
+  target:
+    - dmg
+  artifactName: ViralReplica-${version}.${ext}

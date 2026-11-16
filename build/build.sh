@@ -27,7 +27,7 @@ cp -R "$ELECTRON_APP" "$STAGE/ViralReplica.app"
 rm -f "$STAGE/ViralReplica.app/Contents/Resources/default_app.asar"
 rm -rf "$STAGE/ViralReplica.app/Contents/Resources/app"
 mkdir -p "$STAGE/ViralReplica.app/Contents/Resources/app"
-cp "$HERE/main.js" "$HERE/package.json" "$STAGE/ViralReplica.app/Contents/Resources/app/"
+cp "$HERE/main.js" "$HERE/package.json" "$HERE/preload.js" "$STAGE/ViralReplica.app/Contents/Resources/app/"
 #  Electron 会优先加载 Contents/Resources/app 目录中的 package.json
 # 修改应用标识与显示名
 /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier com.local.viralreplica" \

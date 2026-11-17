@@ -1,0 +1,280 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>首次启动</title>
+<style>
+  :root {
+    --bg: #f3f5f3; --panel: #fff; --ink: #1d2320; --muted: #5c6560;
+    --line: #e2e7e3; --accent: #2f6f55; --accent-soft: #e8f2ec;
+    --warn: #b5532f; --warn-soft: #fbece5; --chip: #f1f4f2;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; display: flex; height: 100vh; overflow: hidden;
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB",
+                 "Microsoft YaHei", sans-serif;
+    color: var(--ink); background: var(--panel);
+  }
+  aside {
+    flex: 0 0 236px; padding: 26px 20px; background: var(--bg);
+    border-right: 1px solid var(--line); display: flex; flex-direction: column;
+  }
+  .brand { display: flex; align-items: center; gap: 9px; margin-bottom: 24px; }
+  .brand span { font-size: 13.5px; font-weight: 650; }
+  ol { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; }
+  li { display: flex; gap: 11px; padding: 10px; border-radius: 9px; }
+  li.on { background: var(--panel); border: 1px solid #cfe2d7; }
+  .num {
+    flex: 0 0 auto; width: 21px; height: 21px; border-radius: 999px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 11px; font-weight: 700; background: var(--line); color: #8b938e;
+  }
+  li.on .num { background: var(--accent-soft); color: #1f4a39; }
+  li.done .num { background: var(--accent); color: #fff; }
+  .lt { font-size: 12.5px; font-weight: 600; }
+  .ls { font-size: 11px; color: var(--muted); word-break: break-all; }
+  li.todo .lt { color: #8b938e; }
+  aside p.foot { margin: auto 0 0; font-size: 11px; line-height: 1.65; color: var(--muted); }
+
+  main { flex: 1 1 auto; padding: 26px 28px 0; display: flex; flex-direction: column; min-width: 0; }
+  h1 { margin: 0 0 6px; font-size: 19px; font-weight: 650; }
+  .lead { margin: 0 0 18px; font-size: 13px; line-height: 1.6; color: var(--muted); }
+
+  .pathrow { display: flex; gap: 10px; align-items: center; margin-bottom: 16px; }
+  .pathbox {
+    flex: 1 1 auto; min-width: 0; padding: 10px 12px; border: 1px solid var(--line);
+    border-radius: 9px; background: var(--bg); font-size: 12.5px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; direction: rtl; text-align: left;
+  }
+  button {
+    font-family: inherit; cursor: pointer; border-radius: 9px; font-size: 13px; font-weight: 600;
+  }
+  .ghost { padding: 10px 14px; min-height: 40px; background: #fff; border: 1px solid #b9c4bd; color: var(--ink); }
+  .primary { padding: 10px 20px; min-height: 42px; background: var(--accent); border: 0; color: #fff; font-weight: 650; }
+  .primary[disabled] { background: #9db5a8; cursor: default; }
+
+  fieldset { margin: 0; padding: 0; border: 0; display: flex; flex-direction: column; gap: 9px; }
+  legend { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+  label.tier {
+    display: flex; gap: 12px; padding: 13px 15px; border: 1px solid var(--line);
+    border-radius: 10px; background: #fff; cursor: pointer;
+  }
+  label.tier.sel { border: 2px solid var(--accent); background: #f8faf9; padding: 12px 14px; }
+  label.tier input { flex: 0 0 auto; margin: 2px 0 0; width: 17px; height: 17px; accent-color: var(--accent); }
+  .tname { font-size: 13.5px; font-weight: 650; }
+  .tag { padding: 2px 8px; border-radius: 999px; background: var(--accent-soft); color: #1f4a39; font-size: 10.5px; font-weight: 650; }
+  .tsize { margin-left: auto; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .tdesc { font-size: 12px; line-height: 1.55; color: var(--muted); }
+
+  .mirror { display: flex; align-items: flex-start; gap: 10px; margin-top: 14px;
+            padding: 12px 14px; background: var(--bg); border-radius: 9px; cursor: pointer; }
+  .mirror input { flex: 0 0 auto; margin: 1px 0 0; width: 16px; height: 16px; accent-color: var(--accent); }
+
+  footer { margin-top: auto; padding: 14px 0 18px; border-top: 1px solid var(--line);
+           display: flex; align-items: center; gap: 12px; }
+  .total { flex: 1 1 auto; font-size: 12px; color: var(--muted); }
+  .total b { color: var(--ink); font-variant-numeric: tabular-nums; }
+
+  /* 安装中 */
+  .bar { width: 100%; height: 7px; border-radius: 999px; background: var(--line); overflow: hidden; margin: 4px 0 14px; }
+  .bar i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .4s ease; }
+  .steps { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 7px; }
+  .steps li { padding: 9px 12px; border: 1px solid var(--line); border-radius: 8px; font-size: 12.5px; gap: 9px; }
+  .steps li.cur { border-color: #cfe2d7; background: var(--accent-soft); font-weight: 600; }
+  .steps li.ok { color: var(--muted); }
+  .log {
+    margin-top: 14px; padding: 10px 12px; max-height: 120px; overflow: auto;
+    background: #0b0e0d; color: #cfe2d7; border-radius: 8px;
+    font: 11px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap;
+  }
+  .err { margin-top: 12px; padding: 12px 14px; background: var(--warn-soft);
+         border-radius: 9px; font-size: 12.5px; line-height: 1.6; color: #8e4024; }
+  .hide { display: none; }
+</style>
+</head>
+<body>
+  <aside>
+    <div class="brand">
+      <svg width="24" height="24" viewBox="0 0 24 24" role="img" aria-label="爆款复刻工作台">
+        <rect width="24" height="24" rx="6.5" fill="#2f6f55"></rect>
+        <path d="M6.7 3.8 L10.6 6.2 L10.6 17.8 L6.7 20.2 Z" fill="#fff"></path>
+        <path d="M12.7 8.2 L20.6 12 L12.7 15.8 Z" fill="#fff"></path>
+      </svg>
+      <span>爆款复刻工作台</span>
+    </div>
+    <ol>
+      <li id="s1" class="on"><span class="num">1</span><span><span class="lt">装到哪里</span><br><span class="ls" id="s1sub">选一个文件夹</span></span></li>
+      <li id="s2" class="todo"><span class="num">2</span><span><span class="lt">选识别精度</span><br><span class="ls">决定要下多少东西</span></span></li>
+      <li id="s3" class="todo"><span class="num">3</span><span><span class="lt">下载并安装</span><br><span class="ls">大约 5 到 15 分钟</span></span></li>
+    </ol>
+    <p class="foot">装完之后这些东西都在你选的那个文件夹里，卸载时整个删掉就干净了。</p>
+  </aside>
+
+  <main>
+    <!-- 第 1、2 步合并在一屏，装起来之后整块换成进度 -->
+    <section id="form">
+      <h1>先把运行环境装好</h1>
+      <p class="lead">安装包本身很小，真正干活的 Python、FFmpeg 和识别模型要在这一步下载。只用装一次。</p>
+
+      <div class="pathrow">
+        <div class="pathbox" id="path" title="">…</div>
+        <button class="ghost" id="pick">换个位置</button>
+      </div>
+      <p class="lead" id="space" style="margin-top:-8px"></p>
+
+      <h1 style="font-size:15px;margin-bottom:4px">台词要认得多准？</h1>
+      <p class="lead" style="margin-bottom:12px">模型越大认得越准、下载也越大。拿不准就用标准，之后在设置里能换。</p>
+
+      <fieldset id="tiers">
+        <legend>识别精度</legend>
+      </fieldset>
+
+      <label class="mirror">
+        <input type="checkbox" id="mirror" checked>
+        <span>
+          <span style="font-size:12.5px;font-weight:600">用国内镜像下载</span><br>
+          <span style="font-size:11.5px;line-height:1.55;color:var(--muted)">国内网络建议勾上，快很多。中途断了可以重来，已经下好的不会重复下。</span>
+        </span>
+      </label>
+    </section>
+
+    <!-- 安装中 -->
+    <section id="running" class="hide">
+      <h1 id="rtitle">正在安装</h1>
+      <p class="lead" id="rlead">第一次要下几百 MB 到 2GB，耐心等一下。中途可以关掉，下次接着装。</p>
+      <div class="bar"><i id="bar"></i></div>
+      <ul class="steps" id="steps"></ul>
+      <div class="log" id="log"></div>
+      <div class="err hide" id="err"></div>
+    </section>
+
+    <footer>
+      <span class="total" id="total"></span>
+      <button class="primary" id="go">开始安装</button>
+    </footer>
+  </main>
+
+<script>
+  const api = window.setupApi;
+
+  const TIERS = [
+    { id: 'base',   name: '轻量',   tag: '',     size: '约 150 MB', total: '约 650 MB',
+      desc: '口播清楚、没什么背景音乐的探店视频够用。机器老、硬盘紧的选这个。' },
+    { id: 'small',  name: '标准',   tag: '推荐', size: '约 500 MB', total: '约 1.0 GB',
+      desc: '日常带货和探店视频都够，普通语速的普通话基本不会错。' },
+    { id: 'medium', name: '高精度', tag: '',     size: '约 1.5 GB', total: '约 2.0 GB',
+      desc: '语速快、有方言口音、背景音乐压过人声的片子更稳，但拆解慢一些。' },
+  ];
+  const STEPS = ['安装 uv 和 Python', '安装依赖', '准备 FFmpeg', '下载识别模型', '收尾'];
+
+  let dir = '';
+  let tier = 'small';
+  let installing = false;
+
+  const $ = (id) => document.getElementById(id);
+
+  function renderTiers() {
+    $('tiers').innerHTML = '<legend>识别精度</legend>' + TIERS.map((t) => `
+      <label class="tier${t.id === tier ? ' sel' : ''}" data-id="${t.id}">
+        <input type="radio" name="tier" ${t.id === tier ? 'checked' : ''}>
+        <span style="display:flex;flex-direction:column;gap:4px;flex:1 1 auto;min-width:0">
+          <span style="display:flex;align-items:center;gap:8px">
+            <span class="tname">${t.name}</span>
+            ${t.tag ? `<span class="tag">${t.tag}</span>` : ''}
+            <span class="tsize">模型 ${t.size}</span>
+          </span>
+          <span class="tdesc">${t.desc}</span>
+        </span>
+      </label>`).join('');
+    $('tiers').querySelectorAll('.tier').forEach((el) => {
+      el.onclick = () => { if (!installing) { tier = el.dataset.id; renderTiers(); renderTotal(); } };
+    });
+  }
+
+  function renderTotal() {
+    const t = TIERS.find((x) => x.id === tier);
+    $('total').innerHTML = `这次一共要下 <b>${t.total}</b>，含运行环境 约 500 MB`;
+  }
+
+  function setDir(d, free) {
+    dir = d;
+    $('path').textContent = d;
+    $('path').title = d;
+    $('s1sub').textContent = d;
+    $('space').textContent = (free === null || free === undefined)
+      ? '' : `该磁盘剩余约 ${free} GB`;
+  }
+
+  function renderSteps(current) {
+    $('steps').innerHTML = STEPS.map((s, i) => {
+      const cls = i < current ? 'ok' : (i === current ? 'cur' : '');
+      const mark = i < current ? '✓' : (i === current ? '…' : '·');
+      return `<li class="${cls}">${mark} ${s}</li>`;
+    }).join('');
+    $('bar').style.width = Math.round((current / STEPS.length) * 100) + '%';
+  }
+
+  $('pick').onclick = async () => {
+    if (installing) return;
+    const r = await api.pickDir(dir);
+    if (r && r.dir) setDir(r.dir, r.free);
+  };
+
+  $('go').onclick = async () => {
+    if (installing) return;
+    installing = true;
+    $('form').classList.add('hide');
+    $('running').classList.remove('hide');
+    $('s1').className = 'done'; $('s2').className = 'done'; $('s3').className = 'on';
+    $('go').disabled = true;
+    $('go').textContent = '安装中…';
+    $('total').textContent = '';
+    renderSteps(0);
+    api.install({ dir, tier, mirror: $('mirror').checked });
+  };
+
+  api.onProgress((p) => {
+    if (typeof p.step === 'number') renderSteps(p.step);
+    if (p.line) {
+      const log = $('log');
+      log.textContent += p.line + '\n';
+      log.scrollTop = log.scrollHeight;
+    }
+  });
+
+  api.onDone((r) => {
+    installing = false;
+    if (r.ok) {
+      renderSteps(STEPS.length);
+      $('rtitle').textContent = '装好了';
+      $('rlead').textContent = '正在打开工作台…';
+      $('go').textContent = '完成';
+    } else {
+      $('err').classList.remove('hide');
+      $('err').textContent = (r.message || '安装没有完成。') +
+        '\n\n可以直接点「重试」，已经下好的部分不会重复下载。';
+      $('rtitle').textContent = '安装没完成';
+      $('rlead').textContent = '';
+      $('go').disabled = false;
+      $('go').textContent = '重试';
+      $('go').onclick = () => {
+        $('err').classList.add('hide');
+        installing = true;
+        $('go').disabled = true;
+        $('go').textContent = '安装中…';
+        renderSteps(0);
+        api.install({ dir, tier, mirror: $('mirror').checked });
+      };
+    }
+  });
+
+  (async () => {
+    const info = await api.initial();
+    setDir(info.dir, info.free);
+    renderTiers();
+    renderTotal();
+  })();
+</script>
+</body>
+</html>

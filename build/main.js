@@ -162,8 +162,9 @@ async function bootstrap() {
         .map(p => path.resolve(b, p)))
       .filter(Boolean).join('\n');
     dialog.showErrorBox(
-      '找不到工作台文件',
-      '请把 workbench 文件夹和本应用放在同一个文件夹里，再重新启动。\n\n已查找这些位置：\n' + tried
+      '安装不完整',
+      '应用内缺少工作台文件，通常是安装包没装全或被安全软件拦掉了一部分。\n'
+      + '请重新下载安装包装一次。\n\n已查找这些位置：\n' + tried
     );
     return app.quit();
   }

@@ -1,51 +1,52 @@
-# 爆款复刻工作台 · 桌面版（viral-replica-desktop）
+# 爆款复刻工作台 · 桌面版
 
-把 [viral-replica-workbench](https://github.com/alyunzhangu/viral-replica-workbench) 包装成一个「双击即用」的桌面 App：用户不用装 Python、不用敲命令、不用懂 Agent，打开窗口即可完成对标视频的拆解与复刻。**视频处理、Key、项目数据全部留在用户本机**，Electron 只提供一个窗口。
+把一条带货爆款视频，换成你自己的模特和商品，复刻成一条新视频。全程在你自己的电脑上跑，Key 存在本机。
 
-## 它怎么工作
+## 仓库结构
 
 ```
-ViralReplica.app  ──拉起──>  workbench/server.py（本地服务，用内置 runtime）
-      │                              │
-      └──显示窗口──> 127.0.0.1:8765  └──Key 存本地 console.env，项目存 projects/
+├─ build/              Electron 外壳与打包配置
+│  ├─ main.js            主进程：拉起本地服务、开窗口
+│  ├─ assets/            图标与安装器物料
+│  └─ legacy/            已停用的旧脚本，留档
+├─ workbench/          工作台本体（界面、拆解流水线、模型网关）
+│  ├─ web/               用户看到的网页界面
+│  ├─ console/           拆解流水线与各步骤逻辑
+│  ├─ engine/            生图生视频脚本
+│  └─ code-update.json   代码更新清单，应用内更新读它
+└─ .github/workflows/  打 tag 自动双平台出包
 ```
 
-架构采用「Electron 外壳 + 同级 workbench 文件夹」：workbench（含 Python/ffmpeg/模型）作为可写文件夹与 .app 放在一起，而不是塞进只读的 .app 包内——这样 Key 和项目数据才有地方写。
+**runtime 与模型不在仓库里。** 它们约 2GB，由用户首次启动时按需下载到自己选的数据目录。
 
-## 目录
+## 打包
 
-| 路径 | 说明 |
-|---|---|
-| `build/main.js` | Electron 主进程：启动本地服务、就绪后开窗、退出时清理，并处理原生对话框 |
-| `build/preload.js` | 覆盖被 Electron 禁用的 prompt/confirm/alert（新建项目等按钮依赖） |
-| `build/package.json` | Electron 版本声明 |
-| `build/build.sh` | macOS 一键打包脚本（产出 .dmg） |
-| `build/build.bat` | Windows 打包脚本（产出 .exe，需在 Windows 运行） |
-| `build/electron-builder.yml` | electron-builder 配置（Windows/Linux 用） |
-| `使用说明.txt` | 终端用户：安装、启动、配 Key、常见问题 |
-| `打包说明.md` | 开发者：重新打包步骤、Windows 构建法、合规提醒 |
+本地自测：
 
-## 快速打包（macOS）
+- macOS：双击 `build/build.command`
+- Windows：双击 `build/build.bat`
+
+正式发版不用手动打包、也不用手动上传：
 
 ```bash
-cd build
-npm install                 # 首次，下载 Electron
-chmod +x build.sh
-./build.sh                  # 产出上级目录的 ViralReplica.dmg
+git tag v1.3.0
+git push --tags
 ```
 
-打包脚本会先把 workbench 复制进来并**自动排除 console.env / projects / library / .git / 日志**，再 ad-hoc 签名、用 hdiutil 生成 dmg。使用前请把 `build.sh` 顶部的 `WORKBENCH_SRC` 指向你本机的 viral-replica-workbench 目录。
+GitHub Actions 会在 macOS 和 Windows 上各打一份，自动传到 Releases，并生成 electron-updater 要用的 `latest.yml` / `latest-mac.yml`。
 
-打好的 dmg 里包含 `ViralReplica.app` 和 `workbench` 文件夹，用户必须把两者放在一起。详细见 `使用说明.txt` 和 `打包说明.md`。
+## 三条独立的更新通道
 
-## 限制与合规
+| 更新什么 | 体积 | 怎么走 |
+|---|---|---|
+| 工作台代码 | 约 8MB | 应用内一键，`updater.py` 按 `code-update.json` 校验哈希后替换，不用重装 |
+| Electron 外壳 | 整包 | electron-updater 从 Releases 取，后台下载，重启生效。很少发生 |
+| 识别模型 | 0.15～1.5GB | 用户在设置里换档位时才下，不跟版本绑定 |
 
-- **.dmg 只能在 macOS 构建，.exe 只能在 Windows 构建**（Electron 不支持跨平台编译）。
-- macOS 上 ad-hoc 签名的 App 首次打开需右键 → 打开；正式分发需 Apple 开发者账号签名公证。
-- 本项目沿用上游 Hypit 修改版 Apache 2.0 许可证：**禁止多租户 / hosted / SaaS 形式对外提供，不论是否收费**。桌面版属于「用户本机自用」，符合许可；若要做成在线服务，需向 Hypit.AI 取得书面授权。分发时请保留 LICENSE 与 THIRD_PARTY_NOTICES.md。
-- 本仓库**不含**打好的 dmg 和 workbench runtime（体积过大）。请自行按上述步骤打包。
+绝大多数迭代只走第一条，用户点一下几秒完成。
 
-## 相关项目
+## 许可证
 
-- [viral-replica-workbench](https://github.com/alyunzhangu/viral-replica-workbench) — 被包装的核心工作台
-- [rea-video](https://github.com/JuneYaooo/rea-video) — 另一种视频逆向拆解工具（Apache 2.0，可商用）
+本项目基于 [Hypit](https://github.com/hypit-ai/hypit) 的方法与部分提示词模板，按其修改版 Apache 2.0 以**同样的许可证**发布。详见 `LICENSE` 与 `THIRD_PARTY_NOTICES.md`。
+
+可以自用、可以改、可以再发布；**不可**收费分发，**不可**做成多租户或托管服务——除非取得 Hypit.AI 的书面商业授权。

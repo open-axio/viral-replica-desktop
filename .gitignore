@@ -1,13 +1,21 @@
-node_modules/
-.stage/
-dist/
+# 运行时与模型：2GB，首次启动时装到用户数据目录，永不进仓库
+workbench/runtime/
+workbench/console.env
+workbench/projects/
+workbench/library/
+workbench/batches/
+workbench/.state/
+
+# 打包产物
+build/node_modules/
+build/dist/
+build/.stage/
 *.dmg
 *.exe
-console.env
-projects/
-library/
-batches/
-runtime/
-.DS_Store
+*.blockmap
+
+# 杂项
 __pycache__/
+*.pyc
 *.log
+.DS_Store

@@ -52,6 +52,15 @@ jobs:
           else
             PUBLISH="--publish never"
           fi
+          # secret 没配时 GitHub 会把变量设成空串而不是不设；electron-builder 会把
+          # 空的 CSC_LINK 当成证书路径（解析到当前目录），报「not a file」。
+          if [ -z "${CSC_LINK:-}" ]; then
+            unset CSC_LINK CSC_KEY_PASSWORD
+            export CSC_IDENTITY_AUTO_DISCOVERY=false
+          fi
+          if [ -z "${APPLE_ID:-}" ]; then
+            unset APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID
+          fi
           if [ -n "${APPLE_ID:-}" ] && [ "${{ matrix.platform }}" = "mac" ]; then
             echo "检测到 Apple 证书，开启公证"
             npx --no-install electron-builder --mac $PUBLISH -c.mac.notarize=true

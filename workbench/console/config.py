@@ -63,6 +63,8 @@ DEFAULTS = {
     "HF_ENDPOINT": "",
     "MAX_PASSAGES": "14",
     "LLM_PARALLEL": "3",
+    "DEEP_FORENSICS": "auto",
+    "DEEP_FORENSICS_MAX_SECONDS": "120",
     "SCENE_THRESHOLD": "0.30",
     "MAX_FRAMES": "24",
     "LLM_TIMEOUT": "300",

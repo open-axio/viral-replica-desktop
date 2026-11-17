@@ -766,12 +766,12 @@ function renderAnalysis() {
   $("#analyzeBtn").disabled = !P.source || a.status === "running" || P.jobs?.analyze?.state === "running";
   $("#analyzeBtn").textContent = a.status === "running" ? "拆解中…" : P.breakdown ? "用所选模型重新拆解"
     : a.status === "free_done" ? "填好 Key 后继续拆解" : "开始拆解";
-  const order = ["probe", "transcribe", "boundaries", "overview", "close", "understand", "pack", "storyboard"];
+  const order = ["probe", "transcribe", "boundaries", "forensics", "overview", "close", "understand", "pack", "storyboard"];
   const steps = a.steps || {};
   const errMsg = operationErrors.get(operationKey("analyze")) || (a.status === "failed" ? (a.error || P.jobs?.analyze?.error) : (["error","failed"].includes(P.jobs?.analyze?.state) ? P.jobs.analyze.error : ""));
   // 免费部分跑完、等填 Key：不是错误，单独给一块说明
   const freeDone = a.status === "free_done" ? `<div class="runstep free-done"><b>免费部分已完成</b>
-    <div class="hint">读视频信息、识别台词、切分镜头都在本机跑完了，没花钱。下面能看到每个镜头的截图，台词表和逐词时间轴可以直接下载。</div>
+    <div class="hint">读视频信息、识别台词、切分镜头、认拍摄方式都在本机跑完了，没花钱。下面能看到每个镜头的截图和拍摄方式判定，台词表、逐词时间轴和拍摄方式报告可以直接下载。</div>
     <div class="hint">想继续做「整片理解」和「逐段细读」，需要调用大模型：点右上角“设置”填好 Key，再点上面的「填好 Key 后继续拆解」。</div></div>` : "";
   const err = errMsg ? `<div class="runstep"><span class="st skipped">拆解没有完成：${errorHtml(errMsg,'拆解推理')}</span>${thirdRetry("analyze")}<div class="hint">修正后直接点“开始拆解”重新跑；需要换视频就在第 01 步清除。</div></div>` : "";
   updateHtml($("#analysisSteps"), order.filter((k) => steps[k]).map((k) => {
@@ -784,11 +784,12 @@ function renderAnalysis() {
   const frames = a.shots || [];
   const docs = Object.entries(a.docs || {});
   const passages = a.passages || [];
-  const sigA = JSON.stringify([P.id, frames, docs, passages, a.status]);
+  const verdicts = Object.fromEntries(((a.forensics || {}).shots || []).map((v) => [v.index, v]));
+  const sigA = JSON.stringify([P.id, frames, docs, passages, a.status, a.forensics?.shots?.length || 0]);
   if ($("#framesStrip").dataset.sig !== sigA) {
     $("#framesStrip").dataset.sig = sigA;
     updateHtml($("#framesStrip"), `<div class="frames">${frames.map((s) =>
-      `<figure><img loading="lazy" src="${fileUrl(s.frame)}"><figcaption>#${s.index} ${fmt(s.start)}–${fmt(s.end)}s</figcaption></figure>`).join("")}</div>
+      `<figure><img loading="lazy" src="${fileUrl(s.frame)}"><figcaption>#${s.index} ${fmt(s.start)}–${fmt(s.end)}s${verdicts[s.index] ? ` · <span class="verdict ${esc(verdicts[s.index].class)}" title="${esc((verdicts[s.index].evidence || []).join("\n"))}">${esc(verdicts[s.index].class_zh)}</span>` : ""}</figcaption></figure>`).join("")}</div>
       ${docs.length ? `<div class="row wrap docs"><b>拆解文档</b>${docs.map(([n, f]) => `<a href="#" data-doc="${esc(f)}">${esc(n)}</a> <a class="hint" href="${fileUrl(f)}" download>下载</a>`).join(" · ")}</div><pre class="docview" hidden></pre>` : ""}
       ${passages.length ? `<details data-detail-key="analysis-passages"><summary>逐段分析详情（${passages.length} 段，含台词和截图）</summary>${passages.map((p) =>
         `<div class="passage"><b>${esc(p.id)} ${fmt(p.start, 2)}–${fmt(p.end, 2)}s · ${esc(p.phase || "")}</b> <span class="hint">${esc(p.summary || "")}</span>
@@ -5031,6 +5032,7 @@ async function openSettings() {
       <h3>其他渠道 Key（可选）</h3><div id="settingsOtherKeys"></div>
       <h3>本地拆解</h3>${f('ASR_MODEL','Whisper 模型')}${f('ASR_COMPUTE_TYPE','计算精度')}${f('ASR_LANGUAGE','语言（留空 = 自动识别（推荐））')}
       ${f('ASR_ENGINE','转录引擎（auto / whisperx / faster-whisper）')}${f('HF_ENDPOINT','模型下载镜像（国内可填 https://hf-mirror.com）')}${f('MAX_PASSAGES','最多细读段落数')}${f('LLM_PARALLEL','细读并发数')}
+      ${f('DEEP_FORENSICS','深度取证 · 认拍摄方式（auto = 时长在上限内才做 / on / off）')}${f('DEEP_FORENSICS_MAX_SECONDS','深度取证 auto 时长上限（秒）')}
     </details>
     <div class="settings-utilities"><button type="button" class="ghost" data-installation-toggle aria-controls="installationInfo" aria-expanded="false">查看安装位置</button>
     <div id="installationInfo" hidden><p class="hint">删除整个工作台文件夹即可完全卸载</p><p class="hint mono">工作台：${esc(rt.root)}<br>配置与 Key：${esc(rt.config)}<br>依赖：${esc(rt.runtime)}（${esc(rt.runtime_mb)} MB${rt.models?.length ? '，模型：'+esc(rt.models.join('、')) : '，还没有下载模型'}）<br>项目：${esc(rt.projects)}<br>FFmpeg：${esc(rt.ffmpeg || '未找到')}${rt.ffmpeg && !rt.ffmpeg_local ? '（系统级，卸载工作台时不会一起删除）' : ''}</p></div>

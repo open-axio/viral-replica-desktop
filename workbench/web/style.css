@@ -872,3 +872,9 @@ input, select, textarea, img, video { max-width: 100%; }
 .batch-row-actions a{display:inline-block;text-decoration:none;border:1px solid var(--line);border-radius:6px;padding:5px 10px;color:var(--ink)}
 @media(max-width:720px){.batch-board{margin:16px 0}.batch-project-row{grid-template-columns:minmax(92px,max-content) minmax(0,1fr);gap:10px}.batch-row-progress,.batch-project-row>.batch-board-strip,.batch-row-errors{grid-column:1/-1}.batch-row-actions{grid-column:1/-1}.batch-board-actions{width:100%}.batch-master-name{max-width:100%}}
 @media(hover:none){.batch-board-thumb>button{opacity:1}}
+
+/* 04 认拍摄方式：镜头截图下的判定标签 */
+.verdict{display:inline-block;padding:0 6px;border-radius:8px;font-size:11px;line-height:16px;cursor:help}
+.verdict.live{background:#e3f1e6;color:#1f6b33}
+.verdict.ai{background:#efe5fa;color:#5b2d8f}
+.verdict.graphic{background:#e4eef9;color:#1f4f86}

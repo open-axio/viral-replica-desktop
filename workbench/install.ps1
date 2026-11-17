@@ -61,8 +61,8 @@ if (-not (Test-Path $Py)) {
 }
 Run { & $Py --version }
 
-Say "2/5 安装 faster-whisper、static-ffmpeg（runtime\venv）"
-Pkg @("faster-whisper", "static-ffmpeg", "pillow", "numpy")
+Say "2/5 安装 faster-whisper、static-ffmpeg、OpenCV（runtime\venv）"
+Pkg @("faster-whisper", "static-ffmpeg", "pillow", "numpy", "opencv-python-headless")
 
 Say "3/5 准备 FFmpeg（runtime\ffmpeg）"
 $ffDir = Join-Path $RT "ffmpeg"
@@ -94,7 +94,7 @@ Remove-Item -Recurse -Force (Join-Path $RT "temp") -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Force -Path (Join-Path $RT "temp") | Out-Null
 $ffNote = if (Test-Path "$ffDir\ffmpeg.exe") { "$ffDir\ffmpeg.exe" } else { "missing" }
 $info = @("installed_at=$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')", "platform=Windows", "python=$(& $Py --version 2>&1)") +
-  (& $UV pip list --python $Py 2>$null | Select-String -Pattern '^(faster-whisper|ctranslate2|whisperx|torch|static-ffmpeg) ') +
+  (& $UV pip list --python $Py 2>$null | Select-String -Pattern '^(faster-whisper|ctranslate2|whisperx|torch|static-ffmpeg|opencv-python-headless) ') +
   @("ffmpeg=$ffNote")
 Set-Content -Path (Join-Path $RT "INSTALLED.txt") -Value $info -Encoding UTF8
 Say "完成"; Get-Content (Join-Path $RT "INSTALLED.txt")

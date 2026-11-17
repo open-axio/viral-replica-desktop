@@ -1,6 +1,6 @@
 # Spec · rea-video 并入拆解流水线
 
-状态：待确认 ｜ 优先级：P1
+状态：T1–T5 已实现（PR #9），T6 部分完成 ｜ 优先级：P1
 
 ## 为什么要做
 
@@ -25,6 +25,8 @@ rea-video 做的就是逐镜头判断实拍 / AI 生成 / 3D / 代码渲染，Ap
 
 ### 插在哪
 
+步骤编号整体后移：04 认拍摄方式、05 整片理解、06 逐段细读、07 拆解包、08 原片分镜。没 Key 时停在 05 之前。
+
 ```
 01 probe → 02 transcribe → 03 boundaries → [新] 04 forensics → 05 overview → 06 close → 07 pack
                                   ↓                    ↑
@@ -43,6 +45,8 @@ rea-video 自己的切镜逻辑和 `03 boundaries` 不一样。**必须让它吃
 
 03 已经抽好关键帧了，不要让 rea-video 再抽一遍——那是整个耗时的大头。帧级取证（噪点、压缩伪影、边缘过渡）直接读 03 的产物；需要整片级特征（帧率一致性）的部分再单独读视频文件。
 
+> **实现时的修正**：这一条做不到。rea-video 的判定主要靠镜头内**连续帧**之间的变化（重复帧比例、帧率转换留下的锐度周期、整帧刚体运动拟合），03 每镜只有一张中间帧，喂不出这些特征。实际省下的是 rea-video 自己的整片逐帧切镜（`build_track` + `detect_shots`）——直接用 03 的镜头表；每镜仍按 480 宽解码一次（带黑边的镜头两次）。8 秒 3 镜样片 6–7 秒。
+
 ### 开关
 
 做成可选项「深度取证」，默认对 2 分钟以内的视频开启。纯 CPU 下 71 秒视频实测约 2.5 分钟，不是所有用户都愿意等。
@@ -57,21 +61,27 @@ rea-video 是干净的 Apache 2.0。并进来要保留它的 LICENSE 和 NOTICE 
 
 ## 任务清单
 
-- [ ] T1 把 rea-video 作为依赖引进 workbench，确认能在工作台的 venv 里导入
-      验收：`cd workbench && runtime/venv/bin/python -c "import rea_video; print(rea_video.__version__)"`
-- [ ] T2 写适配层：吃 03 的切点与关键帧，吐按镜号索引的判定
+- [x] T1 把 rea-video 作为依赖引进 workbench，确认能在工作台的 venv 里导入
+      验收：`cd workbench && runtime/venv/bin/python -c "from console.vendor import rea_video; print(rea_video.__version__)"`
+      实现：rea-video 不在 PyPI，git 依赖还会拖进 onnxruntime、videomd 和约 200 MB 分轨模型。改为把取证用到的 11 个模块原样收进 `console/vendor/rea_video/`（逐字节未改，见 README.vendor.md），新依赖只有 `opencv-python-headless`（install.sh / install.ps1 已加）。OCR extras 不需要。
+- [x] T2 写适配层：吃 03 的切点与关键帧，吐按镜号索引的判定
       验收：对样片跑完，断言条数与镜号和 03 完全一致
-- [ ] T3 `STEP_META` 与 `_run_analysis` 加入 forensics 步
+      实现：`console/forensics.py`；`check_alignment` 每次运行都断言，对不上整步作废不写结果
+- [x] T3 `STEP_META` 与 `_run_analysis` 加入 forensics 步
       验收：拆解跑完 `STATUS` 里出现 forensics 且状态为 done
-- [ ] T4 判定注入 04/05 prompt
+- [x] T4 判定注入 04/05 prompt
       验收：打印送给模型的 prompt，确认含每镜判定
-- [ ] T5 「深度取证」开关 + 默认策略
+- [x] T5 「深度取证」开关 + 默认策略
       验收：关掉后 forensics 状态为 skipped，总耗时回到原水平
-- [ ] T6 免费层导出：报告 + 字幕 + 分镜图，全程不要 Key
+      实现：设置项 `DEEP_FORENSICS`（auto / on / off）与 `DEEP_FORENSICS_MAX_SECONDS`（默认 120）
+- [ ] T6 免费层导出（部分：拍摄方式报告 `拍摄方式.md` 与 `forensics.json` 已在免费区可下载；分镜图仍在 08 步，要等 Key）：报告 + 字幕 + 分镜图，全程不要 Key
       验收：清空 console.env，跑完拆解并成功导出三样
 
 ## 风险与未决
 
 - rea-video 的判定准确率**没有实测过**。T2 完成后要拿一批已知来源的片子（自己拍的 + 已知 AI 生成的）跑一遍，统计误判率，再决定要不要在界面上显示置信度。
 - 复用 03 关键帧能省多少时间是估计值，T2 验收时实测前后耗时。
-- rea-video 的 OCR extras 会增加依赖体积，可能影响首次下载量，T1 时测一下增量。
+- rea-video 的 OCR extras 会增加依赖体积，可能影响首次下载量，T1 时测一下增量。→ 不需要 OCR；增量只有 opencv-python-headless（几十 MB 的 wheel，T1 时未在真机实测）。
+- 已装好运行环境的老用户没有 OpenCV：这一步会显示「已跳过」并提示重新运行一次安装。桌面版向导暂时没有「补装」入口。
+- 人脸模型从 GitHub 下载，国内网络可能下不来，会退回 OpenCV 自带的 Haar 检测，人脸相关的判据会弱一些。
+- 3D 渲染（cg_3d）、2D 动画归入「图文动画」；细分标签保留在数据里，并一起写进 prompt。

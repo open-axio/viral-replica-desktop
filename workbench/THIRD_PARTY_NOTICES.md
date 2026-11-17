@@ -28,3 +28,16 @@ b. Your contributed code may be used for commercial purposes, including but not 
 Apart from the specific conditions mentioned above, all other rights and restrictions follow the Apache License 2.0. Detailed information about the Apache License 2.0 can be found at http://www.apache.org/licenses/LICENSE-2.0.
 
 © 2026 Hypit.AI
+
+---
+
+# rea-video
+
+`console/vendor/rea_video/` 收录了 rea-video（https://github.com/JuneYaooo/rea-video ，commit 07dd587）的部分模块，未作修改，用于「04 认拍摄方式」逐镜取证。
+
+rea-video
+Copyright 2026 JuneYaooo
+
+Licensed under the Apache License, Version 2.0. 许可证全文见 `console/vendor/rea_video/LICENSE`，节选范围与使用方式见同目录 `README.vendor.md`。
+
+注意：rea-video 本身是 Apache 2.0；与工作台合并分发后，整体仍受上文 Hypit 修改版许可证约束（不可做多租户在线服务、不可收费分发）。

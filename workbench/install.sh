@@ -7,16 +7,25 @@
 #   ./install.sh --whisperx    另外安装 WhisperX（与 Hypit 相同的逐词对齐，含 PyTorch，约 2GB）
 #   ./install.sh --mirror      国内网络：Python / pip / 模型都走国内镜像
 #   ./install.sh --model small 指定 Whisper 模型（默认 medium）
+#   ./install.sh --target DIR  装到指定目录（桌面版用：代码在只读的应用内部，
+#                              runtime 和 console.env 要装到应用外的数据目录）
 set -euo pipefail
 cd "$(dirname "$0")"
-ROOT="$PWD"; RT="$ROOT/runtime"; VENV="$RT/venv"; PY="$VENV/bin/python"
 WITH_WHISPERX=0; USE_MIRROR=0; MODEL="medium"
+TARGET="${VIRALREPLICA_DATA_DIR:-}"
 while [ $# -gt 0 ]; do
   case "$1" in
     --whisperx) WITH_WHISPERX=1 ;; --mirror) USE_MIRROR=1 ;; --model) MODEL="$2"; shift ;;
+    --target) TARGET="$2"; shift ;;
     *) echo "未知参数: $1"; exit 2 ;;
   esac; shift
 done
+# 不指定就装在本文件夹，跟以前一样
+ROOT="${TARGET:-$PWD}"
+mkdir -p "$ROOT"
+ROOT="$(cd "$ROOT" && pwd)"
+RT="$ROOT/runtime"; VENV="$RT/venv"; PY="$VENV/bin/python"
+[ "$ROOT" = "$PWD" ] || echo "装到：$ROOT"
 
 # ---- every download, cache and temp file stays in runtime/ ----
 mkdir -p "$RT"/{uv,python,ffmpeg,models/huggingface,models/torch,temp}

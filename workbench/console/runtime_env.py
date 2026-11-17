@@ -21,8 +21,11 @@ import os
 import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
-RUNTIME = ROOT / "runtime"
+from . import paths
+
+ROOT = paths.CODE_ROOT
+DATA_DIR = paths.DATA_DIR
+RUNTIME = paths.RUNTIME_DIR
 IS_WIN = os.name == "nt"
 VENV_PY = RUNTIME / "venv" / ("Scripts/python.exe" if IS_WIN else "bin/python")
 DIRS = {
@@ -82,8 +85,9 @@ def report() -> dict:
     models = sorted(p.name.replace("models--", "").replace("--", "/") for p in hub.glob("models--*")) if hub.exists() else []
     ffmpeg = shutil.which("ffmpeg") or ""
     return {
-        "root": str(ROOT), "runtime": str(RUNTIME), "projects": str(ROOT / "projects"),
-        "config": str(ROOT / "console.env"), "platform": "windows" if IS_WIN else sys.platform,
+        "root": str(ROOT), "runtime": str(RUNTIME), "projects": str(DATA_DIR / "projects"),
+        "config": str(DATA_DIR / "console.env"), "data_dir": str(DATA_DIR),
+        "platform": "windows" if IS_WIN else sys.platform,
         "venv": VENV_PY.exists(),
         "running_in_venv": Path(sys.prefix).resolve() == (RUNTIME / "venv").resolve(),
         "python": sys.version.split()[0], "models": models, "align_models": align_models.report(),

@@ -17,6 +17,47 @@ _model = None
 _model_key = None
 _lock = threading.Lock()
 
+# 识别台词默认用 CPU。device="auto" 在装了 NVIDIA 显卡的电脑上会选显卡，但安装包不带 CUDA 运行库，
+# 会报「cublas64_12.dll is not found」（Windows 真机反馈），重试还可能卡住。
+# 想用显卡的人自己装好 CUDA 后，在 console.env 里写 ASR_DEVICE=cuda（或 auto）。
+_GPU_ERROR = re.compile(r"cublas|cudnn|cuda|cudart|nvcuda|libcu|gpu", re.I)
+
+
+def _device() -> str:
+    import os
+    from . import config
+    want = (os.environ.get("ASR_DEVICE") or config.get("ASR_DEVICE") or "").strip().lower()
+    return want if want in {"cpu", "cuda", "auto"} else "cpu"
+
+
+def _load(model_size: str, compute_type: str, device: str, local_only: bool):
+    from faster_whisper import WhisperModel  # type: ignore
+    try:
+        return WhisperModel(model_size, device=device, compute_type=compute_type, local_files_only=True)
+    except Exception as exc:
+        if local_only or _GPU_ERROR.search(str(exc)):
+            raise
+        return WhisperModel(model_size, device=device, compute_type=compute_type)
+
+
+def _decode(model, audio, language: str | None):
+    """跑完整个识别（faster-whisper 的结果是惰性的，显卡库缺失的错误要到迭代时才冒出来）。"""
+    segments, info = model.transcribe(audio, language=(language or "").strip() or None, vad_filter=True, word_timestamps=True)
+    detected_language = info.language
+    if detected_language == "zh":
+        # Detection happens before the lazy segment iterator is consumed. Only
+        # decode Chinese with the punctuation prompt once its language is known.
+        segments, _ = model.transcribe(
+            audio, language=detected_language, vad_filter=True, word_timestamps=True,
+            initial_prompt="以下是普通话的句子，请输出简体中文并加标点。")
+    out = []
+    for seg in segments:
+        words = [{"start": round(w.start, 3), "end": round(w.end, 3), "word": w.word.strip()}
+                 for w in (seg.words or [])]
+        out.append({"start": round(seg.start, 2), "end": round(seg.end, 2), "text": seg.text.strip(),
+                    "words": words})
+    return detected_language, out
+
 
 def available() -> bool:
     return bool(engines())
@@ -116,7 +157,6 @@ def transcribe_whisperx(wav: Path, model_size: str = "medium", compute_type: str
 def transcribe(wav: Path, model_size: str = "medium", compute_type: str = "int8", language: str | None = None,
                *, local_only: bool = False) -> dict:
     global _model, _model_key
-    from faster_whisper import WhisperModel  # type: ignore
     import numpy as np
 
     with wave.open(str(wav), "rb") as source:
@@ -125,32 +165,25 @@ def transcribe(wav: Path, model_size: str = "medium", compute_type: str = "int8"
         audio = np.frombuffer(source.readframes(source.getnframes()), dtype="<i2").astype(np.float32) / 32768.0
 
     with _lock:
-        key = (model_size, compute_type)
-        if _model is None or _model_key != key:
-            try:
-                _model = WhisperModel(model_size, device="auto", compute_type=compute_type, local_files_only=True)
-            except Exception:
-                if local_only:
-                    raise
-                _model = WhisperModel(model_size, device="auto", compute_type=compute_type)
-            _model_key = key
-        segments, info = _model.transcribe(
-            audio, language=(language or "").strip() or None, vad_filter=True, word_timestamps=True)
-        detected_language = info.language
-        if detected_language == "zh":
-            # Detection happens before the lazy segment iterator is consumed. Only
-            # decode Chinese with the punctuation prompt once its language is known.
-            segments, _ = _model.transcribe(
-                audio, language=detected_language, vad_filter=True, word_timestamps=True,
-                initial_prompt="以下是普通话的句子，请输出简体中文并加标点。")
-        out = []
-        for seg in segments:
-            words = [{"start": round(w.start, 3), "end": round(w.end, 3), "word": w.word.strip()}
-                     for w in (seg.words or [])]
-            out.append({"start": round(seg.start, 2), "end": round(seg.end, 2), "text": seg.text.strip(),
-                        "words": words})
-    return {"engine": f"faster-whisper {model_size} {compute_type}", "language": detected_language,
-            "timing": "asr_estimate", "segments": out}
+        device = _device()
+        key = (model_size, compute_type, device)
+        try:
+            if _model is None or _model_key != key:
+                _model = None
+                _model = _load(model_size, compute_type, device, local_only)
+                _model_key = key
+            detected_language, out = _decode(_model, audio, language)
+        except Exception as exc:
+            _model, _model_key = None, None
+            if device == "cpu" or not _GPU_ERROR.search(str(exc)):
+                raise
+            # 显卡用不了（缺 CUDA 库、驱动太旧……）：换 CPU 重来一次
+            device = "cpu"
+            _model = _load(model_size, compute_type, device, local_only)
+            _model_key = (model_size, compute_type, device)
+            detected_language, out = _decode(_model, audio, language)
+    return {"engine": f"faster-whisper {model_size} {compute_type}" + ("" if device == "cpu" else f" {device}"),
+            "language": detected_language, "timing": "asr_estimate", "segments": out}
 
 
 _SRT_TIME = re.compile(r"(\d+):(\d+):(\d+)[,.](\d+)\s*-->\s*(\d+):(\d+):(\d+)[,.](\d+)")

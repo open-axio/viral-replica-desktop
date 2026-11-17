@@ -68,11 +68,23 @@ def transcript_text(transcript: dict | None, start: float | None = None, end: fl
     return "\n".join(lines) or "（这一段没有台词）"
 
 
-def overview_user_text(probe: dict, cuts: list[dict], transcript: dict | None, grids: list[dict]) -> str:
+FORENSICS_NOTE = ("逐镜拍摄方式（本地像素取证，镜号与切点一致；只是参考，和画面明显矛盾时以画面为准）。"
+                  "出复刻方案时据此区分：实拍的镜头要安排拍摄，AI 生成的镜头本来就不是拍出来的，图文动画用模板/剪辑软件做：")
+
+
+def forensics_text(forensic: dict | None, start: float | None = None, end: float | None = None) -> list[str]:
+    from .forensics import prompt_lines
+    lines = prompt_lines(forensic, start, end)
+    return [FORENSICS_NOTE, *lines] if lines else []
+
+
+def overview_user_text(probe: dict, cuts: list[dict], transcript: dict | None, grids: list[dict],
+                       forensic: dict | None = None) -> str:
     parts = [f"媒体：时长 {probe.get('duration')}s，{probe.get('width')}x{probe.get('height')}，{probe.get('fps')}fps，"
              f"音轨 {probe.get('audio_stream_count')} 条。",
              "机械切点候选（hypit boundaries 同算法，分数越高变化越大）：" +
              ("；".join(f"{c['at']:.2f}s({c['score']:.2f})" for c in cuts[:120]) or "无"),
+             *forensics_text(forensic),
              f"逐词转录（{(transcript or {}).get('engine', '无')}）：", transcript_text(transcript, with_words=False)]
     if grids:
         parts.append(f"下面是 {len(grids)} 张帧网格，每张从左到右、从上到下阅读：")
@@ -84,13 +96,15 @@ def grid_caption(i: int, grid: dict) -> str:
     return f"网格{i}（{grid['columns']}列，{len(grid['cells'])}格）：{cells}"
 
 
-def close_user_text(passage: dict, overview: dict, transcript: dict | None, every: float) -> str:
+def close_user_text(passage: dict, overview: dict, transcript: dict | None, every: float,
+                    forensic: dict | None = None) -> str:
     ctx = {"整片理解": overview.get("overview"), "视觉系统": overview.get("systems"),
            "人物": overview.get("characters"), "场景": overview.get("scene")}
     return "\n".join([
         f"段落 {passage['id']}：{passage['start']:.2f}–{passage['end']:.2f}s · {passage.get('phase')} · {passage.get('summary')}",
         f"细看问题：{passage.get('question') or '无'}",
         "上下文：" + json.dumps(ctx, ensure_ascii=False),
+        *forensics_text(forensic, passage["start"], passage["end"]),
         "这一段的逐词台词：", transcript_text(transcript, passage["start"], passage["end"], with_words=True),
         f"下面是这一段每 {every:g} 秒一帧的网格：",
     ])

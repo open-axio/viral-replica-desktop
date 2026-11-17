@@ -14,21 +14,23 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-from . import gateway, asr, config, evidence, kits, llm, media, motion, prompts, replacement_guard, scene_edits, scene_plan, segment_timing, speech_lines, store, storyboard
+from . import gateway, asr, config, evidence, forensics, kits, llm, media, motion, prompts, replacement_guard, scene_edits, scene_plan, segment_timing, speech_lines, store, storyboard
 
 STEP_META = {
     "probe": ("01 媒体探测", "ffprobe（= hypit media probe）· 本地免费"),
     "transcribe": ("02 逐词转录", "WhisperX / faster-whisper（= hypit transcribe）· 本地免费"),
     "boundaries": ("03 切点检测与帧网格", "hypit boundaries 同算法 + 带台词帧网格 · 本地免费"),
-    "overview": ("04 整片理解 → ANALYSIS.md", "外部计费"),
-    "close": ("05 逐段细读 → TIMELINE.md", "外部计费"),
-    "pack": ("06 拆解包", "7 卡 + 图层表 + 文档"),
-    "storyboard": ("07 原片分镜", "按镜头切点截帧，9 格一张"),
+    "forensics": ("04 认拍摄方式", "rea-video 像素取证，按 03 镜号逐镜判定 · 本地免费"),
+    "overview": ("05 整片理解 → ANALYSIS.md", "外部计费"),
+    "close": ("06 逐段细读 → TIMELINE.md", "外部计费"),
+    "pack": ("07 拆解包", "7 卡 + 图层表 + 文档"),
+    "storyboard": ("08 原片分镜", "按镜头切点截帧，9 格一张"),
 }
 CARD_KEYS = ["characters", "scene", "beats", "shots", "productMoments", "dialogue", "overlays", "viralLogic"]
 DOC_FILES = {"台词表.转写原句.srt": "台词表（转写原句）", "ANALYSIS.md": "整片理解", "TIMELINE.md": "逐段时间轴", "台词表.srt": "台词表（句级）",
              "逐词时间轴.csv": "逐词时间轴", "transcript.json": "转录（hypit.transcript 兼容）",
-             "boundaries.json": "切点候选", "passages.json": "段落与细读结果"}
+             "boundaries.json": "切点候选", "passages.json": "段落与细读结果",
+             "拍摄方式.md": "拍摄方式（逐镜判定）", "forensics.json": "拍摄方式取证数据"}
 
 
 def _set_step(pid: str, step: str, **fields) -> None:
@@ -166,7 +168,7 @@ PAID_STEPS = ("overview", "close", "pack")
 
 
 def _stop_for_key(pid: str, reason: str, adir: Path, started: float) -> None:
-    """前三步已跑完、但还没填 Key：停在这里，把免费产物挂出来。"""
+    """免费的前四步已跑完、但还没填 Key：停在这里，把免费产物挂出来。"""
     def fn(x: dict) -> None:
         a = x.setdefault("analysis", {})
         if a.get("started") != started:      # 期间被重新拆解覆盖了，别回写旧状态
@@ -181,7 +183,7 @@ def _stop_for_key(pid: str, reason: str, adir: Path, started: float) -> None:
         a["docs"] = {name: f"analysis/{name}" for name in DOC_FILES if (adir / name).exists()}
     with store._lock(pid):
         store.update(pid, fn)
-    store.log(pid, "免费拆解已完成：台词、镜头切分和字幕文件都已生成。整片理解和逐段细读需要先填 Key。")
+    store.log(pid, "免费拆解已完成：台词、镜头切分、拍摄方式和字幕文件都已生成。整片理解和逐段细读需要先填 Key。")
 
 
 def run_analysis(pid: str, provider: str, srt_text: str | None = None, skip_asr: bool = False,
@@ -252,6 +254,37 @@ def clear_source(pid: str) -> dict:
     return data
 
 
+def _run_forensics(pid: str, src: Path, shots: list[dict], duration: float, cfg: dict, adir: Path) -> dict | None:
+    """第 04 步。失败不拖垮整次拆解：记成 failed 或 skipped，后面照常往下走。"""
+    for old in ("forensics.json", "拍摄方式.md"):
+        (adir / old).unlink(missing_ok=True)
+    run, why = forensics.decide_run(cfg, duration)
+    if run and not shots:
+        run, why = False, "03 没有切出镜头，没有可判定的内容"
+    if run:
+        why = forensics.missing_dependency() or ""
+        run = not why
+    if not run:
+        _set_step(pid, "forensics", status="skipped", note=why)
+        return None
+    _set_step(pid, "forensics", status="running", progress=f"0/{len(shots)}")
+    try:
+        result = forensics.analyze(src, shots, progress=lambda n, total: _set_step(pid, "forensics",
+                                                                                   progress=f"{n}/{total}"))
+    except Exception as exc:  # 取证是增强项：出错（含镜号对不上）就整步作废、不写结果，不影响整片理解
+        logging.getLogger(__name__).exception("forensics failed")
+        _set_step(pid, "forensics", status="failed", note=f"取证失败，已跳过这一步：{exc}")
+        store.log(pid, f"认拍摄方式失败，已跳过：{exc}", "warn")
+        return None
+    store.atomic_write_json(adir / "forensics.json", result)
+    (adir / "拍摄方式.md").write_text(forensics.report_md(result), encoding="utf-8")
+    _set_step(pid, "forensics", status="done", progress=None,
+              output={"shots": len(result["shots"]), **{forensics.CLASSES[k]: v for k, v in result["counts"].items()},
+                      "seconds": result["seconds"]})
+    store.update(pid, lambda x: x["analysis"].update(forensics=result))
+    return result
+
+
 def _run_analysis(pid: str, provider: str, srt_text: str | None = None, skip_asr: bool = False,
                   send_video: bool = False) -> None:
     route = gateway.routes.resolve('analysis', pid, provider)
@@ -263,7 +296,7 @@ def _run_analysis(pid: str, provider: str, srt_text: str | None = None, skip_asr
     src = d / data["source"]["file"]
     adir = d / "analysis"
     cfg = config.load()
-    # 前三步全在本地跑，不需要 Key。Key 到第 04 步调用大模型前再查，
+    # 前四步全在本地跑，不需要 Key。Key 到第 05 步调用大模型前再查，
     # 没 Key 的用户也能先拿到台词、镜头和字幕文件。
     model_name = route['model'] or ''
     send_video = send_video and provider == "jimmy" and model_name.lower().startswith("gemini")
@@ -330,6 +363,9 @@ def _run_analysis(pid: str, provider: str, srt_text: str | None = None, skip_asr
         shots=shots, transcript=(transcript or {}).get("segments", []),
         overview_grids=[{"file": store.rel(pid, g["file"]), "cells": g["cells"]} for g in overview_grids]))
 
+    # 04 认拍摄方式：吃 03 的切点，按 03 镜号逐镜判定
+    forensic = _run_forensics(pid, src, shots, duration, cfg, adir)
+
     # ---- 免费部分到此为止。往下要调用大模型，需要 Key。----
     try:
         settings = {**config.provider_settings(provider), 'model': route['model']}
@@ -337,11 +373,12 @@ def _run_analysis(pid: str, provider: str, srt_text: str | None = None, skip_asr
         _stop_for_key(pid, str(exc), adir, analysis_started)
         return
 
-    # 04 whole piece → ANALYSIS.md
+    # 05 whole piece → ANALYSIS.md
     label = gateway.label(provider,settings["model"])
     _set_step(pid, "overview", status="running", tool=f"{label} · 外部计费")
     content: list[dict] = [{"type": "text", "text": prompts.overview_user_text(info, cuts, transcript,
-                                                                               [] if send_video else overview_grids)}]
+                                                                               [] if send_video else overview_grids,
+                                                                               forensic)}]
     used_video = False
     if send_video:
         proxy = media.make_proxy(src, adir / "proxy.mp4")
@@ -359,7 +396,7 @@ def _run_analysis(pid: str, provider: str, srt_text: str | None = None, skip_asr
             raise
         store.log(pid, f"整段视频输入失败（{exc}），自动改用帧网格", "warn")
         used_video = False
-        content = [{"type": "text", "text": prompts.overview_user_text(info, cuts, transcript, overview_grids)}]
+        content = [{"type": "text", "text": prompts.overview_user_text(info, cuts, transcript, overview_grids, forensic)}]
         content += _grid_parts(overview_grids)
         ov, meta = gateway.reason('analysis', [{"role": "system", "content": prompts.OVERVIEW_SYSTEM},
                                             {"role": "user", "content": content}], temperature=0.2, max_tokens=16000, json=True, project=pid, override=route)
@@ -371,7 +408,7 @@ def _run_analysis(pid: str, provider: str, srt_text: str | None = None, skip_asr
               output={"model": meta["model"], "input": "整段视频" if used_video else f"{len(overview_grids)} 张帧网格",
                       "passages": len(passages), "systems": len(ov.get("systems") or []), "seconds": meta["seconds"]})
 
-    # 05 close reading per passage → TIMELINE.md
+    # 06 close reading per passage → TIMELINE.md
     _set_step(pid, "close", status="running", tool=f"{label} · 外部计费", progress=f"0/{len(passages)}")
     done = {"n": 0}
     progress_lock = threading.Lock()
@@ -383,7 +420,7 @@ def _run_analysis(pid: str, provider: str, srt_text: str | None = None, skip_asr
         step = round(max(0.2, math.ceil(length / 24 / 0.1) * 0.1), 2)
         cache_key = json.dumps([p["start"], p["end"], provider, settings["model"]], ensure_ascii=False)
         cache_path = cache_dir / (hashlib.sha256(cache_key.encode()).hexdigest()[:20] + ".json")
-        user_text = prompts.close_user_text(p, ov, transcript, step)
+        user_text = prompts.close_user_text(p, ov, transcript, step, forensic)
         context_hash = hashlib.sha256((source_hash + prompts.CLOSE_SYSTEM + user_text).encode()).hexdigest()
         try:
             try:
@@ -426,7 +463,7 @@ def _run_analysis(pid: str, provider: str, srt_text: str | None = None, skip_asr
     _set_step(pid, "close", status="partial" if failed else "done", output={"passages": len(reads), "failed": failed,
                                                    "seconds": round(sum(r["seconds"] for r in reads), 1)})
 
-    # 06 pack
+    # 07 pack
     _set_step(pid, "pack", status="running")
     shots_out, overlays, moments = [], [], []
     for r in reads:

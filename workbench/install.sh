@@ -74,8 +74,8 @@ if [ ! -x "$PY" ]; then
 fi
 "$PY" --version
 
-say "2/5 安装 faster-whisper、static-ffmpeg、Pillow（runtime/venv）"
-pkg faster-whisper static-ffmpeg pillow numpy
+say "2/5 安装 faster-whisper、static-ffmpeg、Pillow、OpenCV（runtime/venv）"
+pkg faster-whisper static-ffmpeg pillow numpy opencv-python-headless
 
 say "3/5 准备 FFmpeg（runtime/ffmpeg）"
 "$PY" - "$RT/ffmpeg" <<'PY' || true
@@ -112,7 +112,7 @@ fi
 
 rm -rf "$RT/temp"; mkdir -p "$RT/temp"
 { echo "installed_at=$(date '+%Y-%m-%d %H:%M:%S')"; echo "platform=macOS"; echo "python=$("$PY" --version 2>&1)"
-  "$UV" pip list --python "$PY" 2>/dev/null | grep -Ei '^(faster-whisper|ctranslate2|whisperx|torch|static-ffmpeg) ' || true
+  "$UV" pip list --python "$PY" 2>/dev/null | grep -Ei '^(faster-whisper|ctranslate2|whisperx|torch|static-ffmpeg|opencv-python-headless) ' || true
   if [ -x "$RT/ffmpeg/ffmpeg" ]; then echo "ffmpeg=$RT/ffmpeg/ffmpeg"; else echo "ffmpeg=missing"; fi; } > "$RT/INSTALLED.txt"
 say "完成"; cat "$RT/INSTALLED.txt"
 echo "runtime 占用：$(du -sh "$RT" | cut -f1)，全部在 $RT"

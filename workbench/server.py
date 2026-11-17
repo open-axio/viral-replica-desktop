@@ -50,6 +50,7 @@ WEB = Path(__file__).resolve().parent / "web"
 VERSION_FILE = WEB.parent / "VERSION"
 PID_FILE = runtime_env.RUNTIME / "server.pid"
 RESTART_BLOCKED = ""
+RESTART_EXIT_CODE = 75   # 和 build/main.js 约定：桌面外壳看到它就静默重启服务
 UPDATES = updater.Updater(WEB.parent)
 _project_requests: dict[str, int] = {}  # Guarded by each project's store._lock.
 
@@ -850,6 +851,10 @@ def _watch_code_and_restart() -> None:
             if jobs.any_running() or UPDATES.applying():
                 continue
             _server_log("检测到代码更新，工作台自动重启…")
+            if os.environ.get("VIRALREPLICA_SHELL") == "desktop":
+                # 桌面版：退出并用约定的退出码告诉外壳「这是更新后的正常重启」，由外壳拉起新服务。
+                # Windows 上 os.execv 会另起一个进程、原进程退出，外壳会把它当成崩溃弹窗，新进程也没人管。
+                os._exit(RESTART_EXIT_CODE)
             os.execv(sys.executable, [sys.executable] + sys.argv)
     threading.Thread(target=loop, daemon=True, name="code-watch").start()
 

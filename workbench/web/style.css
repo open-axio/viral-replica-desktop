@@ -84,6 +84,10 @@ main { max-width: 1180px; margin: 0 auto; padding: 24px; }
 .runstep .st.done { color: var(--accent); }
 .runstep .st.running { color: #a06a00; }
 .runstep .st.skipped { color: var(--warn); }
+.runstep .st.needs_key { color: var(--muted); }
+.runstep.free-done { background: var(--accent-soft); border-color: #cfe2d7; }
+.runstep.free-done b { color: var(--accent); }
+.runstep.free-done .hint { margin-top: 4px; }
 .runstep pre { margin: 6px 0 0; font: 12px var(--mono); color: var(--muted); white-space: pre-wrap; }
 
 .frames { display: flex; gap: 6px; overflow-x: auto; margin: 14px 0; }

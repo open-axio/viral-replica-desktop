@@ -766,12 +766,23 @@ function renderAnalysis() {
   updateSendVideo();
   $("#analyzeBtn").disabled = !P.source || a.status === "running" || P.jobs?.analyze?.state === "running";
   $("#analyzeBtn").textContent = a.status === "running" ? "拆解中…" : P.breakdown ? "用所选模型重新拆解"
+<<<<<<< HEAD
     : "开始内容拆解（会产生费用）";
   const order = ["probe", "transcribe", "boundaries", "forensics", "overview", "close", "understand", "pack", "storyboard"];
   const steps = a.steps || {};
   const errMsg = operationErrors.get(operationKey("analyze")) || (a.status === "failed" ? (a.error || P.jobs?.analyze?.error) : (["error","failed"].includes(P.jobs?.analyze?.state) ? P.jobs.analyze.error : ""));
   // 免费部分的结果在「② 免费拆解」那一屏（flow.js），这里不再重复说明
   const freeDone = "";
+=======
+    : a.status === "free_done" ? "填好 Key 后继续拆解" : "开始拆解";
+  const order = ["probe", "transcribe", "boundaries", "forensics", "overview", "close", "understand", "pack", "storyboard"];
+  const steps = a.steps || {};
+  const errMsg = operationErrors.get(operationKey("analyze")) || (a.status === "failed" ? (a.error || P.jobs?.analyze?.error) : (["error","failed"].includes(P.jobs?.analyze?.state) ? P.jobs.analyze.error : ""));
+  // 免费部分跑完、等填 Key：不是错误，单独给一块说明
+  const freeDone = a.status === "free_done" ? `<div class="runstep free-done"><b>免费部分已完成</b>
+    <div class="hint">读视频信息、识别台词、切分镜头、认拍摄方式都在本机跑完了，没花钱。下面能看到每个镜头的截图和拍摄方式判定，台词表、逐词时间轴和拍摄方式报告可以直接下载。</div>
+    <div class="hint">想继续做「整片理解」和「逐段细读」，需要调用大模型：点右上角“设置”填好 Key，再点上面的「填好 Key 后继续拆解」。</div></div>` : "";
+>>>>>>> origin/main
   const err = errMsg ? `<div class="runstep"><span class="st skipped">拆解没有完成：${errorHtml(errMsg,'拆解推理')}</span>${thirdRetry("analyze")}<div class="hint">修正后直接点“开始拆解”重新跑；需要换视频就在第 01 步清除。</div></div>` : "";
   updateHtml($("#analysisSteps"), order.filter((k) => steps[k]).map((k) => {
     const s = steps[k];

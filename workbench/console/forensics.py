@@ -40,16 +40,22 @@ class AlignmentError(RuntimeError):
     """取证结果和 03 的镜头表对不上。"""
 
 
+<<<<<<< HEAD
 PIP_PACKAGE = "opencv-python-headless"
 PIP_MIRROR = "https://pypi.tuna.tsinghua.edu.cn/simple"
 
 
 def missing_dependency() -> str | None:
     """取证要用 OpenCV 和 NumPy。缺的话返回缺的模块名。"""
+=======
+def missing_dependency() -> str | None:
+    """取证要用 OpenCV 和 NumPy。旧版运行环境没装 OpenCV 时返回原因，调用方据此跳过这一步。"""
+>>>>>>> origin/main
     try:
         import cv2  # noqa: F401
         import numpy  # noqa: F401
     except ImportError as exc:
+<<<<<<< HEAD
         return exc.name or "cv2"
     return None
 
@@ -82,6 +88,13 @@ def install_dependency() -> str | None:
     return "网络不通，没装上" + (f"（{last[:120]}）" if last else "")
 
 
+=======
+        return (f"本机运行环境缺少 {exc.name or 'opencv'}：重新运行一次安装（install.sh / install.bat，"
+                "已装好的部分不会重复下载）即可补上")
+    return None
+
+
+>>>>>>> origin/main
 def decide_run(cfg: dict, duration: float) -> tuple[bool, str]:
     """按设置决定这次跑不跑。返回 (是否运行, 不跑时的说明)。
 
@@ -165,7 +178,10 @@ def analyze(src: Path, shots: list[dict], progress: Callable[[int, int], None] |
             "label": label, "label_zh": str(classify.LABEL_ZH[label]),
             "confidence": round(float(conf), 3),
             "evidence": [_short(e) for e in evidence[:3]],
+<<<<<<< HEAD
             "tags": short_tags(label, rec["features"], facts),
+=======
+>>>>>>> origin/main
             "runner_up": [{"label": k, "label_zh": str(classify.LABEL_ZH[k]), "p": round(float(v), 3)}
                           for k, v in sorted(probs.items(), key=lambda kv: -kv[1])[1:3]],
             "temporal_family": facts.get("temporal_family"),
@@ -176,6 +192,7 @@ def analyze(src: Path, shots: list[dict], progress: Callable[[int, int], None] |
             "counts": {c: sum(1 for r in out if r["class"] == c) for c in CLASSES}, "shots": out}
 
 
+<<<<<<< HEAD
 def short_tags(label: str, feats: dict, facts: dict) -> list[str]:
     """把取证特征压成界面上的短标签（「凭什么这么判断」），最多 3 个，和判定方向一致的排前面。
 
@@ -221,6 +238,8 @@ def short_tags(label: str, feats: dict, facts: dict) -> list[str]:
     return out[:3]
 
 
+=======
+>>>>>>> origin/main
 def check_alignment(shots: list[dict], result: list[dict]) -> None:
     """取证结果必须和 03 的镜头表一一对应：条数相同，第 i 条的镜号和时间区间等于第 i 个镜头。"""
     if len(result) != len(shots):

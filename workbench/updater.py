@@ -25,6 +25,35 @@ REPOSITORY = 'open-axio/viral-replica-desktop'
 # 工作台在单仓库里的子目录。仓库根即工作台根时留空字符串。
 SUBDIR = 'workbench/'
 MANIFEST = 'code-update.json'
+CHANGELOG = 'web/changelog.json'   # 放在 web/ 下：旧版更新程序只认这些位置的文件，放在顶层会让它拒绝整个更新
+
+
+def parse_changelog(raw):
+    """[{version, date, items:[...]}]；格式不对就当没有。"""
+    try:
+        data = json.loads(raw.decode('utf-8') if isinstance(raw, bytes) else raw)
+    except (ValueError, UnicodeDecodeError):
+        return []
+    out = []
+    for entry in data if isinstance(data, list) else []:
+        if not isinstance(entry, dict) or not re.fullmatch(r'\d{8}-\d{4}', str(entry.get('version', ''))):
+            continue
+        items = [str(i)[:200] for i in entry.get('items') or [] if isinstance(i, str) and i.strip()][:12]
+        if items:
+            out.append({'version': entry['version'], 'date': str(entry.get('date', ''))[:10], 'items': items})
+    return sorted(out, key=lambda e: e['version'], reverse=True)
+
+
+def read_changelog(path):
+    try:
+        return parse_changelog(Path(path).read_bytes())
+    except OSError:
+        return []
+
+
+def changelog_since(entries, version, *, include=False):
+    """比 version 新的条目（include=True 时包含 version 本身），新的在前。"""
+    return [e for e in entries if e['version'] > version or (include and e['version'] == version)]
 MAX_DOWNLOAD = 100 * 1024 * 1024
 MAX_EXPANDED = 200 * 1024 * 1024
 CHECK_TIMEOUT = 15
@@ -388,7 +417,10 @@ class Updater:
             return {'phase': self.phase, 'message': self.message, 'current_version': version,
                     'repository': REPOSITORY,
                     'can_rollback': (self.root / 'runtime/updates/latest.json').exists(),
-                    'available': {'sha': self.release['sha'], 'version': self.release['manifest']['version']}
+                    # 当前版本这次更新了什么（更新完刷新后给用户看）
+                    'current_notes': [e for e in read_changelog(self.root / CHANGELOG) if e['version'] == version][:1],
+                    'available': {'sha': self.release['sha'], 'version': self.release['manifest']['version'],
+                                  'notes': self.release.get('notes') or []}
                     if self.release else None}
 
     def applying(self):
@@ -424,7 +456,7 @@ class Updater:
                 if current == manifest:
                     self.message = '当前已是最新发布版本。'
                 else:
-                    self.release = {'sha': sha, 'manifest': manifest}
+                    self.release = {'sha': sha, 'manifest': manifest, 'notes': self._remote_notes(sha, deadline)}
                     blocker = code_update_blocker(self.root)
                     self.message = ('发现新版本 ' + manifest['version'] + '。' + blocker) if blocker \
                         else '发现新版本，只更新程序代码。'
@@ -433,6 +465,16 @@ class Updater:
             with self.lock: self.phase, self.message = 'error', str(exc)
             raise UpdateError(str(exc)) from exc
         return self.status()
+
+    def _remote_notes(self, sha, deadline):
+        """新版本的更新说明。拿不到（旧版本没有这个文件、网络慢）就不显示，不影响更新。"""
+        try:
+            raw = download(f'https://raw.githubusercontent.com/{REPOSITORY}/{sha}/{SUBDIR}{CHANGELOG}', 200_000,
+                           timeout=max(1, min(8, deadline - time.monotonic())))
+            current = (self.root / 'VERSION').read_text().strip() if (self.root / 'VERSION').exists() else ''
+            return changelog_since(parse_changelog(raw), current)[:5]
+        except Exception:
+            return []
 
     def start(self, sha='', *, busy=lambda: False, validate=lambda: '', rollback_only=False, restart=True):
         blocker = code_update_blocker(self.root)

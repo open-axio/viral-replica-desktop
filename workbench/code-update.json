@@ -1,11 +1,11 @@
 {
   "format": 1,
   "runtime": 1,
-  "version": "20261117-2240",
+  "version": "20261117-2300",
   "files": {
     "LICENSE": "eb110e8e29566fd4de1da50097ff397b38df7ec36183e61249290a6b3164e6d1",
     "README.md": "fb00b1cb5dbf461447368aefb7f9b426a237d16d7e5f7298ac40a9da717f0877",
-    "VERSION": "f09d536b5c2787ec784bcc02e884d7a35bd5e3134947dd4fc6e36b1f682cdd2d",
+    "VERSION": "2daeaa8d99fe15e3c31e7dcda46dad716675c6d27a1ab1fc0a468807fa71f4a6",
     "console/align_models.py": "be4dd845b67a642da38b7d234b4134bbc53047094e6946a20db925a75018ae01",
     "console/asr.py": "062ccb7ca162bce9a017ce85156ffe51b357ed68eff9d0851158143c5d280983",
     "console/asr_models.py": "72ab7da54a32d676f63e839fce0235fbf326e9bc9fa5c26f48f1b29ffe90c8ab",
@@ -88,14 +88,15 @@
     "install.bat": "55a9edcfd7328e0aa963cc81ee3b9b5ac9f7804d00ec0f938fe0bdaf97cf7ff2",
     "install.ps1": "060b93de8a4e65bcd8bed28d1304c8b739d8bc9e6d0085cdf2e08c2915c44bc7",
     "install.sh": "e5e84c854c9a5f67257f56d757d119fcc19dd2f3ff0b478e12ef0ea39cade903",
-    "server.py": "b6f323c6b0b509367ed8014ef8e33e1b448bb73bdd0e666e34aee71c89b6aaea",
+    "server.py": "051b59a274b942f66a5024d9ec5824a598e0aeb4c9edf2cc7b7db33d162ab1fc",
     "start.bat": "2e3620ab636b12fdca3daf31bea89e022e2f48c96a4d2f1a8803947dc162dff5",
     "start.command": "41d0e5923a3c010d26bc81faab7fc3bd6b7145872129ba1726be554f99154979",
-    "updater.py": "3f9b4d45c675d0f43a9f58c30e59a1f44431866c298af316f8ff467b92db20c3",
+    "updater.py": "a31c9d1b757ec991f8500027e14e081beb516e3da50285027f896cf8b0a30000",
     "web/app.js": "11747626be2993d2a987ec073f588e197ada32b6fd54298e3f8b83cefdea8c0f",
+    "web/changelog.json": "44b9a60173afc4e0b84fb40b113080158126937f8c044355cc702cd9d06f40c7",
     "web/flow.js": "fcb4989a09e5fe1bf17e3d430c150e94ceabac57a054a40316c3bb8b403d3393",
-    "web/index.html": "1c5c1c3a50aed49758ffc773ae1360decfdf966b4f83f61df3a8f9f720e90d78",
-    "web/style.css": "70851a7038212d2307d212706ab4a7fa8ad50a2e6fd5ca40073c6d15f8b9cb99",
-    "web/update.js": "a9af0824a3c18f8a38bd731f5cfad95aafa0c5c7b906c7df40c7b777762baeb3"
+    "web/index.html": "ecf325cd89afb32b79a8d48c769a1044a09bca9f2518e0c757d4e1b947c4b2ee",
+    "web/style.css": "d96122d92437886d830e2a241f316a957d37717c37993f5b515ea0aef1a4e01c",
+    "web/update.js": "b3257ef625c82a6168526c32c3f92ac2db3360df5d0a9fce07094e94198f3aba"
   }
 }

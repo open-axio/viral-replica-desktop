@@ -106,6 +106,11 @@ function startServer(workbench, dataDir) {
   if (fs.existsSync(ffDir)) env.PATH = ffDir + path.delimiter + (env.PATH || '');
   // server.py 优先读环境变量 PORT（高于 console.env 里的 PORT）
   env.PORT = String(port);
+  // 让服务知道自己在桌面版里：代码更新后用 RESTART_EXIT_CODE 退出，由这里静默重启
+  env.VIRALREPLICA_SHELL = 'desktop';
+  // Windows 上 Python 默认按 GBK 输出，这里按 UTF-8 读，日志里的中文会变乱码
+  env.PYTHONIOENCODING = 'utf-8';
+  env.PYTHONUTF8 = '1';
 
   serverCtx = { workbench, dataDir };
   serverTail = [];
@@ -122,8 +127,33 @@ function startServer(workbench, dataDir) {
   proc.on('exit', (code, signal) => {
     logServer(dataDir, `---- 服务退出：code=${code} signal=${signal} ----`);
     if (serverProc === proc) serverProc = null;
-    if (!quitting && mainWindow) onServerDied(code, signal);
+    if (quitting || !mainWindow) return;
+    if (code === RESTART_EXIT_CODE && quietRestartAllowed()) return quietRestart();
+    onServerDied(code, signal);
   });
+}
+
+// 代码更新后服务按约定退出（RESTART_EXIT_CODE）：不弹窗，直接拉起新服务。
+// 端口不变时页面自己会在更新完成后刷新；1 分钟内连续重启超过 3 次就当出了问题，走下面的弹窗。
+const RESTART_EXIT_CODE = 75;
+let quietRestarts = [];
+function quietRestartAllowed() {
+  const now = Date.now();
+  quietRestarts = quietRestarts.filter((t) => now - t < 60000);
+  quietRestarts.push(now);
+  return quietRestarts.length <= 3;
+}
+async function quietRestart() {
+  if (!serverCtx) return;
+  try {
+    const before = port;
+    port = await pickPort(port);
+    startServer(serverCtx.workbench, serverCtx.dataDir);
+    await waitForPort(port, 90000);
+    if (mainWindow && port !== before) mainWindow.loadURL(`http://127.0.0.1:${port}`);
+  } catch (err) {
+    onServerDied(RESTART_EXIT_CODE, null);
+  }
 }
 
 // 服务在用户还开着窗口时停了：说清楚，并给「重新启动」，而不是让页面只报「连不上工作台」。

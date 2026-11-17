@@ -30,9 +30,14 @@ function freeDone() {
   const a = P?.analysis || {};
   return !!a.free_finished || (["free_done", "done", "partial"].includes(a.status) && a.steps?.boundaries?.status === "done");
 }
+// 后台任务已经报错、但项目状态还停在 running（写状态没成功等）：按失败处理，别一直转圈
+function analyzeJobError() {
+  const job = P?.jobs?.analyze;
+  return job && job.state === "error" && P?.analysis?.status === "running" ? (job.error || "拆解没有完成") : "";
+}
 function freeRunning() {
   const a = P?.analysis || {};
-  return a.status === "running" && !a.free_finished;
+  return a.status === "running" && !a.free_finished && !analyzeJobError();
 }
 function contentStarted() {
   const a = P?.analysis || {};
@@ -124,6 +129,7 @@ function verdictBadge(v) {
 }
 function freeStepSummary(id) {
   const st = P.analysis?.steps?.[id] || {}, out = st.output || {};
+  if (st.status === "running" && analyzeJobError()) return "没完成";
   if (st.status === "running") return `正在进行${st.progress ? " · " + esc(st.progress) : "…"}`;
   if (st.status === "failed") return `没完成：${esc(st.note || "")}`;
   if (st.status === "skipped") return `已跳过：${esc(st.note || "")}`;
@@ -140,7 +146,8 @@ function freeStepSummary(id) {
   return "";
 }
 function freeStepItem([id, label]) {
-  const st = P.analysis?.steps?.[id]?.status || "pending";
+  let st = P.analysis?.steps?.[id]?.status || "pending";
+  if (st === "running" && analyzeJobError()) st = "failed";
   const tone = { done: "done", running: "running", skipped: "skipped", failed: "failed" }[st] || "pending";
   const icon = st === "done" ? ICON_DONE_DOT : `<span class="dot ${tone}" aria-hidden="true"></span>`;
   return `<li class="free-step ${tone}"><div class="free-step-head"><span class="free-step-name">${icon}${label}</span><span class="tag-free">免费</span></div>
@@ -169,8 +176,8 @@ function renderFreeStart() {
   </section>`;
 }
 function renderFreeProgress() {
-  const a = P.analysis || {}, failed = a.status === "failed";
-  const err = failed ? `<div class="free-error"><b>拆解没有完成</b><p>${esc(a.error || "")}</p><button type="button" data-free-start>重新拆解</button></div>` : "";
+  const a = P.analysis || {}, jobErr = analyzeJobError(), failed = a.status === "failed" || !!jobErr;
+  const err = failed ? `<div class="free-error"><b>拆解没有完成</b><p>${esc(a.error || jobErr || "")}</p><button type="button" data-free-start>重新拆解</button></div>` : "";
   return `<div class="free-layout">
     <aside class="free-aside"><h2>正在做这四件事</h2><ol class="free-steps">${FREE_STEPS.map(freeStepItem).join("")}</ol></aside>
     <section class="free-main">${err || `<div class="free-wait"><span class="spinner" aria-hidden="true"></span>
@@ -230,7 +237,7 @@ function renderFreeStage() {
   let html;
   if (!P.source) html = `<div class="free-empty"><p>先上传对标视频。</p><button type="button" data-stage-go="upload">去上传</button></div>`;
   else if (freeDone()) html = renderFreeReport();
-  else if (freeRunning() || a.status === "failed") html = renderFreeProgress();
+  else if (freeRunning() || a.status === "failed" || analyzeJobError()) html = renderFreeProgress();
   else html = renderFreeStart();
   updateHtml(box, html);
 }
@@ -610,7 +617,7 @@ document.addEventListener("click", async (e) => {
   if (shot && P) { freePicked.set(P.id, Number(shot.dataset.freeShot)); renderFreeStage(); return; }
   if (e.target.closest("[data-free-start]")) {
     const a = P?.analysis || {};
-    if (a.status === "running") return;
+    if (a.status === "running" && !analyzeJobError()) return;
     if (freeDone() && !await pageConfirm("重新拆解会覆盖这次的免费拆解结果，继续？")) return;
     guard(submitFreeAnalyze);
     return;

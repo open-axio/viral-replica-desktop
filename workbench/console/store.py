@@ -46,7 +46,17 @@ def atomic_write_json(path: Path, value: Any) -> None:
         json.dump(value, fh, ensure_ascii=False, indent=2)
         fh.flush()
         os.fsync(fh.fileno())
-    tmp.replace(path)
+    # Windows：目标文件正被别的线程读、或被杀毒软件/索引服务短暂占用时，替换会报「拒绝访问」。
+    # 稍等重试，不让一次偶发占用把状态写丢（比如拆解失败后状态停在「正在进行」）。
+    for attempt in range(20):
+        try:
+            tmp.replace(path)
+            return
+        except PermissionError:
+            if attempt == 19:
+                tmp.unlink(missing_ok=True)
+                raise
+            time.sleep(0.05 * (attempt + 1))
 
 
 def sha256_file(path: Path) -> str:
@@ -150,7 +160,8 @@ def list_projects() -> list[dict]:
                             "has_source": bool(data.get("source")), "analysis": data.get("analysis", {}).get("status"),
                             # 首页卡片用：第一个镜头的截图、镜头数、是否已进入复刻
                             "thumb": shots[0].get("frame") if shots else None, "shots": len(shots),
-                            "has_breakdown": bool(data.get("breakdown")), "has_final": bool(data.get("final") or data.get("final_preview"))})
+                            "has_breakdown": bool(data.get("breakdown")), "has_final": bool(data.get("final") or data.get("final_preview")),
+                            "origin": (data.get("origin") or {}).get("platform_name")})
                 if data.get('derived_from'):
                     derived=data['derived_from'];master_id=derived.get('project_id')
                     out[-1].update(derived_from={key:copy.deepcopy(derived.get(key)) for key in ('project_id','row','row_id','fission_number')},

@@ -59,6 +59,7 @@ DEFAULTS = {
     "ASR_ENGINE": "auto",
     "ASR_MODEL": "medium",
     "ASR_COMPUTE_TYPE": "int8",
+    "ASR_DEVICE": "cpu",
     "ASR_LANGUAGE": "",
     "HF_ENDPOINT": "",
     "MAX_PASSAGES": "14",

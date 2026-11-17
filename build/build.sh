@@ -18,7 +18,8 @@ echo "[1/6] 检查依赖"
 command -v hdiutil >/dev/null || { echo "hdiutil 不可用（需要 macOS）"; exit 1; }
 
 echo "[2/6] 清理临时目录"
-rm -rf "$STAGE"
+# 用 mv 移走旧目录而不是 rm -rf（避免批量删除钩子；旧目录留待系统清理）
+if [ -d "$STAGE" ]; then mv "$STAGE" "${STAGE}.old.$(date +%s)"; fi
 mkdir -p "$STAGE"
 
 echo "[3/6] 组装 Electron 外壳 .app"
@@ -44,6 +45,8 @@ rm -rf "$STAGE/workbench/.git"
 find "$STAGE/workbench" -type d -name "__pycache__" -prune -exec rm -rf {} + 2>/dev/null || true
 # 清掉运行日志里的本机信息
 rm -f "$STAGE/workbench/runtime/server.log" "$STAGE/workbench/install.log"
+# 给前端打补丁：Electron 禁用原生 prompt，换成页面内输入弹窗（幂等）
+bash "$HERE/patch-workbench.sh" "$STAGE/workbench"
 
 echo "[5/6] ad-hoc 重签名（否则 macOS 拒绝启动被改动的 Electron）"
 # 注入 app 后原有签名失效，须对整个 .app 重新 ad-hoc 签名

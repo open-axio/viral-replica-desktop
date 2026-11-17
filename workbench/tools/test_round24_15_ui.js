@@ -40,8 +40,8 @@ test('脚本项目记忆如实显示，默认空值和请求不变，整页只�
   assert.equal(t.$$('[data-clear-route]').length,1);assert.equal(t.$('[data-clear-route]').dataset.clearRoute,'script');
   assert.equal(t.$('[data-legacy-route="script"]').textContent,'这个项目之前单独选过这个模型 恢复跟随设置');
   assert.equal(t.$('[data-legacy-route="dialogue_proposal"]').textContent,'');
-  assert.equal(t.$('[data-legacy-route="check"]').textContent,`检查模型：${actualScript}（这个项目单独设定，去第 04 步可恢复跟随设置）`);
-  assertDialogue(t,`改写模型：${actualScript}（这个项目单独设定，去第 04 步可恢复跟随设置）`);
+  assert.equal(t.$('[data-legacy-route="check"]').textContent,`检查模型：${actualScript}（这个项目单独设定，去「对照修改」可恢复跟随设置）`);
+  assertDialogue(t,`改写模型：${actualScript}（这个项目单独设定，去「对照修改」可恢复跟随设置）`);
   for(const step of ['check','dialogue_proposal'])assert.match(t.run(`providerOptions('', '${step}')`),/这个项目单独用：三方渠道 · DeepSeek · deepseek-flash/);
   assert.equal(t.requests.length,0);
 });
@@ -69,7 +69,7 @@ test('analysis字符串记忆只在第02步有按钮，提示词跟随说明和�
   const t=setup({analysis:'deepseek:analysis-model'});
   assert.equal(firstOption(t.$('#analyzeProvider')),'这个项目单独用：三方渠道 · DeepSeek · analysis-model');
   assert.equal(t.$$('[data-clear-route]').length,1);assert.equal(t.$('[data-clear-route]').dataset.clearRoute,'analysis');
-  assert.equal(t.$('[data-legacy-route="camera_prompt"]').textContent,'提示词模型：三方渠道 · DeepSeek · analysis-model（这个项目单独设定，去第 02 步可恢复跟随设置）');
+  assert.equal(t.$('[data-legacy-route="camera_prompt"]').textContent,'提示词模型：三方渠道 · DeepSeek · analysis-model（这个项目单独设定，去「内容拆解」可恢复跟随设置）');
   assert.equal(firstOption(t.$('#scriptProvider')),'跟随设置（官方 · GPT-5.6 Sol）');
   await t.event('click',t.$('[data-clear-route]'));
   assert.equal(firstOption(t.$('#analyzeProvider')),'跟随设置（官方 · GPT-5.6 Sol）');assert.equal(t.$$('[data-clear-route]').length,0);
@@ -82,7 +82,7 @@ test('临时选择仍只影响一次，消费后显示项目记忆而不改项�
   assertDialogue(t,'改写模型：三方渠道 · GPT-5.6 Sol（本次临时选择）');
   t.run('finishTemporaryProvider("script",requestRoute("script",$("#scriptProvider")))');assert.equal(sel.value,'');
   assert.equal(firstOption(sel),'这个项目单独用：'+actualScript);assert.equal(t.run('P.routes.script.model'),'deepseek-flash');
-  assertDialogue(t,`改写模型：${actualScript}（这个项目单独设定，去第 04 步可恢复跟随设置）`);assert.equal(t.requests.length,0);
+  assertDialogue(t,`改写模型：${actualScript}（这个项目单独设定，去「对照修改」可恢复跟随设置）`);assert.equal(t.requests.length,0);
 });
 test('缺Key回退显示resolved_routes实际模型，不把旧记忆模型写入短提示',()=>{
   const t=setup({script:'openai:old-official'});
@@ -90,7 +90,7 @@ test('缺Key回退显示resolved_routes实际模型，不把旧记忆模型写�
   assert.equal(firstOption(t.$('#scriptProvider')),'这个项目单独用：三方渠道 · fallback-model');
   assert.equal(t.$('[data-legacy-route="script"]').textContent,'这个项目之前单独选过这个模型 恢复跟随设置');
   assert.match(t.$('[data-legacy-route="check"]').textContent,/三方渠道 · fallback-model/);
-  assertDialogue(t,'改写模型：三方渠道 · fallback-model（这个项目单独设定，去第 04 步可恢复跟随设置）');
+  assertDialogue(t,'改写模型：三方渠道 · fallback-model（这个项目单独设定，去「对照修改」可恢复跟随设置）');
 });
 test('独立步骤记忆保留自己的入口，清除源步骤不会删除独立路由',async()=>{
   const t=setup({...scriptMemory,check:'deepseek:own-check',dialogue_proposal:'jimmy:own-dialogue'});

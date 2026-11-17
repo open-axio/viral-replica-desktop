@@ -168,7 +168,7 @@ test('保存失败后保留待保存状态；保存其他字段不能重新启�
 });
 test('keep：沿用隐藏方案区，第05步始终说明已保持及台词状态',async()=>{
   const t=setup('keep');assert.equal(t.boxes().length,0);
-  const card=t.$('[data-task="seg-01"]');assert.match(card.textContent,/台词：保持原台词.*去第 04 步查看/);
+  const card=t.$('[data-task="seg-01"]');assert.match(card.textContent,/台词：保持原台词.*去「对照修改」查看/);
   assert.doesNotMatch(card.textContent,new RegExp(todoText));
   t.run('delete P.replacement_checks');t.redraw();assert.match(t.$('[data-task="seg-01"]').textContent,/台词：保持原台词/);
 });
@@ -180,7 +180,7 @@ for(const choice of ['adopt','keep'])test(`${choice}成功后自动重新检查�
   assert.doesNotMatch(t.$('#taskCards').textContent,new RegExp(todoText));
   assert.equal(t.$('#taskCards [data-todo-target="dialogue-proposal"]'),null);
   assert.equal(t.$('#taskCards .dialogue-conflict'),null);
-  if(choice==='adopt')t.assertStatus(true);else assert.match(t.$('#taskCards').textContent,/台词：保持原台词.*去第 04 步查看/);
+  if(choice==='adopt')t.assertStatus(true);else assert.match(t.$('#taskCards').textContent,/台词：保持原台词.*去「对照修改」查看/);
 });
 async function main(){let failed=0;for(const [name,fn] of tests){try{await fn();console.log('PASS '+name);}catch(error){failed++;console.error('FAIL '+name+'\n'+error.stack);}}assert.equal(failed,0,`${failed}/${tests.length} failed`);console.log(`Round 24.9 UI: ${tests.length} passed`);}
 main().catch(error=>{console.error(error);process.exitCode=1;});

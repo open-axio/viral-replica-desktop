@@ -71,7 +71,7 @@ async function main(){
  await t.run('api("POST",`projects/${P.id}/voice-to-text`,audioBlob)');assert.equal(sent.options.body,t.context.audioBlob);assert.equal(sent.options.headers['Content-Type'],'audio/webm');
  t.run('P.segment_boards.segments.s03={current:"v1",versions:[{id:"v1",from:"full",file:"old-sheet.jpg"}]};renderNewStoryboards()');
  assert.equal(t.$('[data-edit-archive="s03"]'),null,'old whole-film sheets are no longer displayed');assert.ok(t.run('P.segment_boards.segments.s03.versions.length'),'stored history is not deleted');
- t.run('P.segments_plan=null;renderNewStoryboards()');assert.match(t.$('#step-4').textContent,/先在第 04 步生成分段方案/);
+ t.run('P.segments_plan=null;renderNewStoryboards()');assert.match(t.$('#step-4').textContent,/先在「对照修改」生成分段方案/);
  console.log('PASS SB2: materials/optional supplement/empty plan/edit/save/preview before confirm/versions/cell detail/warnings/upgrade/layout/mic');
 }
 if(require.main===module)main().catch(e=>{console.error(e);process.exitCode=1;});

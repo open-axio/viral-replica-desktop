@@ -13,7 +13,7 @@ function seed(t){
 async function main(){
  const t=setup();
  assert.equal(t.$$('[data-flow-index]').length,5);
- assert.match(t.$('#step-4').textContent,/对照和修改/);
+ assert.match(t.$('#step-4').textContent,/对照修改/);
  for(const id of ['newStoryboards','directorView','directorGeneration'])assert.ok(t.$('#step-4 #'+id));
  assert.match(t.$('#step-5').textContent,/05.*成片/);
  seed(t);
@@ -41,14 +41,14 @@ async function main(){
   t.requests.push({method,url,body:structuredClone(body)});
   const p=JSON.parse(t.run('JSON.stringify(P)')),id=url.split('/').at(-1),s=p.segments_plan.segments.find(s=>s.id===id);
   if(body.mode)s.mode=body.mode;if(body.refs)s.refs=body.refs;
-  const warning='第 04 步改过这一段，重新生成这一段的新分镜。';
+  const warning='「对照修改」改过这一段，重新生成这一段的新分镜。';
   p.segment_board_status={[id]:{source_stale:true,warnings:[warning],active_materials:Object.fromEntries(['C1','C2','N1','product'].map(k=>[k,s.refs.includes(k)]))}};
   p.director_status={ready:false,segments:[{id,stale:true,warnings:[warning]},{id:'d02',stale:false}]};return p;
  };t.run('api=mockApi');
  t.$('[data-detail-key="segment-plan:d01"]').open=true;
  const mode=t.$('[data-segment-mode="d01"]');mode.value='image';await t.event('change',mode);
  assert.equal(t.requests.at(-1).method,'PUT');assert.match(t.requests.at(-1).url,/segment-plan\/d01$/);assert.equal(t.requests.at(-1).body.mode,'image');
- assert.doesNotMatch(t.$('#step-4').textContent,/第 04 步改过这一段/);assert.equal(t.run('comparisonNeedsBoard(P.segments_plan.segments[0])'),true);
+ assert.doesNotMatch(t.$('#step-4').textContent,/「对照修改」改过这一段/);assert.equal(t.run('comparisonNeedsBoard(P.segments_plan.segments[0])'),true);
  assert.match(t.$('#directorView').textContent,/先完成上面的新分镜/);assert.equal(t.$('[data-director-card="d01"]'),null);
  assert.ok(t.$('[data-edit-preview="d01"]'),'source changes require a new storyboard');
  await t.click(t.$('[data-compare-side="source"] [data-compare-cell="c04"]'));assert.equal(t.$('[data-director-preview="d02"]').disabled,false);
@@ -58,7 +58,7 @@ async function main(){
  assert.match(t.$('[data-segment-photos="d01"]').textContent,/C1.*C2.*N1.*商品/);
  for(const key of ['C1','C2','N1','product'])assert.equal(t.$('[data-edit-material="'+key+'"]').checked,true,'V5a: each live saved photo defaults on');
  assert.deepEqual(JSON.parse(t.run('JSON.stringify(P.segments_plan.segments[0].refs)')),['C1'],'live photos do not rewrite historical segment refs');
- assert.match(t.$('#finalPreviewView').textContent,/第 1 段还没有选定的结果，在第 04 步选中这一段，在“视频”里生成或选定一版。/);
+ assert.match(t.$('#finalPreviewView').textContent,/第 1 段还没有选定的结果，在「对照修改」选中这一段，在“视频”里生成或选定一版。/);
  assert.equal(t.$('[data-final-preview]').disabled,true);
  t.run(`P.director.segments.forEach(s=>{s.selected_run='r1';P.runs[s.id]=[{rev:'r1',state:'completed',result:s.id+'.mp4'}]});renderSteps()`);
  assert.equal(t.$('[data-final-preview]').disabled,false);

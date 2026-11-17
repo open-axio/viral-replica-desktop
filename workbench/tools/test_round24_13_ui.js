@@ -49,12 +49,12 @@ const tests=[];const test=(name,fn)=>tests.push([name,fn]);
 test('全页台词区只一份；05 已采用/保持/待处理状态，链接精确跳转高亮04',async()=>{
   const t=setup();assert.equal(t.$$('[data-dialogue-box]').length,1);assert.ok(t.$('#scriptView [data-dialogue-box]'));
   assert.equal(t.$('#taskCards [data-dialogue-line]'),null);const status=()=>t.$('[data-dialogue-status="seg-01"]');
-  assert.match(status().textContent,/台词：已采用改写版.*去第 04 步查看/);
+  assert.match(status().textContent,/台词：已采用改写版.*去「对照修改」查看/);
   let scrolled=false;const target=t.$('#scriptView [data-dialogue-box]');target.scrollIntoView=()=>{scrolled=true;};
   await t.click(status().querySelector('button'));assert.ok(scrolled);assert.match(target.getAttribute('class'),/fix-highlight/);
-  t.run('S.tasks[0].dialogue_choice="keep";renderTasks(true)');assert.match(status().textContent,/台词：保持原台词.*去第 04 步查看/);
+  t.run('S.tasks[0].dialogue_choice="keep";renderTasks(true)');assert.match(status().textContent,/台词：保持原台词.*去「对照修改」查看/);
   t.run('delete S.tasks[0].dialogue_choice;P.replacement_checks["seg-01"].dialogue_conflicts=[{title:"旧服装",matched_terms:["flowy"],details:[]}];renderTasks(true)');
-  assert.match(status().textContent,/台词：有 1 处提到旧外观，还没处理.*去第 04 步处理/);
+  assert.match(status().textContent,/台词：有 1 处提到旧外观，还没处理.*去「对照修改」处理/);
   await t.click(t.$('[data-todo-target="dialogue-proposal"]'));assert.match(target.getAttribute('class'),/fix-highlight/);assert.equal(t.requests.length,0);
 });
 test('检查后才发现台词冲突时，04补出唯一可用入口并保留未保存的脚本字段',()=>{

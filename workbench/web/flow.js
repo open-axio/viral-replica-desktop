@@ -193,6 +193,7 @@ function renderFreeReport() {
         <img class="shot-detail-thumb" src="${fileUrl(sel.frame)}" alt="镜头 ${sel.index} 截图">
         <div class="shot-detail-text">
           <h3>这一镜的台词</h3><p>${caption ? esc(caption) : '<span class="hint">（这一镜没有台词）</span>'}</p>
+          ${v?.confirmed_by === "model" ? `<p class="unsure-note confirmed">内容拆解时大模型看图确认：${esc(v.model_why || VERDICT_CLASS[v.class])}</p>` : ""}
           ${v?.class === "unsure" ? '<p class="unsure-note">只看像素分不清这一镜是实拍还是 AI 生成（平台压缩会抹掉判断用的细节）。做内容拆解时，会让大模型看图再确认。</p>' : ""}
           ${v ? `<h3>${v.class === "unsure" ? "看到的特征" : "凭什么这么判断"}</h3><ul class="chips">${(v.tags || []).map((t) => `<li>${esc(t)}</li>`).join("") || "<li>没有特别明显的特征</li>"}</ul>
           <details class="why-more" data-detail-key="why-${sel.index}"><summary>看完整依据</summary><ul>${(v.evidence || []).map((e) => `<li>${esc(e)}</li>`).join("")}</ul></details>`
@@ -390,13 +391,17 @@ function renderContentProgress() {
       : `<div class="free-wait"><span class="spinner" aria-hidden="true"></span><h2>大模型正在读这条片子…</h2><p>一般几分钟。台词、镜头沿用了免费拆解的结果，没有重跑。</p></div>`}</section>
   </div>`;
 }
+const FRIENDLY_DOCS = [["台词表.srt", "字幕文件（按句）"], ["ANALYSIS.md", "整片理解"], ["TIMELINE.md", "逐段细读"],
+  ["拍摄方式.md", "拍摄方式"], ["逐词时间轴.csv", "逐词时间轴（表格）"]];
 function renderContentDone() {
   const a = P.analysis || {}, ov = P.breakdown?.overview || {}, vl = P.breakdown?.viralLogic || {};
+  const docs = FRIENDLY_DOCS.filter(([name]) => a.docs?.[name]);
   const ready = stageDone("content");
   const lines = [["一句话", ov.summary || ov.logline], ["钩子", vl.hook], ["结构", vl.structure]].filter(([, v]) => v);
   return `<div class="content-done">
     <div class="free-done-card"><div class="free-done-title">${ICON_DONE_DOT}<h1>内容拆解${a.status === "partial" ? "部分完成" : "完成"}</h1></div>
-      ${lines.length ? `<dl class="content-summary">${lines.map(([k, v]) => `<dt>${k}</dt><dd>${esc(publicText(v))}</dd>`).join("")}</dl>` : "<p>拆解卡片和原片分镜在下面。</p>"}</div>
+      ${lines.length ? `<dl class="content-summary">${lines.map(([k, v]) => `<dt>${k}</dt><dd>${esc(publicText(v))}</dd>`).join("")}</dl>` : "<p>拆解卡片和原片分镜在下面。</p>"}
+      ${docs.length ? `<div class="content-docs"><span>可以带走：</span>${docs.map(([name, label]) => `<a class="doc-link" href="${fileUrl(a.docs[name])}" download="${esc(name)}">${ICON_DOWNLOAD}${label}</a>`).join("")}</div>` : ""}</div>
     <div class="keygate-actions">${ready ? `<button type="button" class="big-cta" data-stage-go="replicate">继续：复刻成片 ${ICON_ARROW}</button>`
       : '<span class="hint">原片分镜还没生成好，生成完就能进入复刻。</span>'}
       <button type="button" class="link-btn" data-content-start>重新拆一次（会产生费用）</button></div>
@@ -414,6 +419,87 @@ function renderContentStage() {
   updateHtml(box, { gate: renderKeyGate, start: renderContentStart, progress: renderContentProgress, done: renderContentDone }[view]());
   $("#step-2").hidden = view !== "done";
   $("#step-2").classList.toggle("content-results", view === "done");
+}
+
+// ---------- ④ 复刻成片：三个小步骤 + 素材条 + 用量 ----------
+const REP_STEPS = [["cast", "选角换品", "#step-3"], ["compare", "对照修改", "#step-4"], ["final", "成片", "#step-5"]];
+const repChoice = new Map();   // pid → 用户点选的小步骤
+const PAID_RE = /重新生成分段方案|生成分段方案|生成视频|生成新分镜|重画|全部生成|批量裂变|按方案修改|重新生成这一段|确认付费|开始内容拆解|重新拆一次|保存并开始内容拆解/;
+const ROLE_NAME = { person_identity: "人物", product_truth: "商品", voice_identity: "声线" };
+
+function repDone(id) {
+  const rows = workflowState();
+  return { cast: rows[2].done, compare: rows[3].done, final: rows[4].done }[id];
+}
+function repLocked(id) {
+  return { cast: false, compare: !repDone("cast"), final: !repDone("compare") && !P?.final_preview }[id];
+}
+function currentRep() {
+  const chosen = repChoice.get(P?.id);
+  if (chosen && !repLocked(chosen)) return chosen;
+  return REP_STEPS.map(([id]) => id).find((id) => !repDone(id) && !repLocked(id)) || "final";
+}
+function usageSummary() {
+  const rows = (P?.usage || []).filter((r) => r.kind !== "preview");
+  const sum = (unit) => rows.filter((r) => r.billing?.unit === unit).reduce((n, r) => n + Number(r.billing?.amount || 0), 0);
+  const points = sum("点"), seconds = sum("秒"), calls = rows.filter((r) => r.kind === "reason" && r.ok !== false).length;
+  const parts = [];
+  if (points) parts.push(`三方渠道 ${Number(points.toFixed(2))} 点`);
+  if (seconds) parts.push(`视频 ${Math.round(seconds)} 秒`);
+  if (calls) parts.push(`大模型 ${calls} 次`);
+  return parts.length ? `本项目已用 ${parts.join(" · ")}` : "";
+}
+function renderUsagePill(stage) {
+  const pill = $("#usagePill");
+  if (!pill) return;
+  const text = P && ["content", "replicate"].includes(stage) ? usageSummary() : "";
+  pill.hidden = !text;
+  pill.textContent = text;
+  pill.title = text ? "按各渠道返回的用量统计，单价以你的渠道账户为准" : "";
+}
+function renderRepHead() {
+  const box = $("#repHead");
+  if (!box || !P) return;
+  const cur = currentRep(), idx = REP_STEPS.findIndex(([id]) => id === cur);
+  const next = REP_STEPS[idx + 1];
+  updateHtml(box, `<nav class="rep-steps" aria-label="复刻步骤">${REP_STEPS.map(([id, label], i) => {
+      const done = repDone(id), locked = repLocked(id), on = id === cur;
+      return `<button type="button" class="rep-step ${on ? "is-current" : done ? "is-done" : locked ? "is-locked" : ""}" data-rep-go="${id}" ${locked ? 'aria-disabled="true" title="先完成前一步"' : ""}>
+        <span class="num">${done && !on ? "✓" : i + 1}</span>${label}</button>${i < REP_STEPS.length - 1 ? '<span class="rep-line" aria-hidden="true"></span>' : ""}`;
+    }).join("")}</nav>
+    <div class="rep-head-side"><span class="paid-legend"><span class="paid-dot" aria-hidden="true"></span>带红点的按钮会花钱</span>
+      ${next && repDone(cur) && !repLocked(next[0]) ? `<button type="button" class="small" data-rep-go="${next[0]}">下一步：${next[1]} ${ICON_ARROW}</button>` : ""}</div>`);
+}
+function renderRepAssets() {
+  const box = $("#repAssets");
+  if (!box || !P) return;
+  const list = (P.assets || []).filter((a) => (a.roles || []).some((r) => ROLE_NAME[r]));
+  updateHtml(box, `<span class="rep-assets-title">这个项目的素材</span>${list.map((a) => {
+      const role = ROLE_NAME[(a.roles || []).find((r) => ROLE_NAME[r])];
+      const pic = a.type === "audio" || role === "声线"
+        ? '<span class="asset-wave" aria-hidden="true"><svg width="13" height="13" viewBox="0 0 14 14" fill="none"><path d="M7 2.4v9.2M4.2 4.6v4.8M9.8 4.6v4.8M1.8 6.2v1.6M12.2 6.2v1.6" stroke="#5c6560" stroke-width="1.3" stroke-linecap="round"></path></svg></span>'
+        : `<img src="${fileUrl(a.file)}" alt="" loading="lazy">`;
+      return `<span class="asset-chip">${pic}${esc(role)} · ${esc(a.label || "未命名")}</span>`;
+    }).join("") || '<span class="hint">还没有素材：放几张你的人物照片、商品照片进来</span>'}
+    <button type="button" class="asset-add" data-pick-asset>＋ 加照片</button>
+    <button type="button" class="asset-add" data-pick-audio>＋ 加声线</button>
+    <button type="button" class="asset-add" data-library-project>从素材库选</button>
+    <span class="rep-assets-note">素材只存在本机，可以在素材库里复用到别的项目</span>`);
+}
+function markPaidButtons() {
+  $$("#workspace button, #fissionPanel button").forEach((b) => {
+    const t = b.textContent || "";
+    b.classList.toggle("paid", PAID_RE.test(t) && !/免费|取消|不用/.test(t));
+  });
+}
+function renderReplicate(stage) {
+  if (stage !== "replicate") { delete $("#workspace").dataset.sub; return; }
+  const sub = currentRep();
+  $("#workspace").dataset.sub = sub;
+  renderRepHead();
+  renderRepAssets();
+  // 「选角换品」完成后旧逻辑会把它折叠成一行摘要；在新流程里它就是当前这一屏，始终展开
+  if (sub === "cast") $("#step-3")?.classList.remove("is-collapsed");
 }
 
 // ---------- 首页 ----------
@@ -498,6 +584,9 @@ function renderFlow() {
   renderUploadNext();
   renderFreeStage();
   renderContentStage();
+  renderReplicate(stage);
+  renderUsagePill(stage);
+  markPaidButtons();
 }
 
 async function submitFreeAnalyze() {
@@ -542,6 +631,10 @@ document.addEventListener("click", async (e) => {
     return;
   }
   if (e.target.closest("[data-pick-source]")) { $("#sourceInput")?.click(); return; }
+  if (e.target.closest("[data-pick-asset]")) { $("#assetInput")?.click(); return; }
+  if (e.target.closest("[data-pick-audio]")) { $("#audioInput")?.click(); return; }
+  const rep = e.target.closest("[data-rep-go]");
+  if (rep && P) { if (rep.getAttribute("aria-disabled") !== "true") { repChoice.set(P.id, rep.dataset.repGo); renderFlow(); window.scrollTo({ top: 0 }); } return; }
   const tab = e.target.closest("[data-key-tab]");
   if (tab && P) { const st = keyTabState.get(P.id) || { kind: "openai" }; keyTabState.set(P.id, { ...st, tab: tab.dataset.keyTab, error: "" }); renderContentStage(); return; }
   if (e.target.closest("[data-key-save]")) { if (!(keyTabState.get(P?.id) || {}).busy) saveKeyAndStart(); return; }

@@ -61,7 +61,7 @@ async function main() {
     assert.match(await wizard.innerText(), /预览前还差 3 步/);
     assert.equal(await wizard.getByText('下一步', { exact: true }).count(), 1);
     assert.equal(await wizard.locator('details[open]').count(), 0);
-    assert.match(await page.locator('[data-preview-reason="seg-01"]').innerText(), /还差 3 步：第 02 步 拆解/);
+    assert.match(await page.locator('[data-preview-reason="seg-01"]').innerText(), /还差 3 步：「内容拆解」 拆解/);
     assert.equal(await page.locator('#legacyProjectBanner').isVisible(), true);
     for (const width of [900, 1280, 625]) {
       await page.setViewportSize({ width, height: width === 625 ? 384 : 800 });

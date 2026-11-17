@@ -92,7 +92,7 @@ class SegmentPlanTests(SegmentFixture, unittest.TestCase):
         for fragment in ('生成时长', '4–15 秒', '最短 4 秒', '最长 15 秒', '整数秒'):
             with self.subTest(limit=fragment):
                 self.assertIn(fragment,text)
-        context=json.loads(text.split('\n每格信息：',1)[1].split('\n第 03 步',1)[0])
+        context=json.loads(text.split('\n每格信息：',1)[1].split('\n「选角换品」',1)[0])
         self.assertEqual([(row['id'],row['start'],row['end']) for row in context],
                          [(cell['id'],cell['start'],cell['end']) for cell in data['storyboard']['cells']])
 
@@ -145,7 +145,7 @@ class SegmentPlanTests(SegmentFixture, unittest.TestCase):
             dict(start=8.2,end=12.3,action='戴表求助。',characters=['C1','C2']),
         ]
         messages=segment_plan.messages(data,self.d)
-        context=json.loads(messages[1]['content'][0]['text'].split('\n每格信息：',1)[1].split('\n第 03 步',1)[0])
+        context=json.loads(messages[1]['content'][0]['text'].split('\n每格信息：',1)[1].split('\n「选角换品」',1)[0])
         self.assertEqual(len(context),len(cells))
         for cell,row in zip(cells,context):
             with self.subTest(cell=cell['id']):

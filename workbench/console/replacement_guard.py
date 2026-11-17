@@ -9,7 +9,7 @@ from pathlib import Path
 
 from . import scene_edits, scene_plan, store
 
-NO_IMAGES = "这一段还没选参考图：请先在第 03 步设置替换，或在本段点选参考图（先点人物）"
+NO_IMAGES = "这一段还没选参考图：请先在「选角换品」设置替换，或在本段点选参考图（先点人物）"
 STALE_SCRIPT = "替换设定在生成脚本之后改过，请重新生成新脚本"
 NEED_CAMERA = "视频参考模式下换人，需要先生成主镜头图：新人物在原片机位里的一帧完整画面"
 MUTE_REASON = "原声会把旧人物的声音带进来，Seedance 会按新人物生成声音。"
@@ -531,9 +531,9 @@ def caption_masks(data: dict, task: dict, *, frame_at: float | None = None) -> t
 ISSUE_INFO = {
     "invalid_camera_image": ("05", "图1 指向一张已删除或过期的主镜头图", "换成本场景当前的主镜头图并保存脚本。"),
     "analysis_no_caption_bbox": ("02", "这次拆解没有记录字幕位置", "点‘用所选模型重新拆解’；完成后继续后面的步骤。"),
-    "person_keep_with_image": ("03", "人物处理为保持，但本段选了新人物图", "把对应人物的‘处理’改为‘替换’，选择人物图并保存；不换人则在第 04 步（对照和修改）里这一段的新分镜中去掉该图。"),
+    "person_keep_with_image": ("03", "人物处理为保持，但本段选了新人物图", "把对应人物的‘处理’改为‘替换’，选择人物图并保存；不换人则在「对照修改」里这一段的新分镜中去掉该图。"),
     "person_image_mismatch": ("03", "本段人物图与替换设定不一致", "在对应人物行选择正确的人物图或主镜头图，保存替换设定。"),
-    "product_mismatch": ("03", "商品处理或商品图与本段不一致", "把商品‘处理’设为‘替换’并选择本段商品图，保存；不换商品则在第 04 步（对照和修改）里这一段的新分镜中去掉该图。"),
+    "product_mismatch": ("03", "商品处理或商品图与本段不一致", "把商品‘处理’设为‘替换’并选择本段商品图，保存；不换商品则在「对照修改」里这一段的新分镜中去掉该图。"),
     "camera_image_stale": ("03", "主镜头图的替换依据已变化", "保存当前人物和商品设定，点对应人物的‘生成预览’，确认生图（付费）后会自动在用；已有合适版本可点“改用这张”。"),
     "missing_camera_image": ("03", "换人前还需要主镜头图", "保存替换设定，点对应人物的‘生成预览’，确认生图（付费）完成后会自动在用，分段图1会跟随更新。"),
     "script_stale": ("04", "新脚本需要按当前替换设定重新生成", "重新生成新脚本即可（会自动按新规则写），不用手动删改。"),
@@ -542,10 +542,10 @@ ISSUE_INFO = {
     "motion_additions": ("04", "表演说明里有 {n} 处和原片时机不一致", "可以改这句，也可以不用改，继续生成。"),
     "appearance_conflict": ("04", "动作描述里有 {n} 处原片外观冲突", "重新生成新脚本即可（会自动按新规则写），不用手动删改。"),
     "reference_mapping": ("04", "脚本里的参考图编号需要更新", "核对图号与对应素材后保存脚本，或重新生成新脚本。"),
-    "missing_dialogue": ("04", "口播段落缺少台词", "在第 04 步（对照和修改）的“提示词”里补充本段台词并保存，或重新生成新脚本。"),
+    "missing_dialogue": ("04", "口播段落缺少台词", "在「对照修改」的“提示词”里补充本段台词并保存，或重新生成新脚本。"),
     "no_images": ("05", "这一段还没选参考图", "在本段点选参考图，先点人物或主镜头图。"),
     "invalid_image": ("05", "本段参考图不存在或不是图片", "取消失效参考图，重新点选素材库中的图片。"),
-    "product_missing_image": ("05", "本段缺少替换商品参考图", "选入第 03 步的商品图，或包含当前商品的主镜头图。"),
+    "product_missing_image": ("05", "本段缺少替换商品参考图", "选入「选角换品」的商品图，或包含当前商品的主镜头图。"),
     "person_replace_missing_image": ("05", "本段缺少替换人物参考图", "选入对应替换人物的主镜头图或人物图。"),
     "image1_not_person": ("05", "口播段落的图1必须是出镜人物", "把人物或主镜头图放到图1，再保存脚本。"),
     "video_reference_required": ("05", "动作或运镜复刻需要原片片段", "把本段‘参考方式’改为‘原片片段 + 图’。"),
@@ -651,11 +651,11 @@ def check(data: dict, task: dict, directory: Path | None = None, *, compare_moti
                 aid in ({c.get("asset_id")} | task_cameras(data, c.get("source_id"), task)) or
                 (by_scene and scene_plan.camera_valid(data, aid, task_scene(data, task), directory)) or
                 (a.get("camera_character") == c.get("source_id")) for c in people):
-            block("person_keep_with_image" if not people else "person_image_mismatch", "第 03 步人物处理是‘保持’，但这一段用了新人物图。要换人请把处理改成‘替换’并重新生成新脚本；不换人请去掉这张图。"
-                          if not people else f"人物图 {a.get('label', aid)} 不属于第 03 步的任何‘替换’人物，请选择该人物的人物图或主镜头图，并重新生成新脚本。",
+            block("person_keep_with_image" if not people else "person_image_mismatch", "「选角换品」人物处理是‘保持’，但这一段用了新人物图。要换人请把处理改成‘替换’并重新生成新脚本；不换人请去掉这张图。"
+                          if not people else f"人物图 {a.get('label', aid)} 不属于「选角换品」的任何‘替换’人物，请选择该人物的人物图或主镜头图，并重新生成新脚本。",
                           asset_id=aid, character_id=matching_character)
         if ("product_truth" in roles or ("target_state" in roles and aid == prod.get("asset_id"))) and (prod.get("action") != "replace" or aid != prod.get("asset_id")):
-            block("product_mismatch", "第 03 步商品处理是‘保持’或所选商品图与这一段不一致。要换商品请把处理改成‘替换’并选择这张图、重新生成新脚本；不换商品请去掉这张图。")
+            block("product_mismatch", "「选角换品」商品处理是‘保持’或所选商品图与这一段不一致。要换商品请把处理改成‘替换’并选择这张图、重新生成新脚本；不换商品请去掉这张图。")
         if a.get("camera_character") and a.get("camera_binding") != camera_binding(data, a["camera_character"], directory, scene_id=None if a.get("camera_binding_legacy") else a.get("camera_scene")):
             message = "主镜头图的替换依据已变化，请按当前人物和商品重新生成主镜头图，再重新生成新脚本。"
             errors.append(message)
@@ -668,7 +668,7 @@ def check(data: dict, task: dict, directory: Path | None = None, *, compare_moti
             block("camera_image_stale", message)
             issues[-1].update(asset_id=aid, scene_id=a.get("scene_camera_scene") or a.get("camera_scene"))
     if prod.get("action") == "replace" and product_present(data, task) and prod.get("asset_id") not in ids and not product_camera(data, task, directory):
-        block("product_missing_image", "这一段缺少替换商品的参考图，请选入第 03 步的商品图，或先生成包含当前商品的主镜头图。")
+        block("product_missing_image", "这一段缺少替换商品的参考图，请选入「选角换品」的商品图，或先生成包含当前商品的主镜头图。")
     if task.get("kind") in {"speaker", "motion", "camera"}:
         for c in relevant:
             if not set(ids) & {c.get("asset_id"), cams.get(c.get("source_id"))}:
@@ -706,7 +706,7 @@ def check(data: dict, task: dict, directory: Path | None = None, *, compare_moti
                 title = f"{segment_ids[0]} 在场景 {required_sid}（{scene.get('name', '')}），还缺 {cid} 在这个场景的主镜头图"
                 errors.append(title)
                 issues.append({"code": "missing_camera_image", "step": "03", "title": title,
-                    "fix": f"在第 03 步 {cid} 的‘{required_sid} {scene.get('name', '')}’卡片上点‘生成预览’，再点‘确认生图（付费）’，生成后会自动用于这个场景的分段",
+                    "fix": f"在「选角换品」 {cid} 的‘{required_sid} {scene.get('name', '')}’卡片上点‘生成预览’，再点‘确认生图（付费）’，生成后会自动用于这个场景的分段",
                     "details": [title] + segment_ids, "segment_ids": segment_ids, "character_id": cid,
                     "scene_id": required_sid, "scene_name": scene.get("name", "")})
         expected_cameras = {cams.get(c["source_id"]) for c in relevant} - {None}
@@ -763,7 +763,7 @@ def check(data: dict, task: dict, directory: Path | None = None, *, compare_moti
     warnings = dialogue_mismatches(data, task)
     unknown = sum(row.get("speaker") == "unknown" for row in task.get("dialogue_lines") or [])
     if unknown:
-        warnings.append(f"有 {unknown} 句台词还没确定是谁说的，请在第 04 步（对照和修改）的“提示词”里确认")
+        warnings.append(f"有 {unknown} 句台词还没确定是谁说的，请在「对照修改」的“提示词”里确认")
     if len(overlaps) > 1 and all(image_for(c["source_id"], sid) in ids
                                  for sid in required_scenes for c in relevant):
         warnings.append(f"{task.get('id', '本段')} 横跨两个场景，已同时放入两个场景的主镜头图")
@@ -818,7 +818,7 @@ def check(data: dict, task: dict, directory: Path | None = None, *, compare_moti
         stale_first = bool(assets.get(ids[0], {}).get("camera_character") or assets.get(ids[0], {}).get("scene_camera_scene"))
         errors.append(title + ("；主镜头图的替换依据已变化" if stale_first else ""))
         issues.append({"code": "camera_image_stale" if stale_first else "invalid_camera_image", "step": "05" if expected else "03", "title": title,
-                       "fix": f"换成 {sid} 当前的主镜头图" if expected else "到第 03 步重新生成本场景主镜头图",
+                       "fix": f"换成 {sid} 当前的主镜头图" if expected else "到「选角换品」重新生成本场景主镜头图",
                        "details": list(dict.fromkeys([title, errors[-1]] + details)), "asset_id": ids[0], "expected_asset_id": expected,
                        "character_id": cid, "scene_id": sid, "reference_index": 1,
                        "segment_ids": [task.get("id")]})

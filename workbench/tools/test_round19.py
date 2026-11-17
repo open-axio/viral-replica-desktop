@@ -97,7 +97,7 @@ class Round19Tests(unittest.TestCase):
         unknown = copy.deepcopy(task); unknown['dialogue_lines'][0].update(speaker='unknown',onScreen=None)
         self.assertNotIn('The visible person speaks every line.',bridge.compose_prompt(self.data,unknown,self.directory))
         self.assertIn('UNKNOWN (speaker not established',bridge.compose_prompt(self.data,unknown,self.directory))
-        self.assertIn('有 1 句台词还没确定是谁说的，请在第 04 步（对照和修改）的“提示词”里确认',guard.check(self.data,unknown,self.directory)['warnings'])
+        self.assertIn('有 1 句台词还没确定是谁说的，请在「对照修改」的“提示词”里确认',guard.check(self.data,unknown,self.directory)['warnings'])
 
     def test_full_preview_preserves_attribution_and_merged_warning(self):
         import importlib.util

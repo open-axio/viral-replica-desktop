@@ -73,7 +73,7 @@ const tests=[
     failed:{id:'failed',for_task:'camera:C1:S1',state:'failed'}
    }});
    const rows=t.$$('.fix-step');assert.equal(rows.length,1);
-   assert.equal(rows[0].querySelector('.fix-heading').textContent,'1. 现在做 · 第 03 步：生成 S1 的主镜头图');
+   assert.equal(rows[0].querySelector('.fix-heading').textContent,'1. 现在做 · 「选角换品」：生成 S1 的主镜头图');
    assert.equal(rows[0].querySelector('.hint').textContent,'为什么：这一段要换人，这个场景还没有主镜头图');
   }
  }],
@@ -121,14 +121,14 @@ const tests=[
   await t.flush();const before=t.requests.filter(r=>r.url.endsWith('/replacement-check')).length;
   t.state.result=check([]);await t.run('saveReplacements()');await t.flush();
   assert.equal(t.requests.filter(r=>r.url.endsWith('/replacement-check')).length,before+1,'successful save must invalidate same-input cached checks');
-  assert.doesNotMatch(t.guide().textContent,/把第 03 步的商品处理/);
+  assert.doesNotMatch(t.guide().textContent,/把「选角换品」的商品处理/);
   assert.match(t.$('#toast').textContent,/已完成：/);
  }],
  ...[['情形 A',A],['情形 B',B]].map(([name,data])=>[name,async()=>{
   const t=setup(data),rows=t.$$('.fix-step');
   assert.equal(rows.length,2);assert.match(t.guide().textContent,/seg-01 预览前还要做 2 件事/);
-  assert.match(rows[0].textContent,/1\. 现在做.*第 03 步.*重新生成 S1 的主镜头图/s);
-  assert.match(rows[1].textContent,/2\. 之后做.*第 04 步.*重新生成新脚本/s);
+  assert.match(rows[0].textContent,/1\. 现在做.*「选角换品」.*重新生成 S1 的主镜头图/s);
+  assert.match(rows[1].textContent,/2\. 之后做.*「对照修改」.*重新生成新脚本/s);
   assert.equal(rows[0].querySelector('button').dataset.todoTarget,'camera');
   assert.equal(rows[0].querySelector('button').dataset.fixCharacter,'C1');
   assert.equal(rows[0].querySelector('button').dataset.fixScene,'S1');

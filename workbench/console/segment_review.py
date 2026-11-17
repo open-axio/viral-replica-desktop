@@ -33,14 +33,14 @@ def _now():
 def _run(data, sid, rev):
     run = next((r for r in data.get('runs', {}).get(sid, []) if r.get('rev') == rev), None)
     if run is None:
-        raise ValueError('找不到这版结果，请刷新第 04 步（对照和修改）的“视频”。')
+        raise ValueError('找不到这版结果，请刷新「对照修改」的“视频”。')
     return run
 
 
 def _file(directory, file):
     path = (directory / str(file or '')).resolve()
     if not path.is_relative_to(directory.resolve()) or not path.is_file():
-        raise ValueError('本版验收素材缺失，请在第 04 步（对照和修改）的“视频”检查结果和参考素材。')
+        raise ValueError('本版验收素材缺失，请在「对照修改」的“视频”检查结果和参考素材。')
     return path
 
 
@@ -107,7 +107,7 @@ def _inputs(data, sid, run, directory, folder):
     if (not run.get('director_sig') or director.segment_sig(segment) != run['director_sig']
             or segment.get('inputs_sig') != director.segment_inputs_sig(data, directory, sid)
             or not run.get('references')):
-        raise ValueError('旧版本缺少对应的验收素材；回第 04 步（对照和修改）的“视频”查看本版视频，或按当前方案生成新版后验收。')
+        raise ValueError('旧版本缺少对应的验收素材；回「对照修改」的“视频”查看本版视频，或按当前方案生成新版后验收。')
     return freeze_inputs(data, segment, run['references'], directory, folder)
 
 
@@ -133,7 +133,7 @@ def messages(context, directory, clip, folder):
     info = media.probe(clip)
     duration = info.get('duration')
     if isinstance(duration, bool) or not isinstance(duration, (int, float)) or not math.isfinite(duration) or duration <= 0:
-        raise ValueError('结果视频时长无法读取，请在第 04 步（对照和修改）的“视频”检查视频后重试。')
+        raise ValueError('结果视频时长无法读取，请在「对照修改」的“视频”检查视频后重试。')
     segment = context['segment']
     parts = []
     visual_duration = min(duration, info.get('video_duration') or duration)
@@ -143,11 +143,11 @@ def messages(context, directory, clip, folder):
     parts = []
     refs = context.get('references') or []
     if not refs or not context.get('source_cells'):
-        raise ValueError('本版提交图片或原片单格素材缺失，请在第 04 步（对照和修改）的“视频”检查参考素材。')
+        raise ValueError('本版提交图片或原片单格素材缺失，请在「对照修改」的“视频”检查参考素材。')
     for ref in refs + context['source_cells']:
         path = _file(directory, ref.get('file'))
         if ref.get('sha256') != store.sha256_file(path):
-            raise ValueError('本版参考素材已改变，请在第 04 步（对照和修改）的“视频”检查本版视频，或重新生成新版后验收。')
+            raise ValueError('本版参考素材已改变，请在「对照修改」的“视频”检查本版视频，或重新生成新版后验收。')
         key = ref.get('key')
         label = ((str(ref.get('tag') or '') + ' ' + str(ref.get('description') or ref.get('label') or key)).strip()
                  if key else f'原片单格 {ref["id"]}')
@@ -271,7 +271,7 @@ def start(pid, sid, rev, *, force=False):
         run = copy.deepcopy(_run(data, sid, rev))
         if run.get('kind') != 'director' or run.get('state') != 'completed' or not run.get('result'):
             if force:
-                raise ValueError('这一版还没有生成完成，请在第 04 步（对照和修改）的“视频”等待结果。')
+                raise ValueError('这一版还没有生成完成，请在「对照修改」的“视频”等待结果。')
             return data
         key = f'review:{sid}:{rev}'
         existing = run.get('review') or {}

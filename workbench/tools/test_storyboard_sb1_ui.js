@@ -60,7 +60,7 @@ async function main(){
  await t.click(t.$('[data-cast-identify="C1"]'));await t.click(t.$('[data-cast-apply="C1"][data-mode="replace"]'));assert.doesNotMatch(t.$('[data-cast-description="C1"]').value,/我写的/);
  await t.click(t.$('[data-cast-add]'));assert.ok(t.$('[data-cast-card="N1"]'));const name=t.$('[data-cast-name="N1"]');name.value='医生';await t.event('input',name);
  const photo=t.$('[data-cast-asset="N1"]');photo.value='dad';await t.event('change',photo);assert.equal(t.run('readReplacements().characters.at(-1).action'),'add');
- await t.click(t.$('[data-story-check]'));assert.equal(t.$$('[data-story-answer]').length,6);assert.match(t.$('#replacementForm').textContent,/还有 2 条没确认，在第 04 步写提示词时会按“不确定”处理/);
+ await t.click(t.$('[data-story-check]'));assert.equal(t.$$('[data-story-answer]').length,6);assert.match(t.$('#replacementForm').textContent,/还有 2 条没确认，在「对照修改」写提示词时会按“不确定”处理/);
  const no=t.$('[data-story-answer="k1"][value="no"]');no.checked=true;await t.event('change',no);const correction=t.$('[data-story-note="k1"]');correction.value='改成拨电话';await t.event('input',correction);
  assert.equal(t.run('readReplacements().product.story_checks[0].note'),'改成拨电话');
  const prod=t.$('[data-cast-description="product"]');prod.value='换成新表';await t.event('input',prod);assert.match(t.$('#replacementForm').textContent,/商品改过，建议检查/);

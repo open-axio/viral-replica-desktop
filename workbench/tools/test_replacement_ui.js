@@ -7,7 +7,7 @@ const live = { dataset: {}, innerHTML: "" };
 const context = vm.createContext({
   STATUS: { providers: {} },
   P: { id: "mock", assets: [], runs: {}, replacement_checks: { "seg-01": {
-    errors: ["第 03 步人物处理是‘保持’，但这一段用了新人物图。"], force_mute: true,
+    errors: ["「选角换品」人物处理是‘保持’，但这一段用了新人物图。"], force_mute: true,
     mute_reason: "原声会把旧人物的声音带进来，Seedance 会按新人物生成声音。" } } },
   $: () => live, esc: (s) => String(s || "").replaceAll("<", "&lt;"),
   fmt: String, fileUrl: String, assetOptions: () => "", KIND_LABELS: { speaker: "口播" },
@@ -21,14 +21,14 @@ vm.runInContext(source.slice(source.indexOf('function joinDisplayText('), source
 context.t = { id: "seg-01", kind: "speaker", mode: "video", mute_clip: false,
   replacement_safety: [{ field: "action", before: "blonde hair", after: "the person from @image1" }] };
 const html = vm.runInContext("taskCard(t, 0)", context);
-assert.match(html, /第 03 步人物处理是/);
+assert.match(html, /「选角换品」人物处理是/);
 assert.match(html, /映射安全改写：1 处/);
 assert.match(html, /blonde hair/);
 assert.match(html, /the person from @image1/);
 assert.doesNotMatch(html, /data-m="blank_captions"[^>]*checked/);
 assert.match(html, /data-m="mute_clip"[^>]*checked[^>]*disabled/);
 assert.match(html, /Seedance 会按新人物生成声音/);
-assert.ok(html.indexOf("第 03 步人物处理是") < html.indexOf('data-preview='));
+assert.ok(html.indexOf("「选角换品」人物处理是") < html.indexOf('data-preview='));
 context.t.blank_captions = false;
 assert.doesNotMatch(vm.runInContext("taskCard(t, 0)", context), /字幕可能被复制进成片/);
 context.t.blank_captions = true; // Existing residue/mask assertions exercise explicit opt-in.

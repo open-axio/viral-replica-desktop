@@ -26,8 +26,8 @@ class FinalV2Tests(unittest.TestCase):
             director={'format_version': 3, 'segments': [{'id': 'd01'}, {'id': 'd02'}]},
             runs={'d01': [{'rev': 'r1', 'state': 'completed', 'result': 'some.mp4'}]}))
         self.assertEqual(final_preview.view(data, self.directory)['warnings'], [
-            '第 1 段还没有选定的结果，回第 04 步（对照和修改），选中这一段，在“视频”里生成或选定一版。',
-            '第 2 段还没有选定的结果，回第 04 步（对照和修改），选中这一段，在“视频”里生成或选定一版。'])
+            '第 1 段还没有选定的结果，回「对照修改」，选中这一段，在“视频”里生成或选定一版。',
+            '第 2 段还没有选定的结果，回「对照修改」，选中这一段，在“视频”里生成或选定一版。'])
         with self.assertRaisesRegex(ValueError, '第 1 段还没有选定的结果'):
             final_preview.generate(self.pid)
 

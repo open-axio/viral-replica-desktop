@@ -59,6 +59,21 @@ class DecideTests(unittest.TestCase):
         self.assertNotIn("细分", line)
 
 
+class ModelConfirmTests(unittest.TestCase):
+    def test_only_unsure_shots_are_filled(self):
+        r = {"shots": [{**SHOTS[0], "class": "unsure", "class_zh": "待确认"}, {**SHOTS[1], "class": "graphic", "class_zh": "图文动画"},
+                       {**SHOTS[2], "class": "unsure", "class_zh": "待确认"}]}
+        n = forensics.apply_model_methods(r, [{"shot": 1, "method": "live", "why": "真人在店里说话，有自然的手持晃动"},
+                                              {"shot": 2, "method": "ai", "why": "x"}, {"shot": 3, "method": "maybe"}, "bad"])
+        self.assertEqual(n, 1)
+        self.assertEqual(r["shots"][0]["class"], "live")
+        self.assertEqual(r["shots"][0]["confirmed_by"], "model")
+        self.assertEqual(r["shots"][1]["class"], "graphic", "已有结论的镜头不改")
+        self.assertEqual(r["shots"][2]["class"], "unsure", "看不出来就保持待确认")
+        self.assertEqual(r["counts"]["live"], 1)
+        self.assertEqual(forensics.apply_model_methods(r, None), 0)
+
+
 class SwitchTests(unittest.TestCase):
     def test_auto_follows_duration_limit(self):
         self.assertTrue(forensics.decide_run({}, 119)[0])

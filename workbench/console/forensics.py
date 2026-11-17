@@ -62,7 +62,9 @@ class AlignmentError(RuntimeError):
 
 
 PIP_PACKAGE = "opencv-python-headless"
-PIP_MIRROR = "https://pypi.tuna.tsinghua.edu.cn/simple"
+#: 官方源不通时依次试的国内镜像（清华镜像对部分网络会返回 403，所以不能只靠一个）
+PIP_MIRRORS = ["https://pypi.tuna.tsinghua.edu.cn/simple", "https://mirrors.aliyun.com/pypi/simple/",
+               "https://mirrors.cloud.tencent.com/pypi/simple", "https://repo.huaweicloud.com/repository/pypi/simple"]
 
 
 def missing_dependency() -> str | None:
@@ -78,7 +80,7 @@ def missing_dependency() -> str | None:
 def install_dependency() -> str | None:
     """老用户的运行环境是在加入这一步之前装的，没有 OpenCV：用运行环境自带的 uv 补装一次。
 
-    先走官方源，失败再走清华镜像（和 install.sh 一致）。成功返回 None，失败返回给用户看的原因。"""
+    先走官方源，失败再依次走国内镜像（和 install.sh 一致）。成功返回 None，失败返回给用户看的原因。"""
     import importlib
     import subprocess
     import sys
@@ -88,7 +90,7 @@ def install_dependency() -> str | None:
     if not uv.is_file():
         return "找不到运行环境里的安装工具，没法自动补装"
     last = ""
-    for extra in ([], ["--index-url", PIP_MIRROR]):
+    for extra in ([], *(["--index-url", m] for m in PIP_MIRRORS)):
         try:
             done = subprocess.run([str(uv), "pip", "install", "--python", sys.executable, PIP_PACKAGE, *extra],
                                   capture_output=True, text=True, timeout=600)
@@ -241,6 +243,29 @@ def short_tags(cls: str, feats: dict, facts: dict) -> list[str]:
     return out[:3]
 
 
+def apply_model_methods(result: dict | None, methods) -> int:
+    """内容拆解时大模型看图给出的判断，回填进「待确认」的镜头。已有结论的镜头不改。返回改了几镜。"""
+    if not result or not isinstance(methods, list):
+        return 0
+    shots, n = by_index(result), 0
+    for m in methods:
+        if not isinstance(m, dict):
+            continue
+        try:
+            idx = int(m.get("shot"))
+        except (TypeError, ValueError):
+            continue
+        cls, r = str(m.get("method") or "").strip().lower(), shots.get(idx)
+        if r is None or r.get("class") != "unsure" or cls not in ("live", "ai", "graphic"):
+            continue
+        r.update({"class": cls, "class_zh": CLASSES[cls], "confirmed_by": "model",
+                  "model_why": _short(str(m.get("why") or ""), 80)})
+        n += 1
+    if n:
+        result["counts"] = {c: sum(1 for r in result["shots"] if r["class"] == c) for c in CLASSES}
+    return n
+
+
 def check_alignment(shots: list[dict], result: list[dict]) -> None:
     """取证结果必须和 03 的镜头表一一对应：条数相同，第 i 条的镜号和时间区间等于第 i 个镜头。"""
     if len(result) != len(shots):
@@ -280,7 +305,7 @@ def report_md(result: dict) -> str:
         "准确率尚未用已知来源的片子系统测过，供复刻时参考。", "",
         "| 镜号 | 时间 | 判定 | 细分 | 把握 | 依据 |", "|---|---|---|---|---|---|",
     ]
-    rows = [f"| {r['index']} | {r['start']:.2f}–{r['end']:.2f}s | {r['class_zh']} | {r['label_zh']} | "
+    rows = [f"| {r['index']} | {r['start']:.2f}–{r['end']:.2f}s | {r['class_zh']}{'（看图确认）' if r.get('confirmed_by') == 'model' else ''} | {r['label_zh']} | "
             f"{r['confidence']:.0%} | {'<br>'.join(e.replace('|', '/') for e in r.get('evidence') or [])} |"
             for r in result.get("shots") or []]
     return "\n".join(head + rows) + "\n"

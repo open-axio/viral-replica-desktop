@@ -7,7 +7,7 @@ from PIL import Image
 
 from . import segment_plan, store
 
-STALE_WARNING = '第 04 步（对照和修改）的分段方案改过这一段，请重新生成这一段的新分镜。'
+STALE_WARNING = '「对照修改」的分段方案改过这一段，请重新生成这一段的新分镜。'
 
 
 def layout(count):
@@ -37,7 +37,7 @@ def sheets(data):
 def sheet_cells(data, sid):
     segment=segment_plan.get_segment(data,sid);byid={c['id']:c for c in (data.get('storyboard') or {}).get('cells',[])}
     source=state_for(data,sid).get('source')
-    if not source or any(cid not in byid for cid in segment['cells']):raise ValueError('先在第 04 步（对照和修改）生成分段方案')
+    if not source or any(cid not in byid for cid in segment['cells']):raise ValueError('先在「对照修改」生成分段方案')
     return source,[byid[cid] for cid in segment['cells']]
 
 
@@ -117,7 +117,7 @@ def require_idle(data):
     for record in (data.get('images') or {}).values():
         context=record.get('storyboard_context') or {}
         if context.get('segment_id') and record.get('state') in ('running','query_pending','submitting'):
-            raise ValueError('第 04 步（对照和修改）还有新分镜正在生成，请等生成完成后再重新生成分段方案。')
+            raise ValueError('「对照修改」还有新分镜正在生成，请等生成完成后再重新生成分段方案。')
 
 
 def build_sources(data, directory):

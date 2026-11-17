@@ -1140,3 +1140,58 @@ body.at-home .close-project, body.at-home .more-menu h3:nth-of-type(2), body.at-
 .asr-progress span { display: block; height: 100%; background: var(--accent); }
 .asr-action small { font-size: 11.5px; color: #5c6560; white-space: nowrap; }
 @media (max-width: 600px) { .asr-tiers { grid-template-columns: 1fr; } }
+
+/* ④ 复刻成片（设计稿 Replicate）：三个小步骤一次只显示一个 */
+#workspace[data-stage="replicate"] #workflow, #workspace[data-stage="replicate"] [data-step-summary] { display: none; }
+#workspace[data-sub="cast"] #step-4, #workspace[data-sub="cast"] #step-5,
+#workspace[data-sub="compare"] #step-3, #workspace[data-sub="compare"] #step-5,
+#workspace[data-sub="final"] #step-3, #workspace[data-sub="final"] #step-4 { display: none; }
+[data-stage-view="replicate"] .panel > header .no { display: none; }
+.rep-head { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-bottom: 12px; }
+.rep-steps { display: flex; align-items: center; gap: 2px; flex: 1 1 auto; flex-wrap: wrap; }
+.rep-step { display: flex; align-items: center; gap: 7px; padding: 8px 14px; border-radius: 999px; background: #fff; border: 1px solid var(--line); color: #5c6560; font-size: 13px; font-weight: 600; }
+.rep-step .num { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; border-radius: 50%; background: var(--chip); font-size: 11px; }
+.rep-step.is-current { background: var(--accent); border-color: var(--accent); color: #fff; }
+.rep-step.is-current .num { background: rgba(255,255,255,.26); }
+.rep-step.is-done { color: var(--accent); border-color: #cfe2d7; background: var(--accent-soft); }
+.rep-step.is-done .num { background: #fff; }
+.rep-step.is-locked { color: #a3aba6; cursor: not-allowed; }
+.rep-step:hover { filter: none; }
+.rep-line { width: 20px; height: 1px; background: #d7ded9; }
+.rep-head-side { display: flex; align-items: center; gap: 12px; }
+.paid-legend { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #5c6560; }
+.paid-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--pay); }
+.rep-assets { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 16px; padding: 11px 16px; background: #fff; border: 1px solid var(--line); border-radius: 12px; }
+.rep-assets-title { font-size: 12px; font-weight: 650; color: #5c6560; margin-right: 4px; }
+.asset-chip { display: flex; align-items: center; gap: 7px; padding: 4px 10px 4px 4px; border: 1px solid var(--line); border-radius: 999px; background: #f8faf9; font-size: 12px; max-width: 240px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.asset-chip img, .asset-wave { flex: 0 0 22px; width: 22px; height: 22px; border-radius: 50%; object-fit: cover; background: var(--chip); display: inline-flex; align-items: center; justify-content: center; }
+.asset-add { padding: 6px 12px; min-height: 32px; border: 1px dashed #b9c4bd; border-radius: 999px; background: #fff; color: var(--accent); font-size: 12px; font-weight: 600; }
+.asset-add:hover { filter: none; border-color: var(--accent); }
+.rep-assets-note { margin-left: auto; font-size: 11.5px; color: #5c6560; }
+/* 花钱的按钮：红点 */
+button.paid::before { content: ""; display: inline-block; width: 7px; height: 7px; margin-right: 7px; border-radius: 50%; background: var(--pay); vertical-align: 1px; }
+button.paid:not(.ghost):not(.danger):not(.big-cta):not(.next-cta) { background: var(--pay); }
+button.paid:not(.ghost):not(.danger)::before { background: rgba(255,255,255,.8); }
+.usage-pill { flex: 0 0 auto; display: flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; background: var(--warn-soft); color: #8e4024; font-size: 11.5px; font-weight: 600; white-space: nowrap; }
+.usage-pill::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--warn); }
+.usage-pill[hidden] { display: none; }
+#workspace[data-sub="cast"] #repAssets { display: none; }
+#step-2.content-results #framesStrip .docs, #step-2.content-results #framesStrip .docview { display: none; }
+.content-docs { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 12px; font-size: 12.5px; color: #1f4a39; }
+.doc-link { display: inline-flex; align-items: center; gap: 5px; padding: 5px 11px; border-radius: 999px; background: #fff; border: 1px solid #cfe2d7; color: var(--accent); font-weight: 600; text-decoration: none; }
+.unsure-note.confirmed { background: var(--accent-soft); color: #1f4a39; }
+
+/* ---- 顶栏：项目下拉留出箭头位置；图标按钮悬停提示；运行状态按钮 ---- */
+.topbar.v2 .project-switch select, dialog .field select { appearance: none; -webkit-appearance: none; padding-right: 34px;
+  background: #fff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M3 4.5l3 3 3-3' fill='none' stroke='%235c6560' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") no-repeat right 12px center; }
+.top-actions [data-tip] { position: relative; }
+.top-actions [data-tip]::after { content: attr(data-tip); position: absolute; top: calc(100% + 6px); left: 50%; transform: translate(-50%, -2px);
+  padding: 4px 8px; border-radius: 6px; background: #1f2622; color: #fff; font-size: 12px; line-height: 1.4; white-space: nowrap;
+  pointer-events: none; opacity: 0; transition: opacity .12s ease .25s, transform .12s ease .25s; z-index: 30; }
+.top-actions [data-tip]:hover::after, .top-actions [data-tip]:focus-visible::after { opacity: 1; transform: translate(-50%, 0); }
+.top-actions [data-tip]:last-child::after { left: auto; right: 0; transform: translateY(-2px); }
+.top-actions [data-tip]:last-child:hover::after, .top-actions [data-tip]:last-child:focus-visible::after { transform: none; }
+.top-actions #statusToggle[aria-expanded="true"]::after { display: none; }
+.topbar.v2 #statusToggle[aria-expanded="true"] { background: var(--chip); }
+#statusToggle .status-dot { display: none; position: absolute; top: 6px; right: 6px; width: 7px; height: 7px; border-radius: 50%; background: #d9534f; box-shadow: 0 0 0 2px #fff; }
+#statusToggle[data-problem="1"] .status-dot { display: block; }

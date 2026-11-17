@@ -28,7 +28,7 @@ async function main(){
  assert.match($('[data-speaker="0"]').textContent,/提问者.*画外/);
  assert.match($('[data-speaker-line="0"]').textContent,/画外男声/);
  assert.equal($('[data-speaker="1"]').value,'unknown');
- assert.match($('#scriptView').textContent,/有 1 句台词还没确定是谁说的，请在第 04 步确认/);
+ assert.match($('#scriptView').textContent,/有 1 句台词还没确定是谁说的，请在「对照修改」确认/);
  assert.ok(!$('[data-preview]').hasAttribute('disabled'),'unknown speaker does not block preview');
  assert.equal($('#steps'),null,'single workflow navigation only');
  assert.equal($$('[data-flow-index]').length,5);

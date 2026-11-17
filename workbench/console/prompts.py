@@ -80,13 +80,36 @@ def forensics_text(forensic: dict | None, start: float | None = None, end: float
     return [FORENSICS_NOTE, *lines] if lines else []
 
 
+ORIGIN_NOTE = ("原视频在平台上的信息（用户从平台导入时页面上能看到的，仅供理解它为什么受欢迎、观众在意什么；"
+               "不要把配文当台词，镜头和台词以视频本身为准）：")
+
+
+def origin_text(origin: dict | None) -> list[str]:
+    if not origin:
+        return []
+    names = {"views": "播放", "likes": "点赞", "comments": "评论", "collects": "收藏", "shares": "分享", "coins": "投币"}
+    lines = [ORIGIN_NOTE, f"平台：{origin.get('platform_name') or ''}" + (f"；作者：{origin['author']}" if origin.get("author") else "")]
+    if origin.get("title"):
+        lines.append(f"标题：{origin['title']}")
+    if origin.get("desc"):
+        lines.append(f"配文：{origin['desc'][:600]}")
+    stats = "，".join(f"{names.get(k, k)} {v}" for k, v in (origin.get("stats") or {}).items() if v)
+    if stats:
+        lines.append(f"数据：{stats}")
+    comments = [c for c in origin.get("comments") or [] if c.get("text")][:12]
+    if comments:
+        lines.append("评论区（导入时可见的若干条）：" + "；".join(f"「{c['text'][:80]}」" for c in comments))
+    return lines if len(lines) > 2 or origin.get("desc") else []
+
+
 def overview_user_text(probe: dict, cuts: list[dict], transcript: dict | None, grids: list[dict],
-                       forensic: dict | None = None) -> str:
+                       forensic: dict | None = None, origin: dict | None = None) -> str:
     parts = [f"媒体：时长 {probe.get('duration')}s，{probe.get('width')}x{probe.get('height')}，{probe.get('fps')}fps，"
              f"音轨 {probe.get('audio_stream_count')} 条。",
              "机械切点候选（hypit boundaries 同算法，分数越高变化越大）：" +
              ("；".join(f"{c['at']:.2f}s({c['score']:.2f})" for c in cuts[:120]) or "无"),
              *forensics_text(forensic),
+             *origin_text(origin),
              f"逐词转录（{(transcript or {}).get('engine', '无')}）：", transcript_text(transcript, with_words=False)]
     if grids:
         parts.append(f"下面是 {len(grids)} 张帧网格，每张从左到右、从上到下阅读：")

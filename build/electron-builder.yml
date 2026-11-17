@@ -13,6 +13,9 @@ files:
   - datadir.js
   - setup.html
   - setup-preload.js
+  - browse.js
+  - browse.html
+  - browse-preload.js
   - package.json
 
 # 瘦包：只带工作台代码（约 8MB），runtime 与模型首次启动时装到用户数据目录

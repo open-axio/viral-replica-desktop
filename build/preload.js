@@ -9,6 +9,13 @@ contextBridge.exposeInMainWorld('__dlg', {
   alert: (message) => ipcRenderer.sendSync('dlg-alert', { message })
 });
 
+// 「找爆款」：打开内置浏览窗口；在那边点了「同款复刻」建好项目后通知页面打开它
+contextBridge.exposeInMainWorld('__browse', {
+  available: true,
+  open: (opts) => ipcRenderer.invoke('browse:open', opts),
+  onImported: (cb) => ipcRenderer.on('browse:imported', (_e, project) => cb(project)),
+});
+
 // contextIsolation 下 preload 的 window 与页面主世界隔离，需注入脚本到主世界覆盖原生方法。
 const patch = document.createElement('script');
 patch.textContent = `

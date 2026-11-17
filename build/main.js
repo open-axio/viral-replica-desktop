@@ -8,6 +8,7 @@ const path = require('path');
 const fs = require('fs');
 const net = require('net');
 const datadir = require('./datadir');
+const browse = require('./browse');
 
 // 默认端口。被别的程序（常见是旧版工作台 start.command 留下的服务、或上次强退后没收掉的
 // server.py）占着时，改用一个空闲端口，免得窗口连到别人的服务、自己的服务又起不来。
@@ -405,6 +406,8 @@ async function bootstrap() {
   }
 }
 
+browse.init({ port: () => port, mainWindow: () => mainWindow });
+browse.register();
 app.whenReady().then(bootstrap);
 
 function shutdown() {

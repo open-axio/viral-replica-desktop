@@ -41,7 +41,7 @@ async function main(){
   const html=fs.readFileSync(path.join(root,'web/index.html'),'utf8').replace(/<script[^>]*>[\s\S]*?<\/script>/g,'').replace(/<link[^>]*>/g,'').replace('<head>','<head><base href="http://v4.invalid/">');
   await page.setContent(html);await page.addStyleTag({path:path.join(root,'web/style.css')});
   await page.addScriptTag({content:fs.readFileSync(path.join(root,'web/app.js'),'utf8').replace(/boot\(\)\.catch\([^\n]+\);/,'')});
-  await page.evaluate(project=>{P=project;S=clone(P.script);STATUS={providers:{}};document.querySelector('#workspace').hidden=false;document.querySelector('#emptyState').hidden=true;api=async(method)=>{if(method!=='GET')throw Error('离线浏览器检查禁止真实变更');return clone(P);};renderAll();},project);
+  await page.evaluate(project=>{P=project;S=clone(P.script);STATUS={providers:{}};document.querySelector('#workspace').hidden=false;document.querySelector('#workspace').dataset.stage='replicate';document.querySelector('#emptyState').hidden=true;api=async(method)=>{if(method!=='GET')throw Error('离线浏览器检查禁止真实变更');return clone(P);};renderAll();},project);
   assert.equal(await page.locator('[data-flow-index]').count(),5);
   assert.equal(await page.locator('#breakdownDetails').evaluate(el=>el.open),false);
   assert.equal(await page.locator('[data-detail-key="source-storyboard"]').evaluate(el=>el.open),false);

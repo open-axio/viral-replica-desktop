@@ -455,7 +455,7 @@ def _run_analysis(pid: str, provider: str, srt_text: str | None = None, skip_asr
     _set_step(pid, "overview", status="running", tool=f"{label} · 外部计费")
     content: list[dict] = [{"type": "text", "text": prompts.overview_user_text(info, cuts, transcript,
                                                                                [] if send_video else overview_grids,
-                                                                               forensic)}]
+                                                                               forensic, data.get("origin"))}]
     used_video = False
     if send_video:
         proxy = media.make_proxy(src, adir / "proxy.mp4")
@@ -473,7 +473,7 @@ def _run_analysis(pid: str, provider: str, srt_text: str | None = None, skip_asr
             raise
         store.log(pid, f"整段视频输入失败（{exc}），自动改用帧网格", "warn")
         used_video = False
-        content = [{"type": "text", "text": prompts.overview_user_text(info, cuts, transcript, overview_grids, forensic)}]
+        content = [{"type": "text", "text": prompts.overview_user_text(info, cuts, transcript, overview_grids, forensic, data.get("origin"))}]
         content += _grid_parts(overview_grids)
         ov, meta = gateway.reason('analysis', [{"role": "system", "content": prompts.OVERVIEW_SYSTEM},
                                             {"role": "user", "content": content}], temperature=0.2, max_tokens=16000, json=True, project=pid, override=route)

@@ -107,9 +107,9 @@ function renderUploadNext() {
   const box = $("#uploadNext");
   if (!box || !P) return;
   const label = freeDone() ? "看免费拆解结果" : freeRunning() ? "看拆解进度" : "开始免费拆解";
-  updateHtml(box, P.source ? `<div class="upload-next"><p>视频已经放好了。${freeDone() ? "免费拆解也做完了。" : "下一步在你的电脑上免费拆解它。"}</p>
+  updateHtml(box, originCard(P.origin) + (P.source ? `<div class="upload-next"><p>视频已经放好了。${freeDone() ? "免费拆解也做完了。" : "下一步在你的电脑上免费拆解它。"}</p>
     <button type="button" class="ghost" data-pick-source>换一个视频</button>
-    <button type="button" data-stage-go="free">${label} ${ICON_ARROW}</button></div>` : "");
+    <button type="button" data-stage-go="free">${label} ${ICON_ARROW}</button></div>` : ""));
 }
 
 // ---------- ② 免费拆解 ----------
@@ -165,7 +165,7 @@ function renderFreeStart() {
     <video src="${fileUrl(P.source.file)}" controls preload="metadata"></video>
     <div class="free-start-body">
       <h1>免费拆解这条视频</h1>
-      <p>全部在你的电脑上跑：读视频信息、识别台词、切分镜头、认拍摄方式。<b>不花钱，不用填 Key。</b>纯 CPU 一般 1–3 分钟。</p>
+      <p>全部在你的电脑上跑：读视频信息、识别台词、切分镜头、认拍摄方式。<b>不花钱，不用填 Key。</b>${freeEta()}</p>
       <ol class="free-start-list">${FREE_STEPS.map(([, l], i) => `<li><span class="step-no">${i + 1}</span>${l}</li>`).join("")}</ol>
       <details class="free-advanced" data-detail-key="free-advanced"><summary>高级选项</summary>
         <label class="check"><input type="checkbox" id="freeSkipAsr"> 跳过识别台词（视频里没人说话）</label>
@@ -173,7 +173,12 @@ function renderFreeStart() {
       </details>
       <button type="button" class="big-cta" data-free-start>开始免费拆解 ${ICON_ARROW}</button>
     </div>
-  </section>`;
+  </section>${originCard(P.origin)}`;
+}
+function freeEta() {
+  const sec = Number(P.source?.probe?.duration) || 0;
+  if (sec > 120) return `这条视频有 ${Math.round(sec / 60)} 分钟，识别台词会久一些，大概要 ${Math.max(3, Math.round(sec / 60))}–${Math.max(6, Math.round(sec / 30))} 分钟，可以先去忙别的。`;
+  return "一分钟以内的视频，一般 1–3 分钟拆完。";
 }
 function renderFreeProgress() {
   const a = P.analysis || {}, jobErr = analyzeJobError(), failed = a.status === "failed" || !!jobErr;
@@ -526,17 +531,122 @@ function renderHome() {
   if (!box) return;
   const list = (projectList || []).filter((p) => !p.derived_from);
   const day = (v) => { const d = v ? new Date(String(v).replace(" ", "T")) : null; return d && !isNaN(d) ? `${d.getMonth() + 1} 月 ${d.getDate()} 日` : ""; };
-  updateHtml(box, list.length ? `<div class="home-recent-head"><h2>最近的项目</h2><span class="hint">共 ${list.length} 个</span></div>
+  updateHtml(box, renderFindViral() + (list.length ? `<div class="home-recent-head"><h2>最近的项目</h2><span class="hint">共 ${list.length} 个</span></div>
     <ul class="home-recent">${list.slice(0, 12).map((p) => {
       const [label, tone, action] = homeStatus(p);
       const thumb = p.thumb ? `<img src="/files/${esc(p.id)}/${esc(p.thumb)}" alt="" loading="lazy">` : '<span class="home-thumb-empty" aria-hidden="true"></span>';
       return `<li><button type="button" class="home-card" data-open-recent="${esc(p.id)}">
         <span class="home-thumb">${thumb}</span>
         <span class="home-card-text"><b>${esc(p.name || "未命名项目")}</b><span class="badge ${tone}">${label}</span>
-        <small>${day(p.created_at)}${p.shots ? ` · ${p.shots} 个镜头` : ""}</small></span>
+        <small>${p.origin ? `来自${esc(p.origin)} · ` : ""}${day(p.created_at)}${p.shots ? ` · ${p.shots} 个镜头` : ""}</small></span>
         <span class="home-card-go">${action} ${ICON_ARROW}</span></button></li>`;
-    }).join("")}</ul>` : `<p class="home-empty">还没有项目。点上面的按钮，放一条你想复刻的视频进来就能开始。</p>`);
+    }).join("")}</ul>` : `<p class="home-empty">还没有项目。从上面找一条同行的爆款，或者直接放一条你想复刻的视频进来就能开始。</p>`));
+  const city = $("#fvCity"); if (city && !city.value) city.value = storeGet("vrc.fvCity") || "";
 }
+// ---------- 首页：找同行的爆款 ----------
+// 桌面版：在内置浏览窗口里打开平台搜索，用户自己看，看中了点「同款复刻」直接建项目（build/browse.js）。
+// 浏览器里打开的工作台没有内置窗口：在新标签页打开平台搜索，下载视频后拖进来。
+const FV_PLATFORMS = [
+  { id: "douyin", name: "抖音", search: (k) => `https://www.douyin.com/search/${encodeURIComponent(k)}?type=video` },
+  { id: "xiaohongshu", name: "小红书", search: (k) => `https://www.xiaohongshu.com/search_result?keyword=${encodeURIComponent(k)}&source=web_search_result_notes` },
+  { id: "bilibili", name: "B站", search: (k) => `https://search.bilibili.com/video?keyword=${encodeURIComponent(k)}` },
+];
+const FV_INDUSTRIES = [
+  ["餐饮", ["烤鱼", "火锅", "烧烤", "小龙虾", "麻辣烫", "奶茶", "咖啡", "烘焙", "早餐"]],
+  ["美业", ["美甲", "美发", "美容", "美睫", "按摩"]],
+  ["生活服务", ["健身房", "瑜伽", "宠物店", "洗车", "汽车美容", "民宿", "婚纱摄影", "花店"]],
+];
+let fvPlatform = null;
+function fvCurrentPlatform() {
+  if (!fvPlatform) fvPlatform = FV_PLATFORMS.some((p) => p.id === storeGet("vrc.fvPlatform")) ? storeGet("vrc.fvPlatform") : "douyin";
+  return fvPlatform;
+}
+function inDesktop() { return !!(window.__browse && window.__browse.available); }
+function renderFindViral() {
+  const cur = fvCurrentPlatform();
+  return `<section class="fv" aria-labelledby="fvTitle">
+    <div class="fv-head">
+      <div><h2 id="fvTitle">找同行的爆款</h2>
+        <p class="hint">${inDesktop() ? "在工作台里打开平台的搜索结果，你自己刷、看评论。看中哪条，点窗口右上角「同款复刻」就直接建好项目。" : "会在新标签页打开平台搜索。看中的视频下载下来，拖进新项目就行（桌面版可以一键同款复刻）。"}</p></div>
+      <div class="fv-tabs" role="group" aria-label="平台">${FV_PLATFORMS.map((p) => `<button type="button" data-fv-platform="${p.id}" aria-pressed="${p.id === cur}">${p.name}</button>`).join("")}</div>
+    </div>
+    <form class="fv-search" data-fv-form>
+      <input id="fvCity" class="fv-city" placeholder="城市（可不填）" aria-label="城市" maxlength="12" autocomplete="off">
+      <input id="fvKeyword" placeholder="搜什么？比如：烤鱼店、美甲、探店" aria-label="搜索关键词" maxlength="40" autocomplete="off">
+      <button type="submit">去找爆款</button>
+    </form>
+    <div class="fv-industries">${FV_INDUSTRIES.map(([group, words]) => `<div class="fv-group"><span>${group}</span>${words.map((w) => `<button type="button" class="chip" data-fv-word="${esc(w)}">${esc(w)}</button>`).join("")}</div>`).join("")}</div>
+    <form class="fv-link" data-fv-link>
+      <span class="fv-link-label">有分享链接？</span>
+      <input id="fvLink" placeholder="在抖音 / 小红书 / B站点「分享 → 复制链接」，粘贴到这里" aria-label="分享链接" autocomplete="off">
+      <button type="submit" class="ghost">打开</button>
+    </form>
+  </section>`;
+}
+function fvLinkFrom(text) { const m = String(text || "").match(/https?:\/\/[^\s，。,；;"'<>【】]+/); return m ? m[0] : ""; }
+async function fvOpen(opts) {
+  if (inDesktop()) {
+    try { await window.__browse.open(opts); } catch (err) { toast(`没打开：${err.message || err}`, true); }
+    return;
+  }
+  const p = FV_PLATFORMS.find((x) => x.id === opts.platform) || FV_PLATFORMS[0];
+  window.open(opts.url || p.search(opts.keyword), "_blank", "noopener");
+}
+function fvSearch(word) {
+  const city = ($("#fvCity")?.value || "").trim();
+  const kw = (word || $("#fvKeyword")?.value || "").trim();
+  if (!kw) { $("#fvKeyword")?.focus(); toast("先输入要找的行业或关键词，或者点下面的常用行业"); return; }
+  store("vrc.fvCity", city);
+  if (word && $("#fvKeyword")) $("#fvKeyword").value = word;
+  fvOpen({ platform: fvCurrentPlatform(), keyword: [city, kw].filter(Boolean).join(" ") });
+}
+document.addEventListener("submit", (e) => {
+  if (e.target.closest("[data-fv-form]")) { e.preventDefault(); fvSearch(); }
+  if (e.target.closest("[data-fv-link]")) {
+    e.preventDefault();
+    const url = fvLinkFrom($("#fvLink")?.value);
+    if (!url) { toast("没认出链接。复制平台「分享」里的链接或整段分享文字，粘贴进来就行", true); return; }
+    fvOpen({ url });
+    $("#fvLink").value = "";
+  }
+});
+if (window.__browse && window.__browse.onImported) {
+  window.__browse.onImported(async (project) => {
+    try { await refreshProjectList(); } catch (_) { /* 打开项目时会再读 */ }
+    if (project && project.id) {
+      if (!project.focus) toast(`已建好项目「${project.name || ""}」，视频已经放好了`);
+      if (P?.id !== project.id) await openProject(project.id);
+    }
+  });
+}
+
+// ---------- 项目里的「来源」卡片 ----------
+const FV_STAT = { views: "播放", likes: "点赞", comments: "评论", collects: "收藏", shares: "分享", coins: "投币" };
+function originCard(o) {
+  if (!o) return "";
+  const stats = Object.entries(o.stats || {}).filter(([, v]) => v).map(([k, v]) => `<span><b>${esc(v)}</b>${FV_STAT[k] || k}</span>`).join("");
+  const comments = (o.comments || []).slice(0, 6);
+  const text = o.desc || o.title || "";
+  return `<section class="origin-card">
+    <header><span class="origin-platform">${esc(o.platform_name || "网页")}</span>
+      <b>${esc(o.author ? "@" + o.author : "原视频")}</b>
+      ${o.url ? `<button type="button" class="link-btn" data-origin-open="${esc(o.url)}">看原视频 ${ICON_ARROW}</button>` : ""}</header>
+    ${o.title && o.desc && o.title !== o.desc ? `<p class="origin-title">${esc(o.title)}</p>` : ""}
+    ${text ? `<p class="origin-desc">${esc(text)}</p>` : ""}
+    ${stats ? `<div class="origin-stats">${stats}<small>${esc(String(o.captured_at || "").slice(0, 16))} 记录</small></div>` : ""}
+    ${comments.length ? `<details class="origin-comments" open><summary>评论区（${comments.length} 条，导入时页面上能看到的）</summary>
+      <ul>${comments.map((c) => `<li>${c.user ? `<b>${esc(c.user)}</b>` : ""}<span>${esc(c.text)}</span>${c.likes ? `<small>${esc(c.likes)} 赞</small>` : ""}</li>`).join("")}</ul></details>` : ""}
+  </section>`;
+}
+document.addEventListener("click", (e) => {
+  const tab = e.target.closest("[data-fv-platform]");
+  if (tab) { fvPlatform = tab.dataset.fvPlatform; store("vrc.fvPlatform", fvPlatform); document.querySelectorAll("[data-fv-platform]").forEach((b) => b.setAttribute("aria-pressed", String(b === tab))); return; }
+  const word = e.target.closest("[data-fv-word]");
+  if (word) { fvSearch(word.dataset.fvWord); return; }
+  const orig = e.target.closest("[data-origin-open]");
+  if (orig) { fvOpen({ url: orig.dataset.originOpen }); }
+});
+
 async function showHome() {
   if (hasUnsavedEdits() && !await pageConfirm("还有没保存的修改，回到首页会丢掉这些修改。仍然回到首页？")) {
     renderProjectOptions(P?.id);

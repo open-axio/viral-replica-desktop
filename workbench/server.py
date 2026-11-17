@@ -427,6 +427,13 @@ class Handler(BaseHTTPRequestHandler):
                 return config.public_view()
             config.save(self._body_json())
             return config.public_view()
+        if parts == ["import-video"] and method == "POST":
+            from console import video_import
+            return video_import.import_video(self._body_json())
+        if parts == ["import-video", "dir"] and method == "GET":
+            from console import video_import
+            video_import.IMPORT_DIR.mkdir(parents=True, exist_ok=True)
+            return {"dir": str(video_import.IMPORT_DIR)}
         if parts == ["projects"]:
             if method == "GET":
                 return store.list_projects()

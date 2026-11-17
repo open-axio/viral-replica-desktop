@@ -1,25 +1,81 @@
-appId: com.local.viralreplica
+appId: com.openaxio.viralreplica
 productName: ViralReplica
 directories:
   output: dist
+  buildResources: assets
+
 files:
   - main.js
   - preload.js
   - package.json
+
+# 瘦包：只带工作台代码（约 8MB），runtime 与模型首次启动时装到用户数据目录
 extraResources:
-  - from: workbench
+  - from: ../workbench
     to: workbench
+    filter:
+      - "**/*"
+      - "!runtime/**"
+      - "!projects/**"
+      - "!library/**"
+      - "!batches/**"
+      - "!console.env"
+      - "!**/__pycache__/**"
+      - "!**/*.log"
+      - "!.git/**"
+
+publish:
+  provider: github
+  owner: open-axio
+  repo: viral-replica-desktop
+
 win:
+  icon: assets/icon.ico
   target:
     - target: nsis
       arch:
         - x64
   artifactName: ViralReplica-Setup-${version}.${ext}
+
 nsis:
   oneClick: false
   allowToChangeInstallationDirectory: true
   createDesktopShortcut: true
+  installerIcon: assets/icon.ico
+  uninstallerIcon: assets/icon.ico
+  installerHeader: assets/installerHeader.bmp
+  installerSidebar: assets/installerSidebar.bmp
+  uninstallerSidebar: assets/installerSidebar.bmp
+
 mac:
+  icon: assets/icon.icns
+  category: public.app-category.video
+  # 有证书时才真正签名；没有 CSC_LINK 时 electron-builder 自动跳过，退回 ad-hoc
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  entitlements: assets/entitlements.mac.plist
+  entitlementsInherit: assets/entitlements.mac.plist
+  # 公证由 CI 在检测到 APPLE_ID 时用 -c.mac.notarize=true 打开，这里保持关闭，
+  # 免得本地或没配证书的 CI 直接打包失败
   target:
-    - dmg
-  artifactName: ViralReplica-${version}.${ext}
+    - target: dmg
+      arch:
+        - arm64
+        - x64
+  artifactName: ViralReplica-${version}-${arch}.${ext}
+
+dmg:
+  background: assets/dmg-background.png
+  icon: assets/icon.icns
+  iconSize: 96
+  window:
+    width: 540
+    height: 380
+  contents:
+    - x: 150
+      y: 210
+      type: file
+    - x: 390
+      y: 210
+      type: link
+      path: /Applications

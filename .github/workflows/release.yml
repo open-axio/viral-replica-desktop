@@ -1,0 +1,53 @@
+name: release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: 打包 ${{ matrix.platform }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            platform: mac
+          - os: windows-latest
+            platform: win
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: 装依赖
+        working-directory: build
+        run: npm install
+
+      - name: 打包并发布到 Releases
+        working-directory: build
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # 配了 Apple 证书才会签名公证；没配就是 ad-hoc，用户需右键打开
+          CSC_LINK: ${{ secrets.MAC_CERT_P12 }}
+          CSC_KEY_PASSWORD: ${{ secrets.MAC_CERT_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        shell: bash
+        run: |
+          if [ -n "${APPLE_ID:-}" ] && [ "${{ matrix.platform }}" = "mac" ]; then
+            echo "检测到 Apple 证书，开启公证"
+            npx electron-builder --mac --publish always -c.mac.notarize=true
+          else
+            echo "未配证书，跳过签名公证（ad-hoc）"
+            npx electron-builder --${{ matrix.platform }} --publish always
+          fi

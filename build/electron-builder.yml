@@ -4,6 +4,9 @@ directories:
   output: dist
   buildResources: assets
 
+# 没证书时给 mac 包补 ad-hoc 签名，否则下载后报「已损坏」
+afterPack: afterpack-adhoc.js
+
 files:
   - main.js
   - preload.js

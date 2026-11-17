@@ -57,9 +57,9 @@ pkg() {  # install packages into runtime/venv; try each index in turn and keep t
       rest=""; for i in $INDEXES; do [ "$i" = "$idx" ] || rest="$rest $i"; done
       INDEXES="$idx$rest"; return 0
     fi
-    echo "这个源装不上（$idx），换下一个源重试"
+    echo "这个源装不上（${idx}），换下一个源重试"
   done
-  echo "安装失败：$*。试过的下载源都不行，检查一下网络后重新打开应用即可（已装好的部分不会重复下载）"
+  echo "安装失败：${*}。试过的下载源都不行，检查一下网络后重新打开应用即可（已装好的部分不会重复下载）"
   return 1
 }
 

@@ -145,8 +145,12 @@ def list_projects() -> list[dict]:
         try:
             with _lock(path.parent.name):
                 data = load(path.parent.name)
+                shots = (data.get("analysis") or {}).get("shots") or []
                 out.append({"id": data["id"], "name": data["name"], "created_at": data.get("created_at"),
-                            "has_source": bool(data.get("source")), "analysis": data.get("analysis", {}).get("status")})
+                            "has_source": bool(data.get("source")), "analysis": data.get("analysis", {}).get("status"),
+                            # 首页卡片用：第一个镜头的截图、镜头数、是否已进入复刻
+                            "thumb": shots[0].get("frame") if shots else None, "shots": len(shots),
+                            "has_breakdown": bool(data.get("breakdown")), "has_final": bool(data.get("final") or data.get("final_preview"))})
                 if data.get('derived_from'):
                     derived=data['derived_from'];master_id=derived.get('project_id')
                     out[-1].update(derived_from={key:copy.deepcopy(derived.get(key)) for key in ('project_id','row','row_id','fission_number')},

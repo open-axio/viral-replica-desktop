@@ -574,10 +574,10 @@ function renderProjectOptions(current=P?.id) {
   const add=(p,depth=0)=>{if(visited.has(p.id))return;visited.add(p.id);ordered.push({p,depth});for(const child of (children.get(p.id) || []).sort((a,b)=>(a.derived_from?.fission_number || a.derived_from?.row || 0)-(b.derived_from?.fission_number || b.derived_from?.row || 0)))add(child,depth+1);if(children.has(p.id))ordered.push({p,depth:depth+1,board:true});};
   for(const p of list)if(!ids.has(p.derived_from?.project_id))add(p);
   for(const p of list)add(p);
-  select.innerHTML=ordered.map(({p,depth,board})=>`<option value="${esc(board?'batch:'+p.id:p.id)}" title="${esc(p.name)}">${depth?'　'.repeat(Math.min(depth,3))+'↳ ':''}${board?'批量看板（'+children.get(p.id).length+' 条）':esc(p.name || '未命名项目')+(children.has(p.id)?' · 母版':'')}</option>`).join('');
+  select.innerHTML='<option value="">首页 · 全部项目</option>'+ordered.map(({p,depth,board})=>`<option value="${esc(board?'batch:'+p.id:p.id)}" title="${esc(p.name)}">${depth?'　'.repeat(Math.min(depth,3))+'↳ ':''}${board?'批量看板（'+children.get(p.id).length+' 条）':esc(p.name || '未命名项目')+(children.has(p.id)?' · 母版':'')}</option>`).join('');
   if(batchBoardState && !children.has(batchBoardState.masterId))select.innerHTML+=`<option value="${esc(current)}">批量看板（${batchBoardState.data?.total || 0} 条）${batchBoardState.data?.master?.exists===false?' · 母版已删除':''}</option>`;
   if(current && !ids.has(current) && P?.id===current)select.innerHTML+=`<option value="${esc(current)}" title="${esc(P.name)}">${esc(P.name || '未命名项目')}</option>`;
-  if(current)select.value=current;
+  select.value=current || '';
   select.title=P && P.id===current?P.name || '未命名项目':'';
 }
 async function refreshProjectList(){
@@ -609,12 +609,10 @@ async function boot() {
   if (generation !== projectGeneration) return;
   const sel = $("#projectSelect");
   projectList=list;renderProjectOptions();
-  if (!list.length) { P = null; S = null; $("#emptyState").hidden = false; $("#workspace").hidden = true; clearTimeout(pollTimer); return; }
-  // 免费在前：第一次打开不再弹设置要 Key，到「内容拆解」那一步再引导
-  const last = storeGet("vrc.project");
-  const pick = list.find((p) => p.id === last) ? last : list[0].id;
-  sel.value = pick;
-  await openProject(pick);
+  // 免费在前：第一次打开不再弹设置要 Key，到「内容拆解」那一步再引导。
+  // 打开 app 先到首页（最近项目 + 产品介绍），不直接进上次的项目。
+  P = null; S = null; $("#emptyState").hidden = false; $("#workspace").hidden = true; clearTimeout(pollTimer);
+  if (typeof renderFlow === "function") renderFlow();
 }
 function renderStatus() {
   const s = STATUS;
@@ -5029,7 +5027,7 @@ async function openSettings() {
       ${f('CUSTOM_BASE_URL','自定义 Base URL')}${f('CUSTOM_MODEL','自定义模型 ID')}
       <input type="hidden" name="DEFAULT_LLM" value="${esc(s.DEFAULT_LLM || 'jimmy')}">
       <h3>其他渠道 Key（可选）</h3><div id="settingsOtherKeys"></div>
-      <h3>本地拆解</h3>${f('ASR_MODEL','Whisper 模型')}${f('ASR_COMPUTE_TYPE','计算精度')}${f('ASR_LANGUAGE','语言（留空 = 自动识别（推荐））')}
+      <h3>本地拆解</h3>${f('ASR_COMPUTE_TYPE','计算精度')}${f('ASR_LANGUAGE','语言（留空 = 自动识别（推荐））')}
       ${f('ASR_ENGINE','转录引擎（auto / whisperx / faster-whisper）')}${f('HF_ENDPOINT','模型下载镜像（国内可填 https://hf-mirror.com）')}${f('MAX_PASSAGES','最多细读段落数')}${f('LLM_PARALLEL','细读并发数')}
       ${f('DEEP_FORENSICS','深度取证 · 认拍摄方式（auto = 时长在上限内才做 / on / off）')}${f('DEEP_FORENSICS_MAX_SECONDS','深度取证 auto 时长上限（秒）')}
     </details>
@@ -5534,7 +5532,7 @@ $("#deleteProjectBtn").onclick = async () => {
   }
 };
 $("#heroNew").onclick = newProject;
-$("#projectSelect").onchange = (e) => e.target.value.startsWith("batch:") ? openBatchBoard(e.target.value.slice(6)) : openProject(e.target.value);
+$("#projectSelect").onchange = (e) => !e.target.value ? showHome() : e.target.value.startsWith("batch:") ? openBatchBoard(e.target.value.slice(6)) : openProject(e.target.value);
 $("#settingsBtn").onclick = openSettings;
 $("#saveSettings").onclick = saveSettings;
 $("#saveReplacements").onclick = saveReplacements;

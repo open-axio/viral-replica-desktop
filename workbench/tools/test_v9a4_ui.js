@@ -38,7 +38,7 @@ async function created(){const t=fixture();await click(t,'[data-fission-open]');
  assert.doesNotMatch(t.$('#fissionPanel').textContent,/免费/);
 }
 async function projectList(){const t=fixture();t.run(`projectList=[{id:'other',name:'别的'},{id:'child',name:'母版 · 裂变 1',derived_from:{project_id:'master',row:1}},{id:'master',name:'母版'}];renderProjectOptions('child')`);
- assert.deepEqual(t.$$('#projectSelect option').map(el=>el.value),['other','master','child','batch:master']);assert.equal(t.$('#projectSelect').value,'child');
+ assert.deepEqual(t.$$('#projectSelect option').map(el=>el.value),['','other','master','child','batch:master'],'第一项是「首页」');assert.equal(t.$('#projectSelect').value,'child');
  assert.match(t.$('#projectSelect option[value="master"]').textContent,/母版/);assert.match(t.$('#projectSelect option[value="child"]').textContent,/↳/);
  t.run(`projectList=projectList.filter(p=>p.id!=='master');renderProjectOptions('child')`);assert.doesNotMatch(t.$('#projectSelect option[value="child"]').textContent,/↳/);
  const get=t.context.mockApi;t.context.mockApi=async(m,u,b)=>u==='projects/missing'?{...JSON.parse(t.run('JSON.stringify(P)')),id:'missing',name:'当前新项目'}:get(m,u,b);t.run('api=mockApi');await t.run('openProject("missing")');assert.equal(t.$('#projectSelect').value,'missing');assert.ok(t.$('#projectSelect option[value="missing"]'));

@@ -23,7 +23,7 @@ LOG = logging.getLogger(__name__)
 ENGINE = "rea-video 0.1.0 · 本地像素取证"
 
 #: 三类：复刻时这一镜该去拍、该让模型生成、还是该用模板/剪辑软件做
-CLASSES = {"live": "实拍", "ai": "AI 生成", "graphic": "图文动画"}
+CLASSES = {"live": "实拍", "ai": "AI 生成", "graphic": "图文动画", "unsure": "待确认"}
 #: rea-video 的 11 个细分标签归到三类（见 vendor/rea_video/classify.py 的 LABELS）
 CLASS_OF = {
     "live_action": "live", "film_footage": "live", "stop_motion": "live",
@@ -31,6 +31,27 @@ CLASS_OF = {
     "cg_3d": "graphic", "code_render": "graphic", "screen_capture": "graphic",
     "still_motion": "graphic", "static_hold": "graphic", "anim_2d": "graphic",
 }
+
+#: 只看像素时，「实拍还是 AI」证据很弱：平台转码会抹掉传感器噪点，24fps 也是 AI 视频常用的帧率，
+#: 抖音下载的手机实拍常被整条判成 AI（真机反馈）。所以只在一边明显占优时才下结论，否则标「待确认」，
+#: 交给内容拆解时看图的大模型。图文动画、静帧这类渲染特征是可靠的，照常判。
+LIVE_MIN, AI_MIN, AI_MARGIN = 0.5, 0.7, 0.4
+
+
+def decide_class(probs: dict[str, float]) -> tuple[str, float]:
+    """三类 + 待确认。返回 (类别, 该类别的概率合计)。"""
+    group = {c: 0.0 for c in ("live", "ai", "graphic")}
+    for label, p in probs.items():
+        group[CLASS_OF.get(label, "graphic")] += float(p)
+    top = max(probs, key=probs.get)
+    if CLASS_OF.get(top, "graphic") == "graphic" and group["graphic"] >= max(group["live"], group["ai"]):
+        return "graphic", group["graphic"]
+    if group["ai"] >= AI_MIN and group["ai"] - group["live"] >= AI_MARGIN:
+        return "ai", group["ai"]
+    if group["live"] >= LIVE_MIN and group["live"] > group["ai"]:
+        return "live", group["live"]
+    return "unsure", max(group["live"], group["ai"])
+
 
 #: 「深度取证」默认对这么长以内的视频开启。纯 CPU 下 71 秒视频实测约 2.5 分钟。
 DEFAULT_MAX_SECONDS = 120.0
@@ -155,9 +176,9 @@ def analyze(src: Path, shots: list[dict], progress: Callable[[int, int], None] |
     for rec in records:
         probs, evidence, facts = classify.deterministic(rec["features"], rec["overlay"], None, rec["faces"], None, prov,
                                                         fps=fps, ctx=vctx)
-        # 只有像素取证、没有看图模型时，上游也是直接取最高的细分标签（见 rea_video.pipeline.finalize）
-        label, conf = classify.top(probs)
-        cls = CLASS_OF.get(label, "graphic")
+        # 细分标签照上游取最高（见 rea_video.pipeline.finalize）；三类结论按 decide_class 保守地下
+        label, _ = classify.top(probs)
+        cls, conf = decide_class(probs)
         s = rec["shot"]
         out.append({
             "index": s["index"], "start": s["start"], "end": s["end"],
@@ -165,7 +186,7 @@ def analyze(src: Path, shots: list[dict], progress: Callable[[int, int], None] |
             "label": label, "label_zh": str(classify.LABEL_ZH[label]),
             "confidence": round(float(conf), 3),
             "evidence": [_short(e) for e in evidence[:3]],
-            "tags": short_tags(label, rec["features"], facts),
+            "tags": short_tags(cls, rec["features"], facts),
             "runner_up": [{"label": k, "label_zh": str(classify.LABEL_ZH[k]), "p": round(float(v), 3)}
                           for k, v in sorted(probs.items(), key=lambda kv: -kv[1])[1:3]],
             "temporal_family": facts.get("temporal_family"),
@@ -176,11 +197,10 @@ def analyze(src: Path, shots: list[dict], progress: Callable[[int, int], None] |
             "counts": {c: sum(1 for r in out if r["class"] == c) for c in CLASSES}, "shots": out}
 
 
-def short_tags(label: str, feats: dict, facts: dict) -> list[str]:
+def short_tags(cls: str, feats: dict, facts: dict) -> list[str]:
     """把取证特征压成界面上的短标签（「凭什么这么判断」），最多 3 个，和判定方向一致的排前面。
 
-    完整的判定依据长句仍在 evidence 里，供报告和 prompt 使用。"""
-    cls = CLASS_OF.get(label, "graphic")
+    完整的判定依据长句仍在 evidence 里，供报告和 prompt 使用。cls 是 decide_class 的结论（含 unsure）。"""
     noise = float(feats.get("noise_sigma") or 0)
     tags: list[tuple[int, str]] = []          # (与判定是否一致：0 一致 / 1 中性, 文字)
     fam = facts.get("temporal_family")
@@ -242,8 +262,9 @@ def prompt_lines(result: dict | None, start: float | None = None, end: float | N
         if start is not None and end is not None and not (r["start"] < end and r["end"] > start):
             continue
         why = "；".join(_short(e, 60) for e in (r.get("evidence") or [])[:2]) or "无明显特征"
-        detail = f"，细分：{r['label_zh']}" if r["label_zh"] != r["class_zh"] else ""
-        lines.append(f"镜 {r['index']}（{r['start']:.2f}–{r['end']:.2f}s）本镜判定：{r['class_zh']}{detail}，"
+        detail = f"，细分：{r['label_zh']}" if r["label_zh"] != r["class_zh"] and r["class"] != "unsure" else ""
+        verdict = "像素上分不清实拍还是 AI，请看画面判断" if r["class"] == "unsure" else r["class_zh"]
+        lines.append(f"镜 {r['index']}（{r['start']:.2f}–{r['end']:.2f}s）本镜判定：{verdict}{detail}，"
                      f"把握 {r['confidence']:.0%}（依据：{why}）")
     return lines
 

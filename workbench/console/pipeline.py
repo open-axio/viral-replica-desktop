@@ -192,10 +192,10 @@ def _stop_for_key(pid: str, reason: str | None, adir: Path, started: float, free
 
 
 def run_analysis(pid: str, provider: str, srt_text: str | None = None, skip_asr: bool = False,
-                 send_video: bool = False, free_only: bool = False) -> None:
+                 send_video: bool = False, free_only: bool = False, resume: bool = False) -> None:
     """Wrapper: a failure always leaves a visible failed state (never a stuck 'running')."""
     try:
-        _run_analysis(pid, provider, srt_text, skip_asr, send_video, free_only)
+        _run_analysis(pid, provider, srt_text, skip_asr, send_video, free_only, resume)
     except Exception as exc:
         def fn(x: dict) -> None:
             a = x.setdefault("analysis", {})
@@ -306,23 +306,9 @@ def _run_forensics(pid: str, src: Path, shots: list[dict], duration: float, cfg:
     return result
 
 
-def _run_analysis(pid: str, provider: str, srt_text: str | None = None, skip_asr: bool = False,
-                  send_video: bool = False, free_only: bool = False) -> None:
-    route = gateway.routes.resolve('analysis', pid, provider)
-    provider = route['channel']
-    data = store.load(pid)
-    if not data.get("source"):
-        raise ValueError("请先上传参考视频")
-    d = store.project_dir(pid)
-    src = d / data["source"]["file"]
-    adir = d / "analysis"
-    cfg = config.load()
-    # 前四步全在本地跑，不需要 Key。Key 到第 05 步调用大模型前再查，
-    # 没 Key 的用户也能先拿到台词、镜头和字幕文件。
-    model_name = route['model'] or ''
-    send_video = send_video and provider == "jimmy" and model_name.lower().startswith("gemini")
-    if cfg.get("HF_ENDPOINT"):
-        os.environ["HF_ENDPOINT"] = cfg["HF_ENDPOINT"]
+def _run_free_steps(pid: str, src: Path, adir: Path, data: dict, cfg: dict, srt_text: str | None,
+                    skip_asr: bool, provider: str, model_name: str) -> tuple:
+    """免费的前四步（01 读视频信息 / 02 识别台词 / 03 切分镜头 / 04 认拍摄方式）+ 免费拆解包。全在本地跑。"""
     analysis_started = time.time()
     store.update(pid, lambda x: x.update(analysis={"status": "running", "provider": provider,
                                                    "request_model": model_name, "steps": {},
@@ -382,12 +368,75 @@ def _run_analysis(pid: str, provider: str, srt_text: str | None = None, skip_asr
                       "overview_grids": len(overview_grids)})
     store.update(pid, lambda x: x["analysis"].update(
         shots=shots, transcript=(transcript or {}).get("segments", []),
-        overview_grids=[{"file": store.rel(pid, g["file"]), "cells": g["cells"]} for g in overview_grids]))
+        overview_grids=[{"file": store.rel(pid, g["file"]), "columns": g["columns"], "cells": g["cells"]}
+                        for g in overview_grids]))
 
     # 04 认拍摄方式：吃 03 的切点，按 03 镜号逐镜判定
     forensic = _run_forensics(pid, src, shots, duration, cfg, adir)
     free = _build_free_report(pid, adir, info, shots, transcript, forensic, data["source"].get("name") or src.name)
     store.update(pid, lambda x: x["analysis"].update(free=free, free_finished=time.time()))
+    return analysis_started, info, duration, transcript, cuts, shots, overview_grids, forensic, free
+
+
+def _reusable_free(pid: str, prev: dict, d: Path, adir: Path, src: Path) -> tuple | None:
+    """上一次免费拆解的产物还能不能直接用：同一条视频（换视频会清空 analysis）、文件都在。
+
+    能用就返回和 _run_free_steps 一样的结果，内容拆解直接从 05 开始，不再重跑前四步。"""
+    if not prev.get("free_finished") or prev.get("status") == "running":
+        return None
+    try:
+        boundaries = json.loads((adir / "boundaries.json").read_text(encoding="utf-8"))
+        shots = prev.get("shots") or []
+        grids = [{"file": d / g["file"], "columns": g.get("columns", 4), "cells": g["cells"]}
+                 for g in prev.get("overview_grids") or []]
+        if not shots or not grids or not all(g["file"].is_file() for g in grids):
+            return None
+        raw = adir / "transcript.raw.json"
+        transcript = json.loads(raw.read_text(encoding="utf-8")) if raw.is_file() else None
+        fz = adir / "forensics.json"
+        forensic = json.loads(fz.read_text(encoding="utf-8")) if fz.is_file() else None
+        info = media.probe(src)
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+    return (prev["started"], info, info["duration"], transcript, boundaries.get("candidates") or [], shots, grids,
+            forensic, prev.get("free"))
+
+
+def _run_analysis(pid: str, provider: str, srt_text: str | None = None, skip_asr: bool = False,
+                  send_video: bool = False, free_only: bool = False, resume: bool = False) -> None:
+    route = gateway.routes.resolve('analysis', pid, provider)
+    provider = route['channel']
+    data = store.load(pid)
+    if not data.get("source"):
+        raise ValueError("请先上传参考视频")
+    d = store.project_dir(pid)
+    src = d / data["source"]["file"]
+    adir = d / "analysis"
+    cfg = config.load()
+    # 前四步全在本地跑，不需要 Key。Key 到第 05 步调用大模型前再查，
+    # 没 Key 的用户也能先拿到台词、镜头和字幕文件。
+    model_name = route['model'] or ''
+    send_video = send_video and provider == "jimmy" and model_name.lower().startswith("gemini")
+    if cfg.get("HF_ENDPOINT"):
+        os.environ["HF_ENDPOINT"] = cfg["HF_ENDPOINT"]
+    prev = data.get("analysis") or {}
+    reused = _reusable_free(pid, prev, d, adir, src) if resume and not srt_text and not skip_asr else None
+    if reused:
+        analysis_started, info, duration, transcript, cuts, shots, overview_grids, forensic, free = reused
+
+        def fn(x: dict) -> None:
+            a = x.setdefault("analysis", {})
+            a.update(status="running", provider=provider, request_model=model_name, content_started=time.time())
+            for key in ("error", "key_needed"):
+                a.pop(key, None)
+            for step in (*PAID_STEPS, "storyboard"):
+                (a.get("steps") or {}).pop(step, None)
+        store.update(pid, fn)
+        store.log(pid, "沿用免费拆解的台词、镜头和拍摄方式，直接开始内容拆解")
+    else:
+        (analysis_started, info, duration, transcript, cuts, shots, overview_grids, forensic,
+         free) = _run_free_steps(pid, src, adir, data, cfg, srt_text, skip_asr, provider, model_name)
+    ev_dir = adir / "evidence"
     if free_only:
         _stop_for_key(pid, None, adir, analysis_started, free)
         return
@@ -398,6 +447,8 @@ def _run_analysis(pid: str, provider: str, srt_text: str | None = None, skip_asr
     except ValueError as exc:
         _stop_for_key(pid, str(exc), adir, analysis_started, free)
         return
+    if not reused:
+        store.update(pid, lambda x: x["analysis"].update(content_started=time.time()))
 
     # 05 whole piece → ANALYSIS.md
     label = gateway.label(provider,settings["model"])

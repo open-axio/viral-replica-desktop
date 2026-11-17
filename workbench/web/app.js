@@ -4898,8 +4898,8 @@ async function resumeImage(iid) {
 }
 
 // ---------- settings ----------
-const SETTINGS_CHANNELS = ['openai','jimmy','deepseek','doubao','custom'];
-const SETTINGS_KEY_NAMES = {openai:'官方 OpenAI',jimmy:'三方渠道',deepseek:'DeepSeek',doubao:'豆包',custom:'自定义渠道'};
+const SETTINGS_CHANNELS = ['openai','jimmy','qwen','doubao','zhipu','kimi','deepseek','custom'];
+const SETTINGS_KEY_NAMES = {openai:'官方 OpenAI',jimmy:'三方渠道',qwen:'通义千问（阿里云百炼）',doubao:'豆包（火山方舟）',zhipu:'智谱',kimi:'Kimi',deepseek:'DeepSeek',custom:'自定义渠道'};
 let settingsDraft = null;
 const settingsKeyDrafts = new Map(), settingsKeyEditors = new Set();
 function keyChannel(channel) {channel=channel.split(':')[0];return {official:'openai',third_party:'jimmy'}[channel] || channel;}
@@ -4938,7 +4938,7 @@ function changeSettingsImageRoute(select) {
   const step=select.dataset.imageRoute,[route,quality]=select.value.split('|'),key=step.toUpperCase(),form=$('#settingsForm');
   for(const [name,value] of [['ROUTE_'+key,route],[key+'_QUALITY',quality]]){$(`[name="${name}"]`,form).value=value;settingsDraft[name]=value;}
 }
-const SETTINGS_MODEL_CHANNELS = {OPENAI_MODEL:'openai',JIMMY_LLM_MODEL:'jimmy',DEEPSEEK_MODEL:'deepseek',DOUBAO_MODEL:'doubao',CUSTOM_MODEL:'custom',OPENAI_IMAGE_MODEL:'official'};
+const SETTINGS_MODEL_CHANNELS = {OPENAI_MODEL:'openai',JIMMY_LLM_MODEL:'jimmy',QWEN_MODEL:'qwen',ZHIPU_MODEL:'zhipu',KIMI_MODEL:'kimi',DEEPSEEK_MODEL:'deepseek',DOUBAO_MODEL:'doubao',CUSTOM_MODEL:'custom',OPENAI_IMAGE_MODEL:'official'};
 function changeSettingsModel(input) {
   const key=input.getAttribute('name'),channel=SETTINGS_MODEL_CHANNELS[key],old=settingsDraft[key];
   if(!channel || old===input.value)return;
@@ -5032,7 +5032,8 @@ async function openSettings() {
       <h3>各渠道地址与模型</h3>
       ${f('OPENAI_BASE_URL','官方 Base URL')}${f('OPENAI_MODEL','官方推理模型 ID')}${f('OPENAI_IMAGE_MODEL','官方生图模型 ID')}${f('OPENAI_REASONING_EFFORT','推理强度（留空不发送）')}
       ${f('JIMMY_LLM_BASE_URL','三方渠道 Base URL')}${f('JIMMY_LLM_MODEL','三方渠道理解模型')}
-      ${f('DEEPSEEK_BASE_URL','DeepSeek Base URL')}${f('DEEPSEEK_MODEL','DeepSeek 模型 ID')}${f('DOUBAO_BASE_URL','豆包 Base URL')}${f('DOUBAO_MODEL','豆包模型 ID')}
+      ${f('QWEN_BASE_URL','通义千问 Base URL')}${f('QWEN_MODEL','通义千问模型 ID')}${f('ZHIPU_BASE_URL','智谱 Base URL')}${f('ZHIPU_MODEL','智谱模型 ID')}${f('KIMI_BASE_URL','Kimi Base URL')}${f('KIMI_MODEL','Kimi 模型 ID')}
+      ${f('DEEPSEEK_BASE_URL','DeepSeek Base URL')}${f('DEEPSEEK_MODEL','DeepSeek 模型 ID（看不了图，只用于写脚本、改台词）')}${f('DOUBAO_BASE_URL','豆包 Base URL')}${f('DOUBAO_MODEL','豆包模型 ID')}
       ${f('CUSTOM_BASE_URL','自定义 Base URL')}${f('CUSTOM_MODEL','自定义模型 ID')}
       <input type="hidden" name="DEFAULT_LLM" value="${esc(s.DEFAULT_LLM || 'jimmy')}">
       <h3>其他渠道 Key（可选）</h3><div id="settingsOtherKeys"></div>

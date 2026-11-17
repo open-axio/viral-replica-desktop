@@ -27,12 +27,17 @@ JIMMY_SCRIPTS = ENGINE_DIR / "jimmy-video-generator" / "scripts"
 CHAIN5_SCRIPTS = ENGINE_DIR / "seedance-storyboard-replication" / "scripts"
 
 # Provider slots. All of them speak the OpenAI-compatible /chat/completions API.
+# vision：能不能看图。读片子（拆解）要把画面发给模型，看不了图的模型（DeepSeek）只能做写脚本、改台词这类纯文字的步骤。
+# None = 不知道（自定义接口），不拦。
 PROVIDERS = {
-    "openai": {"label": "官方 · OpenAI", "video_native": False},
-    "jimmy": {"label": "三方渠道 · GPT-5.6 Sol（共用三方渠道 Key）", "video_native": False},
-    "doubao": {"label": "豆包 Seed 2.0 Pro（火山方舟）", "video_native": True},
-    "deepseek": {"label": "DeepSeek V4.1 Flash", "video_native": False},
-    "custom": {"label": "自定义（任意 OpenAI 兼容接口）", "video_native": False},
+    "openai": {"label": "官方 · OpenAI", "video_native": False, "vision": True},
+    "jimmy": {"label": "三方渠道 · GPT-5.6 Sol（共用三方渠道 Key）", "video_native": False, "vision": True},
+    "qwen": {"label": "通义千问 Qwen3-VL Plus（阿里云百炼）", "video_native": False, "vision": True},
+    "doubao": {"label": "豆包 Seed 2.0 Pro（火山方舟）", "video_native": True, "vision": True},
+    "zhipu": {"label": "智谱 GLM-4.6V", "video_native": False, "vision": True},
+    "kimi": {"label": "Kimi K2.5（月之暗面）", "video_native": False, "vision": True},
+    "deepseek": {"label": "DeepSeek V4 Flash", "video_native": False, "vision": False},
+    "custom": {"label": "自定义（任意 OpenAI 兼容接口）", "video_native": False, "vision": None},
 }
 
 DEFAULTS = {
@@ -50,9 +55,18 @@ DEFAULTS = {
     "DOUBAO_BASE_URL": "https://ark.cn-beijing.volces.com/api/v3",
     "DOUBAO_API_KEY": "",
     "DOUBAO_MODEL": "doubao-seed-2-0-pro-260215",
-    "DEEPSEEK_BASE_URL": "https://openrouter.ai/api/v1",
+    "QWEN_BASE_URL": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    "QWEN_API_KEY": "",
+    "QWEN_MODEL": "qwen3-vl-plus",
+    "ZHIPU_BASE_URL": "https://open.bigmodel.cn/api/paas/v4",
+    "ZHIPU_API_KEY": "",
+    "ZHIPU_MODEL": "glm-4.6v",
+    "KIMI_BASE_URL": "https://api.moonshot.cn/v1",
+    "KIMI_API_KEY": "",
+    "KIMI_MODEL": "kimi-k2.5",
+    "DEEPSEEK_BASE_URL": "https://api.deepseek.com",
     "DEEPSEEK_API_KEY": "",
-    "DEEPSEEK_MODEL": "deepseek/deepseek-v4.1-flash-1017",
+    "DEEPSEEK_MODEL": "deepseek-v4-flash",
     "CUSTOM_BASE_URL": "",
     "CUSTOM_API_KEY": "",
     "CUSTOM_MODEL": "",
@@ -75,7 +89,8 @@ DEFAULTS = {
 from .gateway.routes import DEFAULT_ROUTES
 DEFAULTS.update({'ROUTE_' + step.upper(): route for step, route in DEFAULT_ROUTES.items()})
 
-SECRET_KEYS = {"OPENAI_API_KEY", "JIMMY_API_KEY", "DOUBAO_API_KEY", "DEEPSEEK_API_KEY", "CUSTOM_API_KEY"}
+SECRET_KEYS = {"OPENAI_API_KEY", "JIMMY_API_KEY", "DOUBAO_API_KEY", "DEEPSEEK_API_KEY", "CUSTOM_API_KEY",
+               "QWEN_API_KEY", "ZHIPU_API_KEY", "KIMI_API_KEY"}
 
 _lock = threading.Lock()
 

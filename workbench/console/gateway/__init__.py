@@ -4,7 +4,7 @@ import time
 from contextvars import ContextVar
 from .. import config, store
 from ..channel_text import user_message
-from .errors import GatewayError, LLMError, ImageError, classify_error, sanitize
+from .errors import GatewayError, LLMError, ImageError, ReasoningExhausted, EmptyResponse, classify_error, sanitize
 from . import routes, usage
 from .retry import classify
 
@@ -13,7 +13,8 @@ _depth = ContextVar('gateway_depth',default=0)
 
 def label(channel, model=None):
     names = {'openai':'官方','official':'官方','jimmy':'三方渠道','third_party':'三方渠道',
-             'third-party':'三方渠道','deepseek':'三方渠道 · DeepSeek','doubao':'三方渠道 · 豆包','custom':'三方渠道 · 自定义'}
+             'third-party':'三方渠道','deepseek':'三方渠道 · DeepSeek','doubao':'三方渠道 · 豆包','custom':'三方渠道 · 自定义',
+             'qwen':'通义千问','zhipu':'智谱','kimi':'Kimi'}
     name = names.get(channel,user_message(channel))
     if model:
         display = 'GPT-5.6 Sol' if model == 'gpt-5.6-sol' else user_message(model)
@@ -163,6 +164,9 @@ def test_connection(channel):
     try:
         if channel not in config.PROVIDERS: raise ValueError('未知推理渠道')
         reason('script',[{'role':'user','content':'Reply with OK'}],max_tokens=16,override=channel,_compat=True)
+        status,kind = '可用',None
+    except (ReasoningExhausted, EmptyResponse):
+        # 会先「思考」的模型（Kimi、GLM 等）在很小的输出上限里可能来不及写正文：接口已经正常应答，Key 是好的
         status,kind = '可用',None
     except (GatewayError,ValueError) as exc:
         kind = getattr(exc,'kind',None) or classify(0,str(exc))

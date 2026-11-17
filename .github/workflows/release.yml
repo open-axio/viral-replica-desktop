@@ -65,7 +65,7 @@ jobs:
             echo "检测到 Apple 证书，开启公证"
             npx --no-install electron-builder --mac $PUBLISH -c.mac.notarize=true
           else
-            echo "未配证书，跳过签名公证（ad-hoc 签名，用户首次需右键打开）"
+            echo "未配证书：mac 包由 afterpack-adhoc.js 做 ad-hoc 签名，不公证"
             npx --no-install electron-builder --${{ matrix.platform }} $PUBLISH
           fi
 

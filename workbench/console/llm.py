@@ -37,7 +37,7 @@ def official_error(status: int, detail: str) -> str:
     return implementation(status, detail)
 
 
-_IMAGE_CACHE = config.ROOT / "runtime/temp/llm-images"
+_IMAGE_CACHE = config.RUNTIME_DIR / "temp/llm-images"
 _REQUEST_LIMIT = 3_500_000  # Decimal MB, including base64, text and JSON overhead.
 # Preserve resolution first, then lower it gradually. Never discard image evidence
 # or shrink below this floor merely to make an arbitrarily large request fit.
@@ -46,7 +46,7 @@ _REQUEST_IMAGE_STEPS = ((1536, 3), (1536, 5), (1280, 5), (1024, 5),
 
 
 def _local_media_tool(name: str) -> str:
-    return str(config.ROOT / "runtime/ffmpeg" / (name + (".exe" if os.name == "nt" else "")))
+    return str(config.RUNTIME_DIR / "ffmpeg" / (name + (".exe" if os.name == "nt" else "")))
 
 
 def _image_mime(data: bytes) -> str:

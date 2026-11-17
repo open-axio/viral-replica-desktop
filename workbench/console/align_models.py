@@ -8,16 +8,24 @@ from contextlib import contextmanager
 from pathlib import Path
 from urllib.parse import urlparse
 
-ROOT = Path(__file__).resolve().parents[1]
-CHECKPOINTS_DIR = ROOT / "runtime/models/torch/hub/checkpoints"
-HF_HUB = ROOT / "runtime/models/huggingface/hub"
+from . import paths
+
+ROOT = paths.CODE_ROOT
+CHECKPOINTS_DIR = paths.RUNTIME_DIR / "models/torch/hub/checkpoints"
+HF_HUB = paths.RUNTIME_DIR / "models/huggingface/hub"
 EN_MODEL_SIZE = 377_664_473
 EN_MODEL_URL = "https://download.pytorch.org/torchaudio/models/wav2vec2_fairseq_base_ls960_asr_ls960.pth"
 _download_lock = threading.RLock()
 
 
 def _relative(path: Path) -> str:
-    return path.relative_to(ROOT).as_posix()
+    # 数据目录可能已不在代码目录下，挨个基准试，都不行就给全路径。
+    for base in (paths.DATA_DIR, paths.CODE_ROOT):
+        try:
+            return path.relative_to(base).as_posix()
+        except ValueError:
+            continue
+    return path.as_posix()
 
 
 def _hf_status(repo: Path) -> str:

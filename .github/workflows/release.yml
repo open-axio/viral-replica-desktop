@@ -30,7 +30,9 @@ jobs:
 
       - name: 装依赖
         working-directory: build
-        run: npm install
+        run: |
+          npm install
+          npm install -D electron-builder
 
       - name: 打包并发布到 Releases
         working-directory: build
@@ -44,10 +46,27 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         shell: bash
         run: |
+          # 打 tag 才发版；手动触发只出包，方便回归测试时不污染 Releases
+          if [ "${{ github.event_name }}" = "push" ]; then
+            PUBLISH="--publish always"
+          else
+            PUBLISH="--publish never"
+          fi
           if [ -n "${APPLE_ID:-}" ] && [ "${{ matrix.platform }}" = "mac" ]; then
             echo "检测到 Apple 证书，开启公证"
-            npx electron-builder --mac --publish always -c.mac.notarize=true
+            npx --no-install electron-builder --mac $PUBLISH -c.mac.notarize=true
           else
-            echo "未配证书，跳过签名公证（ad-hoc）"
-            npx electron-builder --${{ matrix.platform }} --publish always
+            echo "未配证书，跳过签名公证（ad-hoc 签名，用户首次需右键打开）"
+            npx --no-install electron-builder --${{ matrix.platform }} $PUBLISH
           fi
+
+      - name: 手动触发时把安装包留成 artifact
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ViralReplica-${{ matrix.platform }}
+          path: |
+            build/dist/*.dmg
+            build/dist/*.exe
+          if-no-files-found: error
+          retention-days: 14

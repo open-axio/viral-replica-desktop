@@ -6,10 +6,21 @@
 #   install.bat -WhisperX      另外安装 WhisperX（含 PyTorch，约 2GB）
 #   install.bat -Mirror        国内网络：Python / pip / 模型都走国内镜像
 #   install.bat -Model small   指定 Whisper 模型（默认 medium）
-param([switch]$WhisperX, [switch]$Mirror, [string]$Model = "medium")
+#   install.bat -Target DIR    装到指定目录（桌面版用：代码在只读的应用内部，
+#                              runtime 和 console.env 要装到应用外的数据目录）
+param([switch]$WhisperX, [switch]$Mirror, [string]$Model = "medium", [string]$Target = "")
 $ErrorActionPreference = "Continue"   # native tools report through exit codes (checked by Run)
 [Console]::OutputEncoding = [Text.Encoding]::UTF8
-$Root = $PSScriptRoot; $RT = Join-Path $Root "runtime"; $Venv = Join-Path $RT "venv"
+if (-not $Target) { $Target = $env:VIRALREPLICA_DATA_DIR }
+# 不指定就装在本文件夹，跟以前一样
+if ($Target) {
+  New-Item -ItemType Directory -Force -Path $Target | Out-Null
+  $Root = (Resolve-Path $Target).Path
+  Write-Host "装到：$Root"
+} else {
+  $Root = $PSScriptRoot
+}
+$RT = Join-Path $Root "runtime"; $Venv = Join-Path $RT "venv"
 $Py = Join-Path $Venv "Scripts\python.exe"; $UV = Join-Path $RT "uv\uv.exe"
 foreach ($d in "uv","python","ffmpeg","models\huggingface","models\torch","temp") { New-Item -ItemType Directory -Force -Path (Join-Path $RT $d) | Out-Null }
 

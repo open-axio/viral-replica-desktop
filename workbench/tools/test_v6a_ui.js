@@ -73,7 +73,7 @@ async function warningsAndPunctuation(){
  assert.doesNotMatch(t.$('#step-5').textContent,/THE MAN|THE GIRL|。；|！，/);
  t.run(`P.breakdown.characters[0].appearance='短发。';P.breakdown.characters[0].outfit='蓝衣！';renderReplacements(true);P.segment_boards.segments.d01.plan.questions=['补全人物。','保持场景？'];renderSteps()`);
  assert.match(t.$('#replacementForm').textContent,/短发；蓝衣/);assert.doesNotMatch(t.$('#replacementForm').textContent,/。；/);
- assert.equal(t.run("directorReviewRewriteWarning({issues:[{fix:'redraw_cell',what:'问题甲。'},{fix:'image_mode',what:'问题乙！'}]})"),'有的问题要回第 04 步（对照和修改）处理，只改提示词可能修不好：问题甲；问题乙');
+ assert.equal(t.run("directorReviewRewriteWarning({issues:[{fix:'redraw_cell',what:'问题甲。'},{fix:'image_mode',what:'问题乙！'}]})"),'有的问题要回「对照修改」处理，只改提示词可能修不好：问题甲；问题乙');
  assert.equal(t.run("sceneOriginalDescription('C1')"),'短发，蓝衣');
  const scene=t.run("scenePlanCard({scene_id:'S1',subjects:[{key:'C1',name:'人物C1',kind:'character',on:false,original_description:'短发。，蓝衣。'}],time_ranges:[],frame_choices:[]})");
  assert.match(scene,/title="原片：短发，蓝衣。"/);

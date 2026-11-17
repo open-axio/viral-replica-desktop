@@ -43,7 +43,7 @@ async function savedPhotosTests(){
  await t.run('saveReplacements()');
  assert.equal(t.$('[data-edit-material="C1"]').checked,true,'saved replacement enables photo even though segment refs were empty');
  assert.equal(t.$('[data-segment-ref]'),null,'segment plan no longer edits authoritative photo choices');
- assert.match(t.$('#selectedSegmentHeader').textContent,/第 03 步.*保存/);
+ assert.match(t.$('#selectedSegmentHeader').textContent,/「选角换品」.*保存/);
  const keep=t.$('[data-cast-action="C1"]');keep.value='keep';await t.event('change',keep);await t.run('saveReplacements()');
  assert.equal(t.$('[data-edit-material="C1"]'),null,'saved keep removes photo');
  t.run(`P.storyboard.cells.forEach(c=>{c.characters=[];c.product='';c.product_later=false;});P.storyboard.cells[0].product_later=true;P.replacements.product.action='replace';newStoryboardDrafts.clear();renderSteps()`);

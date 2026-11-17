@@ -53,7 +53,7 @@ def sheet_cells(data, sid):
     if segment_boards.has_segment(data,sid):return segment_boards.sheet_cells(data,sid)
     board=data.get('storyboard') or {}
     sheet=next((s for s in board.get('sheets',[]) if s['id']==sid),None)
-    if not sheet:raise ValueError('先在第 02 步生成原片分镜')
+    if not sheet:raise ValueError('先在「内容拆解」生成原片分镜')
     byid={c['id']:c for c in board['cells']}
     return sheet,[byid[cid] for cid in sheet['cells']]
 

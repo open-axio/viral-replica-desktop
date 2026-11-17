@@ -478,6 +478,11 @@ def _run_analysis(pid: str, provider: str, srt_text: str | None = None, skip_asr
         ov, meta = gateway.reason('analysis', [{"role": "system", "content": prompts.OVERVIEW_SYSTEM},
                                             {"role": "user", "content": content}], temperature=0.2, max_tokens=16000, json=True, project=pid, override=route)
     _warn_language_mismatch(pid, transcript, ov.get("overview") or {})
+    if forensic and forensics.apply_model_methods(forensic, ov.get("shotMethods")):
+        # 大模型看过画面了：把「待确认」的镜头补上结论（免费拆解包保持原样）
+        store.atomic_write_json(adir / "forensics.json", forensic)
+        (adir / "拍摄方式.md").write_text(forensics.report_md(forensic), encoding="utf-8")
+        store.update(pid, lambda x: x["analysis"].update(forensics=forensic))
     passages = _clean_passages(ov.get("passages"), duration, int(cfg.get("MAX_PASSAGES") or 14))
     (adir / "ANALYSIS.md").write_text(ov.get("analysis_md") or "", encoding="utf-8")
     usage = [meta["usage"]]
@@ -1182,11 +1187,11 @@ def draft_camera_image(pid: str, provider: str, char_id: str, at: float | None =
     assets = {a["id"]: a for a in data.get("assets", [])}
     portrait = assets.get(rep.get("asset_id") or "")
     if not portrait:
-        raise ValueError("请先在第 03 步选择新人物照片，再生成预览")
+        raise ValueError("请先在「选角换品」选择新人物照片，再生成预览")
     product = (data.get("replacements") or {}).get("product") or {}
     product_asset = assets.get(product.get("asset_id") or "") if product.get("action") == "replace" else None
     if product.get("action") == "replace" and not product_asset:
-        raise ValueError("商品替换缺少参考图，请先在第 03 步选择商品图")
+        raise ValueError("商品替换缺少参考图，请先在「选角换品」选择商品图")
     scene_id = scene_id or replacement_guard.first_scene(data, char_id)
     scene = next((s for s in replacement_guard.scenes(data) if s["id"] == scene_id), None)
     if scene is None:
@@ -1578,7 +1583,7 @@ def _clip_script_dialogue_lines(lines: list[dict], start: float, end: float, *, 
         if allow_sentences and not row.get('words') and start <= float(row['start']) and float(row['end']) <= end:
             text = row.get('text') or ''  # A whole timed sentence needs no word-level crop.
         elif allow_sentences and not row.get('words') and row.get('text'):
-            raise ValueError('这一句台词跨过了分段边界，但转录没有逐词时间；请先在第 02 步完成本地逐词转录，或调整分段边界')
+            raise ValueError('这一句台词跨过了分段边界，但转录没有逐词时间；请先在「免费拆解」完成本地逐词转录，或调整分段边界')
         if text:
             clipped.append({**{k: row[k] for k in ('speaker', 'onScreen', 'evidence') if k in row},
                             'start': max(start, float(row['start'])), 'end': min(end, float(row['end'])), 'text': text})
@@ -1799,7 +1804,7 @@ def _follow_camera_selection_locked(pid: str, char_id: str, scene_id: str, *, re
         if not report_failure:
             raise
         # Generation/deletion already completed; never relabel a paid image as failed.
-        message = f"{scene_id} 在用图已更新，但图1 同步失败：{exc}。请在第 04 步（对照和修改）里这一段的新分镜中修复后重新生成预览"
+        message = f"{scene_id} 在用图已更新，但图1 同步失败：{exc}。请在「对照修改」里这一段的新分镜中修复后重新生成预览"
         def notice(current):
             notices = current.setdefault("camera_notice", {})
             key = f"{char_id}:{scene_id}"
@@ -1822,7 +1827,7 @@ def repair_camera_reference(pid: str, task_id: str, char_id: str, scene_id: str)
         if scene_id != replacement_guard.task_scene(data, task):
             raise ValueError('场景与当前分段不一致')
         if not scene_plan.camera_image_for(data, scene_id, store.project_dir(pid)):
-            raise ValueError('本场景没有有效主镜头图，请先到第 03 步准备')
+            raise ValueError('本场景没有有效主镜头图，请先到「选角换品」准备')
         follow_scene_camera_selection(pid, scene_id)
         return store.load(pid)
     if scene_id != replacement_guard.task_scene(data, task) or char_id not in {
@@ -1830,7 +1835,7 @@ def repair_camera_reference(pid: str, task_id: str, char_id: str, scene_id: str)
         raise ValueError("人物或场景与当前分段不一致")
     current = replacement_guard.camera_image_for(data, char_id, scene_id)
     if not current:
-        raise ValueError("本场景没有有效主镜头图，请先到第 03 步准备")
+        raise ValueError("本场景没有有效主镜头图，请先到「选角换品」准备")
     return save_script(pid, script, camera_reference_aliases={task_id: _replace_camera_reference(task, current)})
 
 

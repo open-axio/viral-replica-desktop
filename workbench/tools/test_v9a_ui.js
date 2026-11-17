@@ -40,7 +40,7 @@ async function entrance(){const t=fixture();await click(t,'[data-fission-open]')
  assert.equal(t.$$('#fissionPanel .caption-warning').length,0);assert.equal(t.$$('[data-fission-slot]').length,3);
  assert.match(t.$('#fissionPanel').textContent,/原片里的配角/);assert.ok(t.$('[data-fission-slot="product"] img'));
  assert.equal(t.$('#step-3 h3').textContent,'这个项目的照片');assert.ok(t.$('.topbar [data-library-open]'));assert.ok(t.$('[data-library-project]'));
- t.run("P.final_preview_status={ready:false,warnings:['第 2 段还没选定版本，去第 04 步选用这一版。']};renderSteps()");assert.equal(t.$('[data-fission-open]').disabled,true);
+ t.run("P.final_preview_status={ready:false,warnings:['第 2 段还没选定版本，去「对照修改」选用这一版。']};renderSteps()");assert.equal(t.$('[data-fission-open]').disabled,true);
  console.log('PASS empty panel, keep cards, title and eligibility');}
 async function picker(){const t=fixture();await click(t,'[data-fission-open]');await click(t,'[data-fission-picker="C1"]');
  assert.match(t.$('.fission-picker').textContent,/选新人物，换掉“母版人物”/);assert.equal(t.$('[data-fission-item="same-person"]').disabled,true);

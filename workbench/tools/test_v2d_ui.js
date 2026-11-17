@@ -12,7 +12,7 @@ function review(t,value){t.context.reviewValue=value;t.run('P.runs.d01[0].review
 function card(t){return t.$('[data-review-card]');}
 function video(t){return t.$('[data-director-run="d01:r1"] video');}
 function button(t){return t.$('[data-director-review="d01"][data-rev="r1"]');}
-const high={start:1.2,end:2.5,level:'high',what:'原片文字漏出',fix:'image_mode',cell:'',how:'回第 04 步改成只用图片，再重新生成这一段'};
+const high={start:1.2,end:2.5,level:'high',what:'原片文字漏出',fix:'image_mode',cell:'',how:'回「对照修改」改成只用图片，再重新生成这一段'};
 const low={start:3,end:3.5,level:'low',what:'短暂的轻微瑕疵',fix:'accept',cell:'',how:'可以接受这一处'};
 const tests=[
  ['pass and one review button per completed version',async()=>{
@@ -141,7 +141,7 @@ const tests=[
   t.context.lowReview={status:'completed',verdict:'fix',issues:[low]};
   t.run(`P.runs.d02[0].review=clone(lowReview);P.runs.d02.push({rev:'r2',state:'completed',result:'unused.mp4',review:clone(P.runs.d01[0].review)});renderSteps()`);
   const text=t.$('#finalPreviewView').textContent;
-  assert.ok(text.includes('第 1 段选用的版本检查有问题：原片文字漏出，在第 04 步选中这一段，在“视频”里处理，或确认接受后再拼接。'));
+  assert.ok(text.includes('第 1 段选用的版本检查有问题：原片文字漏出，在「对照修改」选中这一段，在“视频”里处理，或确认接受后再拼接。'));
   assert.doesNotMatch(text,/第 2 段选用的版本检查有问题|短暂的轻微瑕疵/);
   assert.equal(t.$('[data-final-preview]').disabled,false);
   assert.equal(t.$$('#finalPreviewView [data-final-preview]').length,1);
@@ -157,7 +157,7 @@ const tests=[
  }],
  ['server review warnings are shown without blocking a ready final preview',async()=>{
   const t=reviewedProject();
-  t.run(`P.final_preview_status={ready:true,warnings:[],review_warnings:['第 2 段选用的版本检查有问题：人物身份变化，在第 04 步选中这一段，在“视频”里处理，或确认接受后再拼接。']};renderSteps()`);
+  t.run(`P.final_preview_status={ready:true,warnings:[],review_warnings:['第 2 段选用的版本检查有问题：人物身份变化，在「对照修改」选中这一段，在“视频”里处理，或确认接受后再拼接。']};renderSteps()`);
   assert.match(t.$('#finalPreviewView').textContent,/第 2 段选用的版本检查有问题：人物身份变化/);
   assert.equal(t.$('[data-final-preview]').disabled,false);
   assert.equal(t.$$('#finalPreviewView [data-final-preview]').length,1);

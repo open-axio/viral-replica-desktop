@@ -31,12 +31,12 @@ def selections(data, directory):
             run = None
         path = (directory / run['result']).resolve() if run else None
         if path is None or not path.is_relative_to(directory.resolve()) or not path.is_file():
-            warnings.append(f'第 {index} 段还没有选定的结果，回第 04 步（对照和修改），选中这一段，在“视频”里生成或选定一版。')
+            warnings.append(f'第 {index} 段还没有选定的结果，回「对照修改」，选中这一段，在“视频”里生成或选定一版。')
         else:
             clips.append(path)
             chosen.append({'id': sid, 'rev': rev})
     if not rows:
-        warnings.append('先在第 04 步（对照和修改）生成分段方案。')
+        warnings.append('先在「对照修改」生成分段方案。')
     return clips, chosen, warnings
 
 
@@ -60,7 +60,7 @@ def review_warnings(data, chosen):
                 for issue in issues if issue.get('level') == 'high']
         if review.get('verdict') == 'fix' and high and not review.get('accepted'):
             warnings.append(f'第 {index} 段选用的版本检查有问题：' + '；'.join(high) +
-                            '，回第 04 步（对照和修改），选中这一段，在“视频”里处理，或确认接受后再拼接。')
+                            '，回「对照修改」，选中这一段，在“视频”里处理，或确认接受后再拼接。')
     return warnings
 
 

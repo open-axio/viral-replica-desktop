@@ -114,7 +114,7 @@ class DirectorBridgeTests(unittest.TestCase):
         # Frozen preview images survive subsequent reconstruction of the collage.
         first=Path(plan['media'][0]['path']);saved=first.read_bytes()
         Image.new('RGB',(90,160),'red').save(self.d/'assets/cell1.jpg')
-        with self.assertRaisesRegex((ValueError,bridge.BridgeError),'第 04|第 05|第 06'):
+        with self.assertRaisesRegex((ValueError,bridge.BridgeError),'「对照修改」|「成片」|第 04|第 05|第 06'):
             gateway.video_preview(self.pid,'d01')
         director.build_storyboard(self.pid,'d01')
         self.assertEqual(first.read_bytes(),saved)
@@ -125,7 +125,7 @@ class DirectorBridgeTests(unittest.TestCase):
         self.assertIsNone(run['clip']);self.assertFalse(run['preview']['tasks'][0]['reference_video_ids'])
         self.cut.assert_not_called();self.stretch.assert_not_called();self.residue.assert_not_called()
         self.change(needs_rewrite=True,structure_needs_rewrite=True)
-        with self.assertRaisesRegex((ValueError,bridge.BridgeError),'回第 04 步（对照和修改），选中这一段，在“提示词”里点“重新写这一段”'):bridge.preview(self.pid,'d01')
+        with self.assertRaisesRegex((ValueError,bridge.BridgeError),'回「对照修改」，选中这一段，在“提示词”里点“重新写这一段”'):bridge.preview(self.pid,'d01')
         self.change(needs_rewrite=False,structure_needs_rewrite=False,prompt='a'*5001)
         with self.assertRaises((ValueError,bridge.BridgeError)):bridge.preview(self.pid,'d01')
         self.change(prompt='legal',images=['c01','C1','product','C1','product'])
@@ -151,14 +151,14 @@ class DirectorBridgeTests(unittest.TestCase):
     def test_confirm_rewrite_flag_is_only_new_director_gate(self):
         run=bridge.preview(self.pid,'d01');self.change(needs_rewrite=True,structure_needs_rewrite=True)
         with patch.object(bridge,'_start_generate') as submit:
-            with self.assertRaisesRegex(bridge.BridgeError,'回第 04 步（对照和修改），选中这一段，在“提示词”里点“重新写这一段”'):bridge.confirm(self.pid,'d01',run['rev'],run['job_sha256'])
+            with self.assertRaisesRegex(bridge.BridgeError,'回「对照修改」，选中这一段，在“提示词”里点“重新写这一段”'):bridge.confirm(self.pid,'d01',run['rev'],run['job_sha256'])
             submit.assert_not_called()
 
     def test_confirm_removed_segment_does_not_submit_orphaned_paid_job(self):
         run=bridge.preview(self.pid,'d01')
         store.update(self.pid,lambda d:d['director'].update(segments=[]))
         with patch.object(bridge,'_start_generate') as submit:
-            with self.assertRaisesRegex(bridge.BridgeError,'这一段已被移除，请回到第 04 步（对照和修改）查看当前分段方案'):
+            with self.assertRaisesRegex(bridge.BridgeError,'这一段已被移除，请回到「对照修改」查看当前分段方案'):
                 bridge.confirm(self.pid,'d01',run['rev'],run['job_sha256'])
             submit.assert_not_called()
         self.assertEqual(bridge._find_run(store.load(self.pid),'d01',run['rev'])['state'],'pending_confirmation')

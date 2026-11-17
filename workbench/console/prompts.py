@@ -27,9 +27,11 @@ OVERVIEW_SYSTEM = f"""你是短视频导演兼拆解专家。你的任务是先�
   "scene": [{{"id": "S1", "name": "", "description": "", "lighting": "", "timeRanges": [[0, 0]]}}],
   "systems": [{{"name": "如：底部白字口播字幕", "kind": "caption|typography|sticker|mg|broll|effect|music|sfx|a-roll", "description": "内容、位置、字体颜色描边、进入/持续/退出、跟哪些词或动作走", "timeRanges": [[0, 0]]}}],
   "passages": [{{"id": "P1", "start": 0, "end": 0, "phase": "钩子/冲突/反转/卖点/证明/信任/促单", "summary": "这一段发生了什么、对观众起什么作用", "question": "细看时要弄清楚的问题"}}],
-  "viralLogic": {{"hook": "", "structure": "", "whyItWorks": [], "replicateTips": ["换人换货时必须保留的关系"], "risks": []}}
+  "viralLogic": {{"hook": "", "structure": "", "whyItWorks": [], "replicateTips": ["换人换货时必须保留的关系"], "risks": []}},
+  "shotMethods": [{{"shot": 1, "method": "live|ai|graphic", "why": "一句中文依据"}}]
 }}
-passages 必须从 0 覆盖到片尾、首尾相接、按时间排序。"""
+passages 必须从 0 覆盖到片尾、首尾相接、按时间排序。
+shotMethods 只针对输入「逐镜拍摄方式」里写着“像素上分不清实拍还是 AI”的镜头：看画面判断它是实拍（live，真人真景用相机或手机拍的）、AI 生成（ai）还是图文/动画/渲染（graphic），why 写看到的依据。看不出来就不写这一镜；没有这类镜头时输出空数组。"""
 
 CLOSE_SYSTEM = f"""你在对参考视频的一个段落做“逐帧细读”。你已经知道整片的理解和视觉系统（见输入）。现在根据这一段的密集帧网格（每格标了时间和当时说的词）和逐词台词，弄清楚：
 1. 分镜：真正的镜头与动作变化（准备→接触→结果），景别、运镜、人物在做什么、商品状态；长镜头按动作拆。

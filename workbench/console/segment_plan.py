@@ -189,7 +189,7 @@ def visual_segment_sig(data, segment):
 
 def get_segment(data, segment_id):
     segment=next((s for s in (data.get('segments_plan') or {}).get('segments',[]) if s.get('id')==segment_id),None)
-    if segment is None:raise ValueError('先在第 04 步（对照和修改）生成分段方案')
+    if segment is None:raise ValueError('先在「对照修改」生成分段方案')
     return segment
 
 
@@ -385,7 +385,7 @@ def generate(pid):
     data=store.load(pid);directory=store.project_dir(pid)
     segment_boards.require_idle(data)
     if not (data.get('storyboard') or {}).get('cells') or not data['storyboard'].get('sheets'):
-        raise ValueError('先在第 02 步生成原片分镜')
+        raise ValueError('先在「内容拆解」生成原片分镜')
     # Explicit button action only: neither views nor server startup may migrate.
     speech_source = speech_lines.source_fingerprint(data, speech_lines.read_transcript(directory))
     data = speech_lines.ensure(pid)
@@ -441,7 +441,7 @@ def save(pid, segment_id, body):
         raise ValueError('这里只能调整这一段的生成方式和参考照片')
     with store._lock(pid):
         data=store.load(pid);directory=store.project_dir(pid);old=data.get('segments_plan')
-        if not old:raise ValueError('先在第 04 步（对照和修改）生成分段方案')
+        if not old:raise ValueError('先在「对照修改」生成分段方案')
         candidate=copy.deepcopy(old)
         # Freeze legacy recommendations before applying the first user override.
         for row in candidate['segments']:

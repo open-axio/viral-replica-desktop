@@ -243,7 +243,7 @@ class StableSegmentTests(SegmentFixture, unittest.TestCase):
             with self.subTest(state=state):
                 store.update(self.pid,lambda d:d.update(images={'active':dict(state=state,storyboard_context={'segment_id':'d01','sheet_id':'d01'})}))
                 before=store.load(self.pid)
-                with patch.object(gateway,'reason_checked') as reason,self.assertRaisesRegex(ValueError,'第 04 步（对照和修改）.*新分镜.*生成'):
+                with patch.object(gateway,'reason_checked') as reason,self.assertRaisesRegex(ValueError,'「对照修改」.*新分镜.*生成'):
                     segment_plan.generate(self.pid)
                 reason.assert_not_called();self.assertEqual(store.load(self.pid),before)
         store.update(self.pid,lambda d:d.update(images={}))
@@ -251,7 +251,7 @@ class StableSegmentTests(SegmentFixture, unittest.TestCase):
         def reply(*args,**kwargs):
             store.update(self.pid,lambda d:d.update(images={'active':dict(state='running',storyboard_context={'segment_id':'d01','sheet_id':'d01'})}))
             return self.value(),{}
-        with patch.object(gateway,'reason_checked',side_effect=reply),self.assertRaisesRegex(ValueError,'第 04 步（对照和修改）.*新分镜.*生成'):
+        with patch.object(gateway,'reason_checked',side_effect=reply),self.assertRaisesRegex(ValueError,'「对照修改」.*新分镜.*生成'):
             segment_plan.generate(self.pid)
         after=store.load(self.pid)
         for key in ('segments_plan','segment_boards'):

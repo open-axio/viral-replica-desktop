@@ -20,7 +20,7 @@ async function main(){
  await t.click(t.$('[data-director-zoom]'));assert.equal(t.$('#cameraLightbox').hidden,false);
  assert.doesNotMatch(t.$('#directorView').textContent,/为什么是|平台页面/);
  assert.match(t.$('#segmentAdvanced').textContent,/为什么是 2 段/);
- assert.match(t.$('#directorView').textContent,/导演有疑问（可以回第 03 步补充说明，再重新生成）：商品功能不确定/);
+ assert.match(t.$('#directorView').textContent,/导演有疑问（可以回「选角换品」补充说明，再重新生成）：商品功能不确定/);
  assert.doesNotMatch(t.$('#directorView').textContent,/取舍：|风险等级|开头状态|结尾状态|成片取|为什么这样分/);
  t.run(`P.director.segments[0].needs_rewrite=true;P.director.segments[0].rewrite_reason='提示词不能包含内部格号 <safe>';directorDrafts.clear();renderSteps()`);
  assert.equal(t.$('[data-director-card] .director-rewrite-notice'),null,'stale prompt notices are handled by preparation');

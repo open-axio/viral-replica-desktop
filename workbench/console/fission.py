@@ -179,7 +179,7 @@ def _rows(data, draft, directory):
         row=dict(id=rid,selections=selections)
         if selections.get('product') and product_checks.get(selections['product']):row['story_check']=product_checks[selections['product']]
         rows.append(row);problems=[issues[(key,lid)] for key,lid in selections.items() if (key,lid) in issues]
-        problems.extend(c['name']+'的母版照片找不到了，回第 03 步重新选择。' for c in cols
+        problems.extend(c['name']+'的母版照片找不到了，回「选角换品」重新选择。' for c in cols
                         if c['action']!='keep' and not selections[c['key']] and not c['sha256'])
         if problems:errors.append(dict(row=len(rows),row_id=rid,errors=problems,error='；'.join(problems)))
     return rows,errors,product_checks
@@ -295,7 +295,7 @@ def clone_row(master, row, index, *, fission_number=None):
             if not selected:
                 if entry.get('asset_id') and not any(a['id']==entry['asset_id'] for a in data['assets']):
                     asset=assets.get(entry['asset_id'])
-                    if not asset:raise ValueError('母版照片已删除，请回第 03 步重新选择')
+                    if not asset:raise ValueError('母版照片已删除，请回「选角换品」重新选择')
                     _copy(origin,staging,asset['file']);data['assets'].append(copy.deepcopy(asset))
                 continue
             item=library.get(selected);photo=library.file_path(item);aid='a'+uuid.uuid4().hex[:20]
@@ -321,7 +321,7 @@ def clone_row(master, row, index, *, fission_number=None):
                 'file':_copy(origin,staging,col['file'],f'analysis/master-snapshot/materials/{col["key"]}{Path(col["file"]).suffix}') if col.get('file') else None}
         for segment in data['segments_plan']['segments']:
             sid=segment['id'];state=segment_boards.state_for(master,sid);current=segment_boards.current(master,sid)
-            if not current:raise ValueError(f'{sid} 的母版新分镜还没有选定，请回第 04 步选一版新分镜')
+            if not current:raise ValueError(f'{sid} 的母版新分镜还没有选定，请回「对照修改」选一版新分镜')
             source=copy.deepcopy(state.get('source') or {})
             for field in ('file','clean_file'):_copy(origin,staging,source.get(field))
             states[sid]={'source':source}
@@ -419,7 +419,7 @@ def batch_view(bid):
                 if all(image.get('state')=='completed' for image in images):item['status']='completed'
                 elif any(image.get('state') in ('failed','error','cancelled') for image in images):
                     item['status']='image_failed'
-                    image_error='；'.join(str(image.get('error') or '生图未完成，打开第 04 步重试') for image in images if image.get('state') in ('failed','error','cancelled'))
+                    image_error='；'.join(str(image.get('error') or '生图未完成，打开「对照修改」重试') for image in images if image.get('state') in ('failed','error','cancelled'))
                 elif any(image.get('state') in ('running','query_pending','submitting') for image in images):item['status']='generating'
             item['error']=image_error or '；'.join(s.get('error') or '' for s in item['segments'] if s['status']=='failed') or None
             item['can_retry']=not running and any(s['status']=='failed' for s in item['segments'])
@@ -634,8 +634,8 @@ def retry(pid, body):
         states=(data.get('fission_preparation') or {}).get('segments') or {};sid=body.get('segment_id')
         if sid and sid not in states:raise ValueError('找不到这一段，请刷新页面')
         if sid and states[sid].get('status')=='pending_confirmation':
-            raise ValueError('这一段已准备好，请到第 04 步确认生图')
+            raise ValueError('这一段已准备好，请到「对照修改」确认生图')
         selected=[sid] if sid else [key for key,value in states.items() if value.get('status')!='pending_confirmation']
-        if not selected:raise ValueError('新分镜已准备好，请到第 04 步确认生图')
+        if not selected:raise ValueError('新分镜已准备好，请到「对照修改」确认生图')
         schedule_prepare(pid,selected)
     return {'project_id':pid,'status':'preparing'}

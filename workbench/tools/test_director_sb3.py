@@ -118,7 +118,7 @@ class DirectorSB3Tests(unittest.TestCase):
                        lambda d:d['segment_boards']['segments']['d1']['versions'][0].update(storyboard_sig='changed')):
             self.fixture(10);store.update(self.pid,mutate)
             with patch.object(gateway,'reason_checked') as call:
-                with self.assertRaisesRegex(ValueError,'第 04 步（对照和修改）.*新分镜'):
+                with self.assertRaisesRegex(ValueError,'「对照修改」.*新分镜'):
                     director.generate(self.pid)
                 call.assert_not_called()
             self.assertNotIn('director',store.load(self.pid))
@@ -408,7 +408,7 @@ class DirectorSB3Tests(unittest.TestCase):
         self.generated(2)
         before=store.update(self.pid,lambda d:d['storyboard']['cells'][-1].update(end=20))
         with patch.object(gateway,'reason_checked') as reason:
-            with self.assertRaisesRegex(ValueError,'第 04 步'):
+            with self.assertRaisesRegex(ValueError,'「对照修改」'):
                 director.save(self.pid,{'action':'rewrite','segment_id':'d1'})
         reason.assert_not_called();self.assertEqual(store.load(self.pid),before)
 

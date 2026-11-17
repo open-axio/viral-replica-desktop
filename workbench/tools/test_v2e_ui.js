@@ -4,7 +4,7 @@ const {setup}=require('./test_storyboard_sb1_ui');
 const {seed}=require('./test_v2_ui');
 async function main(){
  const t=setup();seed(t);
- const note='第 04 步重新生成后，这一段内容没变，沿用了已有的新分镜。';
+ const note='「对照修改」重新生成后，这一段内容没变，沿用了已有的新分镜。';
  const controls=t.$$('#newStoryboards button').length;
  assert.ok(!t.$('#newStoryboards').textContent.includes(note));
  t.context.mockApi=async(method,url,body)=>{

@@ -49,7 +49,7 @@ class ReplacementGuardTests(unittest.TestCase):
         data = fixture()
         data["replacements"]["characters"][0]["action"] = "keep"
         data["replacements"]["product"]["action"] = "keep"
-        with self.assertRaisesRegex(jimmy_bridge.BridgeError, "第 03 步人物处理是.*保持"):
+        with self.assertRaisesRegex(jimmy_bridge.BridgeError, "「选角换品」人物处理是.*保持"):
             jimmy_bridge._check_kind(task(image_ids=["person", "product"]), data)
 
     def test_readonly_real_accident_project_is_rejected(self):
@@ -321,7 +321,7 @@ class ReplacementGuardTests(unittest.TestCase):
         store.update(pid, lambda d: d["replacements"]["characters"][0].update(action="keep"))
         with patch.object(media, "cut_clip", side_effect=AssertionError("不应裁剪")), \
                 patch.object(jimmy_bridge, "_call", side_effect=AssertionError("不应调用打包器")):
-            with self.assertRaisesRegex(jimmy_bridge.BridgeError, "第 03 步人物处理"):
+            with self.assertRaisesRegex(jimmy_bridge.BridgeError, "「选角换品」人物处理"):
                 jimmy_bridge.preview(pid, "seg-01")
         self.assertFalse(list((directory / "packages").iterdir()))
 

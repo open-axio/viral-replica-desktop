@@ -123,7 +123,7 @@ class Chain5AuthoringTests(unittest.TestCase):
 
     def test_review_rewrite_frozen_inputs_and_no_submission(self):
         data = self.generated(); original = 'FROZEN_PROMPT_SENTINEL'
-        issues = [dict(fix='image_mode', what='漏回旧外观', how='回第 04 步处理')]
+        issues = [dict(fix='image_mode', what='漏回旧外观', how='回「对照修改」处理')]
         run = dict(rev='r1', state='completed', result='output/result.mp4',
                    review=dict(status='completed', verdict='fix', issues=issues),
                    review_inputs={'segment': {'prompt': original}})

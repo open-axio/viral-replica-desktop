@@ -67,7 +67,7 @@ class ReviewTests(unittest.TestCase):
 
     def issue(self, **kw):
         return dict(start=.5, end=1.5, level='high', what='旧物出现', fix='image_mode', cell='c01',
-                    how='回第 04 步改成只用图片后重跑', **kw)
+                    how='回「对照修改」改成只用图片后重跑', **kw)
 
     def test_half_second_frame_labels_and_complete_evidence(self):
         with patch.object(media, 'extract_frame', wraps=media.extract_frame) as extract:
@@ -253,7 +253,7 @@ class ReviewTests(unittest.TestCase):
         self.assertTrue(view['ready'])
         self.assertEqual(view['warnings'], [])
         self.assertIn('第 1 段选用的版本检查有问题', view['review_warnings'][0])
-        self.assertIn('回第 04 步（对照和修改），选中这一段，在“视频”里处理，或确认接受后再拼接。', view['review_warnings'][0])
+        self.assertIn('回「对照修改」，选中这一段，在“视频”里处理，或确认接受后再拼接。', view['review_warnings'][0])
         with patch.object(media, 'concat') as concat, patch.object(media, 'probe', return_value={'duration': 2}):
             final_preview.generate(self.pid)
         self.assertEqual(concat.call_count, 1)

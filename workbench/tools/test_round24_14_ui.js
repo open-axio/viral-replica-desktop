@@ -106,7 +106,7 @@ test('生图跟随设置与旧记忆提示；台词改写标签如实标注来�
   const t=setup();t.run('P.routes={camera_image:"third_party:legacy-image"};P.breakdown={characters:[{id:"C1"}],scene:[{id:"S1",name:"客厅"}]};P.replacements={characters:[{source_id:"C1",action:"replace"}],product:{action:"keep"}};renderReplacements()');
   assert.equal(t.$('[data-camera-channel]'),null);
   assert.match(t.run('dialogueModelLabel()'),/改写模型：官方 · GPT-5.6 Sol（跟随设置里的推理模型）/);
-  t.run('P.routes.script="deepseek:old-model"');assert.match(t.run('dialogueModelLabel()'),/old-model.*这个项目单独设定，去第 04 步可恢复跟随设置/);
+  t.run('P.routes.script="deepseek:old-model"');assert.match(t.run('dialogueModelLabel()'),/old-model.*这个项目单独设定，去「对照修改」可恢复跟随设置/);
 });
 test('设置保存和清除生图旧记忆保留替换草稿，跟随渠道不被自动缓存锁住',async()=>{
   const t=setup();t.run('P.breakdown={characters:[{id:"C1",name:"人物"}],scene:[{id:"S1",name:"客厅"}]};P.replacements={characters:[{source_id:"C1",action:"replace"}],product:{action:"keep"}};renderReplacements()');
@@ -153,7 +153,7 @@ test('旧记忆短提示不重复模型，缺Key回退如实显示在默认项�
   assert.equal(t.$('[data-legacy-route="script"]').textContent,'这个项目之前单独选过这个模型 恢复跟随设置');
   assert.match(t.$('#scriptProvider').textContent,/这个项目单独用：三方渠道 · fallback-model/);
   assert.equal(t.run('requestRoute("script",$("#scriptProvider")).route.model'),'fallback-model');
-  assert.match(t.run('dialogueModelLabel()'),/三方渠道 · fallback-model.*这个项目单独设定，去第 04 步可恢复跟随设置/);
+  assert.match(t.run('dialogueModelLabel()'),/三方渠道 · fallback-model.*这个项目单独设定，去「对照修改」可恢复跟随设置/);
 });
 test('SB1 不再展示第03步主图生图渠道、状态和恢复按钮',()=>{const t=setup();assert.equal(t.$('[data-camera-channel]'),null);assert.equal(t.$('.scene-camera'),null);});
 test('临时改走官方生图使用官方配置模型，提示词内容原样提交',async()=>{

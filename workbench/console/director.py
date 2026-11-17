@@ -19,9 +19,9 @@ from . import cast, gateway, llm, scene_prompt, store, storyboard, storyboard_ed
 from .gateway.errors import CheckedLLMError, JSONResponseError
 
 INCOMPLETE = '导演方案不完整：'
-STALE_WARNING = '上游内容改过，回第 04 步（对照和修改）检查这一段的新分镜，再在“提示词”里重新写这一段。'
+STALE_WARNING = '上游内容改过，回「对照修改」检查这一段的新分镜，再在“提示词”里重新写这一段。'
 LEGACY_WARNING = '这个方案是旧版本做的，点“全部写提示词”重新生成。'
-PREREQUISITE = '先在第 04 步（对照和修改）生成每段的新分镜'
+PREREQUISITE = '先在「对照修改」生成每段的新分镜'
 REWRITE_WARNING = '这一段的说明没写好，点“重新写这一段”再试一次。'
 SILENT_SYSTEM = '''你是短视频复刻导演，按“链路五”的写法，为每段写一条能直接提交给视频模型的完整提示词。第 04 步（对照和修改）已定好分段、生成方式和提交的素材，并已画好每格的新画面；你不改这些，只写提示词。只输出 JSON。
 动笔前先针对这条片子分析风险：新旧商品在功能和状态上的差异会带来哪些画面变化；原片哪些时间点、台词或反应和新剧情不合；哪些画面容易漏回原片的人、衣服、发饰、旧商品、旧包装或文字。结论落实到提示词和 check 里，不单独输出分析过程。
@@ -75,7 +75,7 @@ def require_ready(data, directory, segment_id=None):
     from . import segment_plan, segment_boards
     plan = data.get('segments_plan') or {}
     if not plan.get('segments') or segment_plan.status(data, directory).get('stale'):
-        raise ValueError('先在第 04 步（对照和修改）生成或更新分段方案')
+        raise ValueError('先在「对照修改」生成或更新分段方案')
     sources = {s['id']: s for s in segment_boards.sheets(data)}
     for segment in plan['segments']:
         if segment_id is not None and segment['id'] != segment_id:
@@ -86,7 +86,7 @@ def require_ready(data, directory, segment_id=None):
         if storyboard_edits.casting_stale(data,sid,directory):
             raise ValueError('这一段按旧选角生成，请先生成新分镜')
         if source.get('segment_sig') != segment_plan.visual_segment_sig(data, segment):
-            raise ValueError('第 04 步（对照和修改）的分段方案改过这一段，请重新生成这一段的新分镜。')
+            raise ValueError('「对照修改」的分段方案改过这一段，请重新生成这一段的新分镜。')
         _file(directory, source.get('file')); _file(directory, current.get('file'))
         for cid in segment['cells']:
             _file(directory, current.get('cells', {}).get(cid))
@@ -331,12 +331,12 @@ def _replace_cell_references(text, numbers, segment_cells=None):
 def _ordered_segments(rows, ids):
     """Bind content by unique ID; response order does not change segment order."""
     if len(rows) != len(ids) or any(not isinstance(row, dict) for row in rows):
-        _fail('提示词必须按第 04 步（对照和修改）的分段方案逐段返回')
+        _fail('提示词必须按「对照修改」的分段方案逐段返回')
     byid = {}
     for row in rows:
         sid = row.get('id')
         if not isinstance(sid, str) or sid not in ids or sid in byid:
-            _fail('提示词段落 ID 与第 04 步（对照和修改）的分段方案不一致或重复')
+            _fail('提示词段落 ID 与「对照修改」的分段方案不一致或重复')
         byid[sid] = row
     return [byid[sid] for sid in ids]
 
@@ -346,7 +346,7 @@ def validate_plan(value, data, directory, *, preserve_brief=False, reference_cel
     from . import segment_plan
     source=data.get('segments_plan') or {}
     if source.get('format_version')!=2:
-        _fail('先在第 04 步（对照和修改）生成分段方案')
+        _fail('先在「对照修改」生成分段方案')
     if not isinstance(value,dict) or not isinstance(value.get('segments'),list):
         _fail('没有有效段落')
     wanted=[row for row in source['segments'] if target_id is None or row['id']==target_id]
@@ -367,7 +367,7 @@ def validate_plan(value, data, directory, *, preserve_brief=False, reference_cel
             structural={**fixed,'images':list(fixed['gen_images'])}
         if structural['id'] in legacy_ids:_fail('导演段落 ID 不能与已有脚本任务 ID 重复')
         if preserve_brief and any(row.get(k)!=structural[k] for k in ('id','cells','mode','images','gen_images')):
-            _fail('格号、生成方式和参考照片由第 04 步（对照和修改）的分段方案确定，请重新生成分段方案')
+            _fail('格号、生成方式和参考照片由「对照修改」的分段方案确定，请重新生成分段方案')
         item={**structural,'what':_replace_cell_references(row.get('what'),numbers) if isinstance(row.get('what'),str) else '',
               'prompt':row.get('prompt'),'check':_normalize_checks(copy.deepcopy(row.get('check'))),
               'edited':bool(preserve_brief and row.get('edited'))}
@@ -411,7 +411,7 @@ def references(data, segment, directory):
     planned=segment_plan.get_segment(data,segment['id'])
     keys=segment_plan.generation_images(data,planned,directory)
     if segment.get('images',keys)!=keys:
-        _fail('提交图片与第 04 步（对照和修改）的分段方案不同，请在“提示词”里重新写这一段')
+        _fail('提交图片与「对照修改」的分段方案不同，请在“提示词”里重新写这一段')
     options={r['key']:r for r in material_options(data,directory,segment)}
     current=(_current(data,segment['id']) or {}).get('cells',{})
     numbers={c['id']:i for i,c in enumerate(data.get('storyboard',{}).get('cells',[]),1)}
@@ -714,7 +714,7 @@ def save(pid, body):
         raise ValueError('提示词修改格式不正确')
     action = body.get('action', 'save')
     if action not in ('save', 'rewrite', 'prompt', 'brief', 'select-run'):
-        raise ValueError('未知的导演方案操作；生成方式和参考照片由分段方案确定，请到第 04 步（对照和修改）重新生成分段方案')
+        raise ValueError('未知的导演方案操作；生成方式和参考照片由分段方案确定，请到「对照修改」重新生成分段方案')
     segment_id = body.get('segment_id') or body.get('id')
     if action == 'rewrite':
         return _rewrite(pid, segment_id, review_rev=body.get('review_rev'))
@@ -758,7 +758,7 @@ def save(pid, body):
             for row in supplied['segments']:
                 previous = byid[row['id']]
                 if any(row.get(k) != previous.get(k) for k in ('cells', 'mode', 'images', 'gen_images')):
-                    _fail('格号、生成方式和参考照片由第 04 步（对照和修改）的分段方案确定，请重新生成分段方案')
+                    _fail('格号、生成方式和参考照片由「对照修改」的分段方案确定，请重新生成分段方案')
                 row.update(edited=bool(previous.get('edited') or row.get('prompt') != previous.get('prompt')),
                            inputs_sig=previous.get('inputs_sig'), plan_sig=previous.get('plan_sig'),
                            structure_needs_rewrite=previous.get('structure_needs_rewrite', False))

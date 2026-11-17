@@ -218,7 +218,7 @@ class StoryboardSB2bTests(unittest.TestCase):
                 result=self.edit.generate_plan(self.pid,'s01',{'request':request})
             messages=reason.call_args.args[1]
             text='\n'.join(p['text'] for p in messages[1]['content'] if p['type']=='text')
-            self.assertIn('第 03 步的设定',text);self.assertIn('白发父亲',text)
+            self.assertIn('「选角换品」的设定',text);self.assertIn('白发父亲',text)
             self.assertIn('补充要求：'+(request or '无'),text)
             rows=json.loads(messages[1]['content'][0]['text'].split('每格信息：')[1])
             self.assertEqual(rows[0]['商品'],'');self.assertEqual(rows[0]['后半段出现的商品'],'手表')

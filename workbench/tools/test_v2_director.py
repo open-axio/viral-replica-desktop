@@ -128,7 +128,7 @@ class DirectorV2Tests(unittest.TestCase):
             director.generate(self.pid)
         segment_plan.save(self.pid, 'd01', {'mode': 'image'})
         with patch.object(jimmy_bridge, '_prepare_package') as package:
-            with self.assertRaisesRegex(jimmy_bridge.BridgeError, '第 04 步（对照和修改）.*(?:新分镜|提示词)'):
+            with self.assertRaisesRegex(jimmy_bridge.BridgeError, '「对照修改」.*(?:新分镜|提示词)'):
                 jimmy_bridge.director_preview(self.pid, 'd01')
             package.assert_not_called()
         data = self.fixture()
@@ -140,7 +140,7 @@ class DirectorV2Tests(unittest.TestCase):
             state['current'] = 'v2'
         store.update(self.pid, change)
         with patch.object(jimmy_bridge, '_prepare_package') as package:
-            with self.assertRaisesRegex(jimmy_bridge.BridgeError, '第 04 步（对照和修改）.*提示词'):
+            with self.assertRaisesRegex(jimmy_bridge.BridgeError, '「对照修改」.*提示词'):
                 jimmy_bridge.director_preview(self.pid, 'd01')
             package.assert_not_called()
 

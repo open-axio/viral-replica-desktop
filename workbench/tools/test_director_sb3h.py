@@ -125,7 +125,7 @@ class DirectorSB3hTests(unittest.TestCase):
                         director.save(self.pid, {'action': 'rewrite', 'segment_id': 'd2'})
                     except Exception as error:
                         self.assertIsInstance(error, ValueError)
-                        self.assertEqual(str(error),'先在第 04 步（对照和修改）生成或更新分段方案')
+                        self.assertEqual(str(error),'先在「对照修改」生成或更新分段方案')
                     else:
                         self.fail('A stale segment cannot be budgeted against missing cells')
                 model.assert_not_called()

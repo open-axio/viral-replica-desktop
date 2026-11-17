@@ -26,7 +26,7 @@ async function main(){
  t.context.mockApi=async(method,url,body)=>{t.requests.push({method,url,body:structuredClone(body)});const p=JSON.parse(t.run('JSON.stringify(P)'));if(body.action==='save')p.director=structuredClone(body.director);if(body.action==='rewrite'){p.director.segments[0].prompt='图1 新画面；图2 人物照；视频1 动作按验收修正。';p.director.segments[0].edited=false;}return p;};t.run('api=mockApi');
  await t.click(t.$('[data-director-save]'));
  assert.equal(t.requests.at(-1).body.director.segments[0].prompt,prompt.value);assert.equal(t.requests.at(-1).body.director.segments[0].edited,true);
- t.run(`P.runs.d01=[{rev:'r1',state:'completed',result:'result.mp4',review:{status:'completed',verdict:'fix',summary:'需要处理',issues:[{start:0,end:1,level:'high',what:'目标外观不一致',fix:'image_mode',how:'回第 04 步调整'},{start:1,end:2,level:'high',what:'目标画面不完整',fix:'redraw_cell',cell:'c01',how:'回第 05 步重画'}]}}];renderSteps()`);
+ t.run(`P.runs.d01=[{rev:'r1',state:'completed',result:'result.mp4',review:{status:'completed',verdict:'fix',summary:'需要处理',issues:[{start:0,end:1,level:'high',what:'目标外观不一致',fix:'image_mode',how:'回「对照修改」调整'},{start:1,end:2,level:'high',what:'目标画面不完整',fix:'redraw_cell',cell:'c01',how:'回「成片」重画'}]}}];renderSteps()`);
  const result=t.$('[data-review-card]');
  assert.match(result.textContent,/目标外观不一致.*目标画面不完整/s);
  assert.equal(t.$('[data-director-review-rewrite]'),null,'old rewrite entry is replaced by a problem-scoped plan');

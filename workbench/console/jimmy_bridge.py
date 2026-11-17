@@ -312,14 +312,14 @@ def verify_preview_current(data: dict, task: dict, run: dict, directory: Path) -
         # The reviewed package is frozen; edits are advisory, not a replacement
         # safety/motion preflight. A mismatched reference mapping still needs a rewrite.
         if not task:
-            raise BridgeError("这一段已被移除，请回到第 04 步（对照和修改）查看当前分段方案")
+            raise BridgeError("这一段已被移除，请回到「对照修改」查看当前分段方案")
         if run.get('fix_plan_binding'):
             from . import fix_plan
             fix_plan.verify_video_binding(data, task['id'], run['fix_plan_binding'], directory)
         if task.get("needs_rewrite"):
             director.refresh_prompt_status(task, data)
         if task.get("needs_rewrite"):
-            raise BridgeError("这一段的说明没写好，回第 04 步（对照和修改），选中这一段，在“提示词”里点“重新写这一段”。")
+            raise BridgeError("这一段的说明没写好，回「对照修改」，选中这一段，在“提示词”里点“重新写这一段”。")
         return
     if not task or run.get("preflight_fingerprint") != preflight_fingerprint(data, task, directory):
         raise BridgeError("预览之后脚本、替换设定或参考素材有变化（或为旧版预览），请重新生成预览")
@@ -516,19 +516,19 @@ def director_preview(pid: str, seg_id: str, *, model: str | None = None, fix_pla
         except (ValueError, OSError, KeyError) as exc:
             raise BridgeError(str(exc)) from None
         if segment.get("inputs_sig") != director.segment_inputs_sig(data, directory, seg_id):
-            raise BridgeError("这一段的新分镜或分段设定改过，回第 04 步（对照和修改），选中这一段，在“提示词”里重新写这一段，再生成预览。")
+            raise BridgeError("这一段的新分镜或分段设定改过，回「对照修改」，选中这一段，在“提示词”里重新写这一段，再生成预览。")
         director.refresh_prompt_status(segment, data)
         prompt = segment.get("prompt")
         problem = segment.get("rewrite_reason")
         if problem:
-            raise BridgeError("这一段的说明没写好：" + problem + "；回第 04 步（对照和修改），选中这一段，在“提示词”里修改并保存，或重新写这一段。")
+            raise BridgeError("这一段的说明没写好：" + problem + "；回「对照修改」，选中这一段，在“提示词”里修改并保存，或重新写这一段。")
         if segment.get("needs_rewrite"):
-            raise BridgeError("这一段的说明没写好，回第 04 步（对照和修改），选中这一段，在“提示词”里点“重新写这一段”。")
+            raise BridgeError("这一段的说明没写好，回「对照修改」，选中这一段，在“提示词”里点“重新写这一段”。")
         from . import fix_plan as plans
         fix_binding = plans.video_binding(data, seg_id, directory, marker=fix_plan)
         keys = segment.get("images") or []
         if not keys or len(keys) > 4 or len(set(keys)) != len(keys):
-            raise BridgeError("每段提交 1–4 张图片，不能重复；回第 04 步（对照和修改）重新生成分段方案。")
+            raise BridgeError("每段提交 1–4 张图片，不能重复；回「对照修改」重新生成分段方案。")
         if segment.get("mode") not in {"image", "video"}:
             raise BridgeError("请选择原片视频 + 目标画面或只用图片")
         duration = segment.get("duration")
@@ -1196,10 +1196,10 @@ def image_preview(pid: str, prompt: str, image_ids: list[str], ratio: str, model
         char = next((c for c in rep.get("characters", []) if c.get("source_id") == char_id), {})
         prod = rep.get("product") or {}
         if not image_ids or image_ids[0] != char.get("asset_id"):
-            raise BridgeError("主镜头图的图1必须是第 03 步所选人物照片，请重新生成预览")
+            raise BridgeError("主镜头图的图1必须是「选角换品」所选人物照片，请重新生成预览")
         product_id = prod.get("asset_id") if prod.get("action") == "replace" else None
         if product_id and (len(image_ids) < 2 or image_ids[1] != product_id):
-            raise BridgeError("主镜头图的图2必须是第 03 步所选商品图，请重新生成预览")
+            raise BridgeError("主镜头图的图2必须是「选角换品」所选商品图，请重新生成预览")
         base_count = 2 if product_id else 1
         anchor_id = image_ids[base_count] if len(image_ids) == base_count + 2 else None
         if len(image_ids) not in {base_count + 1, base_count + 2}:

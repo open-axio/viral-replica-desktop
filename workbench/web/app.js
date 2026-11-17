@@ -364,11 +364,15 @@ function defaultRouteLabel(step) {
   const route=routeFor(step),name=routeName(route.channel ? route : settingsRoute(step));
   return legacyRouteStep(step) ? `这个项目单独用：${name}` : `跟随设置（${name}）`;
 }
+// 旧的步骤编号 → 新界面里的名字（后端仍按编号返回，例如修复向导的 todo.step）
+function stepName(no) {
+  return {'01':'「上传素材」','02':'「内容拆解」','03':'「选角换品」','04':'「对照修改」','05':'「成片」'}[String(no).padStart(2,'0')] || `第 ${no} 步`;
+}
 function legacyRouteNote(step) {
   const saved=legacyRouteStep(step);
   if(!saved)return '';
-  const source={analysis:'02',script:'04'}[saved];
-  return `这个项目单独设定${saved!==step && source ? `，去第 ${source} 步可恢复跟随设置` : ''}`;
+  const source={analysis:'「内容拆解」',script:'「对照修改」'}[saved];
+  return `这个项目单独设定${saved!==step && source ? `，去${source}可恢复跟随设置` : ''}`;
 }
 function legacyRouteHtml(step) {
   const saved=legacyRouteStep(step);
@@ -623,6 +627,11 @@ function renderStatus() {
   const rt = s.runtime || {};
   pills.push([rt.running_in_venv, rt.running_in_venv ? `依赖在工作台内 · ${rt.runtime_mb} MB` : "未用工作台环境（先运行 install.sh）"]);
   updateHtml($("#statusPills"), pills.map(([ok, l]) => `<span class="pill ${ok ? "ok" : "bad"}">${esc(l)}</span>`).join(""));
+  // 本机必需的东西（FFmpeg、转录模型、运行环境）缺了才在按钮上亮红点；没填 Key 不算问题，免费拆解用不到
+  const broken = !s.ffmpeg || !s.asr || !rt.running_in_venv;
+  const t = $("#statusToggle");
+  if (t) t.setAttribute("data-tip", broken ? "运行状态 · 有东西没装好" : "运行状态");
+  if (t) t.setAttribute("data-problem", broken ? "1" : "0");
 }
 async function newProject() {
   const name = await pagePrompt("项目名称", "复刻 " + new Date().toLocaleDateString());
@@ -770,7 +779,7 @@ function renderAnalysis() {
   const errMsg = operationErrors.get(operationKey("analyze")) || (a.status === "failed" ? (a.error || P.jobs?.analyze?.error) : (["error","failed"].includes(P.jobs?.analyze?.state) ? P.jobs.analyze.error : ""));
   // 免费部分的结果在「② 免费拆解」那一屏（flow.js），这里不再重复说明
   const freeDone = "";
-  const err = errMsg ? `<div class="runstep"><span class="st skipped">拆解没有完成：${errorHtml(errMsg,'拆解推理')}</span>${thirdRetry("analyze")}<div class="hint">修正后直接点“开始拆解”重新跑；需要换视频就在第 01 步清除。</div></div>` : "";
+  const err = errMsg ? `<div class="runstep"><span class="st skipped">拆解没有完成：${errorHtml(errMsg,'拆解推理')}</span>${thirdRetry("analyze")}<div class="hint">修正后直接点“开始拆解”重新跑；需要换视频就在「上传素材」清除。</div></div>` : "";
   updateHtml($("#analysisSteps"), order.filter((k) => steps[k]).map((k) => {
     const s = steps[k];
     const out = s.output ? JSON.stringify(s.output) : s.note || "";
@@ -2369,7 +2378,7 @@ function renderComparison(){
       ${owner?.cells[0]===c.id?`<span class="segment-badge ${oldCasting?'with-casting-badge':''}"><i class="segment-dot ${state.color}" title="${state.label}"></i>第 ${index+1} 段</span>`:''}${oldCasting?'<span class="casting-stale-badge" data-casting-stale>按旧选角生成</span>':''}${skipped?'<span class="skip-badge">不复刻</span>':''}</span>
       <span class="comparison-caption">第 ${c.index} 镜 <small>${fmt(c.start,1)}–${fmt(c.end,1)} 秒</small></span></button>${file?storyboardPreviewMagnifier(c.id,side):''}</div>`;
   }).join('')}</div><svg class="comparison-outline" viewBox="0 0 300 ${rows*100}" preserveAspectRatio="none" aria-hidden="true">${segments.map(s=>`<path data-segment-outline="${esc(s.id)}" class="${s.id===selection.sid?'is-selected':''}" d="${comparisonOutline(cells.flatMap((c,i)=>s.cells.includes(c.id) && !skip.has(c.id)?[i]:[]))}" vector-effect="non-scaling-stroke"></path>`).join('')}</svg></div></section>`;
-  updateHtml(box,`<div id="comparisonBoards" ${view.view==='video'?'hidden':''}>${cells.length?`<div class="comparison-legend" aria-label="分段状态"><span><i class="segment-dot empty"></i>待生成新分镜</span><span><i class="segment-dot ready"></i>待生成视频</span><span><i class="segment-dot done"></i>已选定可用版本</span><span><i class="segment-dot warning"></i>有提示</span></div>${status}<div class="comparison-columns">${column('source')}${column('target')}</div>`:'<p class="hint">先在第 02 步生成原片分镜</p>'}</div><div class="row wrap" id="comparisonPlaybackControls" ${view.view==='video'?'':'hidden'}><button class="small" data-comparison-sync aria-pressed="false" ${run?.state==='completed' && run.result && P.source?.file?'':'disabled'}>同步播放</button><span class="hint" data-comparison-sync-status role="status"></span></div><div id="comparisonVideos" class="comparison-columns video-comparison" ${view.view==='video'?'':'hidden'}><section data-video-side="source" aria-label="原片">${segment && P.source?.file?`<video controls muted playsinline preload="metadata" src="${fileUrl(P.source.file)}#t=${Number(videoSegment.source_start)},${Number(videoSegment.source_end)}"></video>`:''}</section><section data-video-side="target" aria-label="生成的视频"><div id="directorGeneration">${segment?v5VideoHtml(segment):'<p class="hint">先完成上面的提示词</p>'}</div></section></div><div id="segmentReviewCard">${segment?directorReviewHtml(segment.id,v5CurrentRun(segment.id)):''}</div>`);
+  updateHtml(box,`<div id="comparisonBoards" ${view.view==='video'?'hidden':''}>${cells.length?`<div class="comparison-legend" aria-label="分段状态"><span><i class="segment-dot empty"></i>待生成新分镜</span><span><i class="segment-dot ready"></i>待生成视频</span><span><i class="segment-dot done"></i>已选定可用版本</span><span><i class="segment-dot warning"></i>有提示</span></div>${status}<div class="comparison-columns">${column('source')}${column('target')}</div>`:'<p class="hint">先在「内容拆解」生成原片分镜</p>'}</div><div class="row wrap" id="comparisonPlaybackControls" ${view.view==='video'?'':'hidden'}><button class="small" data-comparison-sync aria-pressed="false" ${run?.state==='completed' && run.result && P.source?.file?'':'disabled'}>同步播放</button><span class="hint" data-comparison-sync-status role="status"></span></div><div id="comparisonVideos" class="comparison-columns video-comparison" ${view.view==='video'?'':'hidden'}><section data-video-side="source" aria-label="原片">${segment && P.source?.file?`<video controls muted playsinline preload="metadata" src="${fileUrl(P.source.file)}#t=${Number(videoSegment.source_start)},${Number(videoSegment.source_end)}"></video>`:''}</section><section data-video-side="target" aria-label="生成的视频"><div id="directorGeneration">${segment?v5VideoHtml(segment):'<p class="hint">先完成上面的提示词</p>'}</div></section></div><div id="segmentReviewCard">${segment?directorReviewHtml(segment.id,v5CurrentRun(segment.id)):''}</div>`);
   if($('#selectedSegment'))$('#selectedSegment').hidden=!segment;
   renderSegmentBar();renderSegmentFoot();
   if(!segment){updateHtml($('#selectedSegmentHeader'),'');return;}
@@ -2379,7 +2388,7 @@ function renderComparison(){
 
 function segmentSettingsHtml(s){
   const busy=!!segmentModeDisabledReason(s.id),photos=editMaterials(s.id);
-  return `<details data-detail-key="segment-plan:${esc(s.id)}"><summary>本段生成方式和素材</summary><p>${displayTextHtml(s.what || '')}</p><label>生成方式 <select data-segment-mode="${esc(s.id)}" ${busy?'disabled':''}><option value="video" ${s.mode==='video'?'selected':''}>原片视频 + 目标画面和照片</option><option value="image" ${s.mode==='image'?'selected':''}>只用目标画面和照片</option></select></label><p class="hint">人物和商品照片按第 03 步最新保存的设定自动选取；可在下方调整新分镜的照片开关。视频提交的目标画面和照片合计最多 4 张。</p><p class="hint" data-segment-photos="${esc(s.id)}">本段照片：${photos.map(m=>esc(m.name || m.label)).join('、') || '无'}</p></details>`;
+  return `<details data-detail-key="segment-plan:${esc(s.id)}"><summary>本段生成方式和素材</summary><p>${displayTextHtml(s.what || '')}</p><label>生成方式 <select data-segment-mode="${esc(s.id)}" ${busy?'disabled':''}><option value="video" ${s.mode==='video'?'selected':''}>原片视频 + 目标画面和照片</option><option value="image" ${s.mode==='image'?'selected':''}>只用目标画面和照片</option></select></label><p class="hint">人物和商品照片按「选角换品」最新保存的设定自动选取；可在下方调整新分镜的照片开关。视频提交的目标画面和照片合计最多 4 张。</p><p class="hint" data-segment-photos="${esc(s.id)}">本段照片：${photos.map(m=>esc(m.name || m.label)).join('、') || '无'}</p></details>`;
 }
 
 async function segmentPlanAction(action,sid,change={}){
@@ -2418,11 +2427,11 @@ function finalPreviewStatus(){
     const bound=prompt && !directorLegacy(P.director) && ['cells','source_start','source_end'].every(k=>JSON.stringify(prompt[k])===JSON.stringify(s[k]));
     const chosen=bound?prompt.selected_run:null;
     const run=chosen && (P.runs?.[s.id] || []).find(r=>r.rev===chosen && r.state==='completed' && r.result);
-    if(!run)warnings.push(`第 ${i+1} 段还没有选定的结果，在第 04 步选中这一段，在“视频”里生成或选定一版。`);
+    if(!run)warnings.push(`第 ${i+1} 段还没有选定的结果，在「对照修改」选中这一段，在“视频”里生成或选定一版。`);
     const high=run?.review?.verdict==='fix'?issuesByTime(run.review.issues).map(row=>row.issue).filter(issue=>issue.level==='high'):[];
-    if(high.length && !run?.review?.accepted)reviewWarnings.push(`第 ${i+1} 段选用的版本检查有问题：${joinDisplayText(high.map(issue=>issue.what))}，在第 04 步选中这一段，在“视频”里处理，或确认接受后再拼接。`);
+    if(high.length && !run?.review?.accepted)reviewWarnings.push(`第 ${i+1} 段选用的版本检查有问题：${joinDisplayText(high.map(issue=>issue.what))}，在「对照修改」选中这一段，在“视频”里处理，或确认接受后再拼接。`);
   }
-  if(!segments.length)warnings.push('先在第 04 步生成分段方案。');
+  if(!segments.length)warnings.push('先在「对照修改」生成分段方案。');
   return {...P.final_preview,ready:segments.length>0 && !warnings.length,warnings,review_warnings:reviewWarnings,stale:!!P.final_preview && warnings.length>0};
 }
 function renderFinalPreview(){
@@ -2634,7 +2643,7 @@ function finalCheckHtml(){
   let error=finalCheckErrors.get(P.id);
   if(error && (error.file!==saved.file || error.snapshot!==directorReviewSnapshot(review))){finalCheckErrors.delete(P.id);error=null;}
   const running=finalCheckBusy.get(P.id)===saved.file || review?.status==='running' && P.jobs?.['final-check']?.state==='running',state=reviewState(review,running,error);
-  const copy={unchecked:'每段自己的问题在第 04 步查。这里只看拼起来以后的事：段和段之间人和商品前后是不是同一个、接缝是不是突兀、整片剧情是否连得上。需要时点“检查视频”。',running:'正在看段与段的接缝…',pass:'段和段之间人和商品保持一致，接缝和剧情连得上。',failed:`这次检查没完成（原因：${publicText(error?.message || review?.error_reason || '上次检查中断')}），视频本身没受影响。点“检查视频”再查一次。`,accepted:'检查查出的问题你选择不改。'}[state];
+  const copy={unchecked:'每段自己的问题在「对照修改」查。这里只看拼起来以后的事：段和段之间人和商品前后是不是同一个、接缝是不是突兀、整片剧情是否连得上。需要时点“检查视频”。',running:'正在看段与段的接缝…',pass:'段和段之间人和商品保持一致，接缝和剧情连得上。',failed:`这次检查没完成（原因：${publicText(error?.message || review?.error_reason || '上次检查中断')}），视频本身没受影响。点“检查视频”再查一次。`,accepted:'检查查出的问题你选择不改。'}[state];
   return `<section class="vcheck" data-final-check-card><div class="check-head"><b>整片检查</b><span class="check-pill ${state}">${reviewLabel(review,state)}</span><span class="spacer"></span>${review?.accepted?'<button class="small ghost" data-final-accept="false">撤销</button>':''}<button class="small" data-final-check ${running?'disabled':''}>检查视频</button></div>${copy?`<p class="check-copy" role="status">${displayTextHtml(copy)}</p>`:''}${reviewTechnicalDetails(review,state,'final:'+saved.file)}${state==='fix'?`<ul class="review-issues">${issuesByTime(review.issues).map(({issue:i,index:k})=>`<li class="review-issue final-issue"><button class="time-chip" data-final-seek="${Number(i.start)}">${fmt(i.start,1)}–${fmt(i.end,1)} 秒</button><p><span class="issue-level ${i.level==='high'?'high':'low'}">${i.level==='high'?'要改':'轻微'}</span>${displayTextHtml(i.what)}</p><button class="small ghost" data-final-issue-segment="${esc(i.segment)}" data-issue="${k}">去第 ${(P.segments_plan?.segments || []).findIndex(s=>s.id===i.segment)+1} 段处理 →</button></li>`).join('')}</ul><p class="check-copy">点“去第 N 段处理”，这个问题会带到那一段的补充意见里。<button class="small ghost" data-final-accept="true">不改，就用这一版</button></p>`:''}</section>`;
 }
 async function checkFinal(accepted){
@@ -2670,7 +2679,7 @@ async function reviewDirectorRun(id,rev){
 }
 function directorReviewRewriteWarning(review){
   const issues=(review?.issues || []).filter(i=>['image_mode','redraw_cell'].includes(i.fix));
-  return issues.length?'有的问题要回第 04 步（对照和修改）处理，只改提示词可能修不好：'+joinDisplayText(issues.map(i=>i.what)):'';
+  return issues.length?'有的问题要回「对照修改」处理，只改提示词可能修不好：'+joinDisplayText(issues.map(i=>i.what)):'';
 }
 async function rewriteDirectorRun(id,rev){
   const pid=P.id,key=directorReviewKey(id,rev),run=P.runs?.[id]?.find(r=>r.rev===rev);
@@ -2715,7 +2724,7 @@ function directorMaterials(segment){
 }
 function directorMaterialsHtml(segment){
   return `<div class="director-references" data-director-materials="${esc(segment.id)}">${directorMaterials(segment).map(m=>`<figure>
-    ${m.file?(m.type==='video'?`<video src="${fileUrl(m.file)}#t=${Number(m.source_start || 0)}" controls muted preload="metadata" aria-label="${esc(m.label)}"></video>`:`<a class="director-image" href="${fileUrl(m.file)}" data-director-zoom="${esc(m.file)}" data-caption="${esc(m.label+' '+m.description)}"><img src="${fileUrl(m.file)}" alt="${esc(m.label+' '+m.description)}" loading="lazy"></a>`):'<span class="hint">素材找不到了，请在第 04 步检查这一段的新分镜</span>'}
+    ${m.file?(m.type==='video'?`<video src="${fileUrl(m.file)}#t=${Number(m.source_start || 0)}" controls muted preload="metadata" aria-label="${esc(m.label)}"></video>`:`<a class="director-image" href="${fileUrl(m.file)}" data-director-zoom="${esc(m.file)}" data-caption="${esc(m.label+' '+m.description)}"><img src="${fileUrl(m.file)}" alt="${esc(m.label+' '+m.description)}" loading="lazy"></a>`):'<span class="hint">素材找不到了，请在「对照修改」检查这一段的新分镜</span>'}
     <figcaption>${esc(m.label)} · ${esc(m.description || m.duty || '')}</figcaption></figure>`).join('')}</div>`;
 }
 function directorLegacy(plan){return !!plan && plan.format_version!==3;}
@@ -2730,7 +2739,7 @@ function directorPromptCorrection(segment){
   else if(reason.includes('素材编号'))help='请对照上面的素材清单，补齐缺少的编号、删除不存在的编号，再点“保存”。';
   else if(reason.includes('5000'))help='请删掉重复说明，将提示词缩短到 5000 字符以内，再点“保存”。';
   else if(reason.includes('检查项'))help='请点“重新写这一段”，补充至少 1 条非空检查项。';
-  else if(segment.structure_needs_rewrite)help='请检查第 04 步（对照和修改）的本段设定，再点“重新写这一段”。';
+  else if(segment.structure_needs_rewrite)help='请检查「对照修改」的本段设定，再点“重新写这一段”。';
   return `${reason}。${help}`;
 }
 function directorSavedFeedback(pid){
@@ -2746,14 +2755,14 @@ function v5VideoPreviewDetails(sid){
 function renderDirector(){
   const box=$('#directorView');if(!box)return;
   const plan=directorDraft().value,busy=directorBusy.has(P.id) || comparisonBatches.get(P.id)?.busy,ready=directorReady(),error=directorErrors.get(P.id),legacy=directorLegacy(plan);
-  const staleWarning='上游内容改过，在第 04 步检查这一段的新分镜，再重新写这一段。';
+  const staleWarning='上游内容改过，在「对照修改」检查这一段的新分镜，再重新写这一段。';
   const warnings=[];
 
   if(!comparisonBoardReady(comparisonSelection().sid)){updateHtml(box,'<p class="hint">先完成上面的新分镜</p>');return;}
   const generate=!plan || legacy?'<p class="hint">点“生成视频”时会自动准备这一段的提示词。</p>':'';
   updateHtml(box,`${generate}${directorNotices(warnings)}${error?`<p class="caption-warning" role="alert">${esc(publicText(error.message))}${error.action==='save'?' 请按原因修改后再点“保存”；段落设定不一致时，先复制提示词，再刷新页面。':''} <button class="small ghost" data-director-retry>重试</button></p>`:''}${plan && !legacy?`
     <p class="director-summary">${esc(plan.summary)}</p>
-    ${(plan.questions || []).map(q=>`<p class="caption-warning">导演有疑问（可以回第 03 步补充说明，再重新生成）：${esc(q)}</p>`).join('')}
+    ${(plan.questions || []).map(q=>`<p class="caption-warning">导演有疑问（可以回「选角换品」补充说明，再重新生成）：${esc(q)}</p>`).join('')}
     ${(plan.segments || []).filter(s=>s.id===comparisonSelection().sid).map((s)=>`<article class="director-card" data-director-card="${esc(s.id)}"><p class="hint">本段将提交的素材：</p>${directorMaterialsHtml(s)}
 
       <p>拍什么：${displayTextHtml(s.what || '')}</p><p>怎么拍：${(P.segments_plan?.segments?.find(row=>row.id===s.id)?.mode || s.mode)==='video'?'原片视频 + 目标画面和照片':'只用目标画面和照片'} —— ${esc(s.mode_reason || '')}</p>
@@ -2863,11 +2872,11 @@ function renderNewStoryboards(){
   const box=$('#newStoryboards');if(!box)return;
   if(!segmentSheets().length){
     for(const cache of [newStoryboardDrafts,newStoryboardErrors,newStoryboardPreviews,newStoryboardCells,newStoryboardCellRequests,newStoryboardInvalidPreviews])for(const key of cache.keys())if(key.startsWith(P.id+':'))cache.delete(key);
-    updateHtml(box,'<p class="hint">先在第 04 步生成分段方案</p>');renderComparison();return;
+    updateHtml(box,'<p class="hint">先在「对照修改」生成分段方案</p>');renderComparison();return;
   }
   updateHtml(box,segmentSheets().filter(sheet=>sheet.id===comparisonSelection().sid).map(sheet=>{
     const sid=sheet.id,key=editSheetKey(sid),state=editSheetState(sid),draft=editDraft(sid),plan=draft.plan,busy=segmentPlanBusy.has(P.id) || newStoryboardBusy.has(key) || comparisonBatches.get(P.id)?.busy || ['preparing','confirming','running'].includes(v5ActionState(sid)?.status),disabled=busy?'disabled':'',materials=editMaterials(sid),versions=state.versions || [],current=versions.find(v=>v.id===state.current),cells=sheet.cells.map(id=>P.storyboard?.cells?.find(c=>c.id===id)).filter(Boolean),preview=v5BoardPreview(sid,null);
-    return `<section class="edit-sheet" data-edit-sheet="${esc(sid)}">${state.reused_after_replan?'<p class="hint">第 04 步重新生成后，这一段内容没变，沿用了已有的新分镜。</p>':''}<label>补充要求（可不填）<textarea rows="2" data-edit-request="${esc(sid)}" ${disabled} placeholder="在这里补充这一段的画面要求">${esc(draft.request)}</textarea></label><div class="row wrap">${v5CurrentRun(sid)?.state==='completed' && !comparisonNeedsPrompt({id:sid}) && !v5Regenerate.has(key)?`<button class="ghost small" data-edit-preview="${esc(sid)}" ${disabled}>整段重画</button>`:''}<button class="ghost small" data-edit-mic="${esc(sid)}" ${disabled} aria-label="语音输入">${storyboardRecorder?.key===key?'■ 结束录音':'语音输入'}</button><button class="ghost small" data-edit-plan="${esc(sid)}" ${disabled}>重新生成改图方案</button></div><div class="edit-materials">${materials.map(m=>`<label class="edit-material"><img src="${fileUrl(m.file)}" alt="${esc(m.name)}"><span>${esc(m.name)}</span><input type="checkbox" data-edit-material="${esc(m.key)}" data-sheet="${esc(sid)}" ${draft.materials[m.key]?'checked':''} ${disabled} aria-label="使用${esc(m.name)}"><span aria-hidden="true" class="material-eye ${draft.materials[m.key]?'':'off'}">👁</span></label>`).join('') || '<p class="hint">第 03 步选好的人物和商品照片会列在这里。</p>'}</div>
+    return `<section class="edit-sheet" data-edit-sheet="${esc(sid)}">${state.reused_after_replan?'<p class="hint">「对照修改」重新生成后，这一段内容没变，沿用了已有的新分镜。</p>':''}<label>补充要求（可不填）<textarea rows="2" data-edit-request="${esc(sid)}" ${disabled} placeholder="在这里补充这一段的画面要求">${esc(draft.request)}</textarea></label><div class="row wrap">${v5CurrentRun(sid)?.state==='completed' && !comparisonNeedsPrompt({id:sid}) && !v5Regenerate.has(key)?`<button class="ghost small" data-edit-preview="${esc(sid)}" ${disabled}>整段重画</button>`:''}<button class="ghost small" data-edit-mic="${esc(sid)}" ${disabled} aria-label="语音输入">${storyboardRecorder?.key===key?'■ 结束录音':'语音输入'}</button><button class="ghost small" data-edit-plan="${esc(sid)}" ${disabled}>重新生成改图方案</button></div><div class="edit-materials">${materials.map(m=>`<label class="edit-material"><img src="${fileUrl(m.file)}" alt="${esc(m.name)}"><span>${esc(m.name)}</span><input type="checkbox" data-edit-material="${esc(m.key)}" data-sheet="${esc(sid)}" ${draft.materials[m.key]?'checked':''} ${disabled} aria-label="使用${esc(m.name)}"><span aria-hidden="true" class="material-eye ${draft.materials[m.key]?'':'off'}">👁</span></label>`).join('') || '<p class="hint">「选角换品」选好的人物和商品照片会列在这里。</p>'}</div>
     ${plan?`<details class="edit-plan" data-detail-key="edit-plan:${esc(sid)}"><summary>改图方案</summary><p>${esc(plan.summary)}</p>${(plan.cells || []).map(row=>{const c=cells.find(c=>c.id===row.cell);return c?`<article class="edit-plan-row"><button class="story-preview-history" data-story-preview-cell="${esc(c.id)}" data-story-preview-side="source" aria-label="看大图"><img src="${fileUrl(storyboardFile(c.file))}" alt="原片第 ${c.index} 镜"></button><div><label>第 ${c.index} 镜 · ${fmt(c.start,1)}–${fmt(c.end,1)} 秒<textarea rows="2" data-edit-change="${esc(c.id)}" data-sheet="${esc(sid)}" ${disabled}>${esc(row.changes)}</textarea></label><p class="hint">${esc(row.keep)}</p></div></article>`:'';}).join('')}<label class="check"><input type="checkbox" data-edit-remove-text data-sheet="${esc(sid)}" ${plan.remove_text?'checked':''} ${disabled}>去掉原片画面上的字幕和表情</label>${plan.questions?.length?`<p class="hint">可以在对应格补充说明：${displayTextHtml(plan.questions.join('；'))}</p>`:''}<button class="ghost small" data-edit-save="${esc(sid)}" ${disabled}>保存方案</button></details>`:''}
     ${preview?`<details data-detail-key="edit-preview:${esc(sid)}"><summary>本次生图预览详情</summary><pre>${esc(preview.preview?.prompt || '')}</pre><div class="edit-preview-refs">${(preview.storyboard_context?.references || []).map((r,i)=>`<figure>${r.file?`<button class="story-preview-history" data-story-preview-file="${esc(r.file)}" data-story-preview-caption="图${i+1} · ${esc(r.name || '本次生图参考图')}" aria-label="看大图"><img src="${fileUrl(r.file)}" alt="图${i+1}：${esc(r.name)}"></button>`:''}<figcaption>图${i+1}：${esc(r.name)}</figcaption></figure>`).join('')}</div></details>`:''}
     ${current && current.slicer!==2?`<p class="hint">这一版切格有误，可按模型原图免费重新切。<button class="small ghost" data-edit-reslice="${esc(current.id)}" data-sheet="${esc(sid)}" ${disabled}>重新切格（免费）</button></p>`:''}
@@ -3100,7 +3109,7 @@ function librarySaveHtml(key,entry){
 async function saveCastingToLibrary(key){
   const pid=P.id,entry=castEntry(castingDraft(),key),lock=`${pid}:${key}`;
   if(librarySaving.has(lock) || !entry.asset_id || librarySaved.get(pid)?.has(entry.asset_id) || (P.library_saved_assets || []).includes(entry.asset_id))return;
-  if(dirty.rep){librarySaveErrors.set(lock,'选角改动尚未保存，素材库还不能读取这张照片。点第 03 步“保存”后再存入。');renderReplacements(true);return;}
+  if(dirty.rep){librarySaveErrors.set(lock,'选角改动尚未保存，素材库还不能读取这张照片。点「选角换品」“保存”后再存入。');renderReplacements(true);return;}
   librarySaving.add(lock);librarySaveErrors.delete(lock);renderReplacements(true);
   try{await api('POST',`projects/${pid}/library`,{kind:key==='product'?'product':'person',source_id:key});
     if(!librarySaved.has(pid))librarySaved.set(pid,new Set());librarySaved.get(pid).add(entry.asset_id);
@@ -3242,7 +3251,7 @@ function fissionBatchSlots(item,state){
   return state.view.columns.map(c=>{const id=item.selections?.[c.key],photo=id&&(fissionItem(id,state) || state.known[id]);return {key:c.key,name:id?photo?.name || '所选照片':c.master_name,source_name:c.source_name || c.key,file:id?null:c.file,url:photo?.url,changed:!!id};});
 }
 function fissionProgressHtml(state,disabled,batches=state.batches){return batches.map(batch=>`<section class="fission-progress">${(batch.items || []).map(item=>{
-  const failed=item.error || ['failed','error','interrupted','image_failed'].includes(item.status),label=item.status==='completed'?'已生成新分镜':item.status==='generating'?'新分镜生成中':item.status==='image_failed'?'生图失败，打开第 04 步重试':failed?'失败':['pending_confirmation','ready','awaiting_confirmation'].includes(item.status)?'等你确认付费':'整理改法中',slots=fissionBatchSlots(item,state);
+  const failed=item.error || ['failed','error','interrupted','image_failed'].includes(item.status),label=item.status==='completed'?'已生成新分镜':item.status==='generating'?'新分镜生成中':item.status==='image_failed'?'生图失败，打开「对照修改」重试':failed?'失败':['pending_confirmation','ready','awaiting_confirmation'].includes(item.status)?'等你确认付费':'整理改法中',slots=fissionBatchSlots(item,state);
   return `<div class="fission-progress-row" role="status"><div class="fission-thumbnails">${slots.map(slot=>fissionPhoto(slot.url || (slot.file?'/files/'+encodeURIComponent(item.project_id || state.pid)+'/'+slot.file.split('/').map(encodeURIComponent).join('/'):''),slot.name,'',!slot.changed)).join('')}</div><div class="fission-progress-copy"><b>裂变 ${item.fission_number || item.row}</b><span class="fission-changes" title="${esc(slots.filter(s=>s.changed).map(s=>(s.key==='product'?'商品':s.key)+' → '+s.name).join('，'))}">换了：${esc(slots.filter(s=>s.changed).map(s=>(s.key==='product'?'商品':s.key)+' → '+s.name).join('，') || '沿用母版设定')}</span><span>${label}</span>${failed?errorHtml(item.error || item.segments?.find(s=>s.error)?.error || '部分段没准备好，点重试继续。','推理'):''}</div>${item.project_id?`<button class="small ghost" data-fission-project="${esc(item.project_id)}" ${disabled}>打开</button>`:''}${(failed || item.can_retry) && item.project_id && item.status!=='image_failed' && !/项目已删除/.test(item.error || '')?`<button class="small ghost" data-fission-retry="${esc(item.project_id)}" title="${item.can_retry===false?'正在整理改法，完成后再重试':'重试没有准备好的段；会调用推理'}" ${disabled || (item.can_retry===false?'disabled':'')}>重试</button>`:''}</div>`;
 }).join('')}</section>`).join('');}
 async function fissionNewBatch(){
@@ -3254,7 +3263,7 @@ function renderFission(){
   const box=$('#fissionPanel'),state=fissionState;if(!box)return;box.hidden=!fissionCurrent(state) || !state.open;if(box.hidden){clearTimeout(fissionTimer);return;}
   if(state.showProgress && state.batches.length){
     const batch=state.batches[0],disabled=state.busy?'disabled':'';
-    updateHtml(box,`<header class="fission-head"><h2>已创建 ${(batch.items || []).filter(i=>i.project_id).length} 条新视频</h2></header><div class="fission-body">${fissionBusyHtml(state)}<p>每条新视频是一个单独的项目，在顶部项目列表里，挂在母版下面。系统正在为每条整理新分镜的改法（调用推理），整理好后进项目第 04 步确认付费，生成新分镜。可以先关掉这个窗口，准备会在后台继续。</p>${fissionProgressHtml(state,disabled,[batch])}${state.error?errorHtml(state.error):''}${state.pollError?errorHtml(state.pollError)+'<button class="small ghost" data-fission-refresh>刷新进度</button>':''}</div><footer class="fission-foot"><button class="small ghost" data-fission-close ${disabled}>关闭</button><button class="ghost" data-batch-board="${esc(state.pid)}" ${disabled}>查看批量看板</button><button data-fission-new-batch ${disabled}>再出一批</button></footer>`);return;
+    updateHtml(box,`<header class="fission-head"><h2>已创建 ${(batch.items || []).filter(i=>i.project_id).length} 条新视频</h2></header><div class="fission-body">${fissionBusyHtml(state)}<p>每条新视频是一个单独的项目，在顶部项目列表里，挂在母版下面。系统正在为每条整理新分镜的改法（调用推理），整理好后进项目「对照修改」确认付费，生成新分镜。可以先关掉这个窗口，准备会在后台继续。</p>${fissionProgressHtml(state,disabled,[batch])}${state.error?errorHtml(state.error):''}${state.pollError?errorHtml(state.pollError)+'<button class="small ghost" data-fission-refresh>刷新进度</button>':''}</div><footer class="fission-foot"><button class="small ghost" data-fission-close ${disabled}>关闭</button><button class="ghost" data-batch-board="${esc(state.pid)}" ${disabled}>查看批量看板</button><button data-fission-new-batch ${disabled}>再出一批</button></footer>`);return;
   }
   const disabled=state.busy?'disabled':'',columns=state.view.columns,reason=state.error || (state.unsaved?'草稿尚未保存，点“重试保存”后再创建。':fissionBlockReason(state));
   const cards=columns.map(c=>{const selected=state.choices[c.key] || [],name=c.master_name;return `<article class="fission-role" data-fission-slot="${esc(c.key)}"><h3 title="${esc(c.title || c.source_name || c.name)}">${esc(c.title || (c.kind==='person'?'人物 · '+(c.source_name || c.name || c.key):'商品 · '+(c.source_name || '原片商品')))}</h3>${c.source_description?`<p class="fission-role-description hint" title="${esc(c.source_description)}">${esc(c.source_description)}</p>`:''}<p class="fission-master-status" title="${esc(c.master_status || name)}">${esc(c.master_status || (c.action==='keep'?'母版没换，用的是原片里的'+(c.kind==='person'?'人':'商品'):'母版已换成：'+name))}</p><div class="fission-photos">${fissionPhoto(c.file?fileUrl(c.file):'',name,'<small class="photo-badge">母版</small>')}<span class="fission-arrow">→</span>${selected.map(id=>{const item=fissionItem(id,state);return fissionPhoto(item?.url,fissionName(id,state),`<button class="photo-remove" data-fission-remove="${esc(id)}" data-key="${esc(c.key)}" aria-label="移除${esc(fissionName(id,state))}" ${disabled}>×</button>${c.kind==='product'?`<small class="photo-badge ${fissionAnswered(id,state)?'answered':'todo'}">${fissionAnswered(id,state)?'✓ 已回答':'待回答'}</small>`:''}`);}).join('')}<button class="ghost fission-add-photo" data-fission-picker="${esc(c.key)}" ${disabled}>＋ 选照片</button></div>${!selected.length?`<p class="hint">没选，保持母版的${materialNameHtml(name)}</p>`:''}${c.kind==='product'?selected.map(id=>fissionQuestionsHtml(id,state,disabled)).join(''):''}</article>`;}).join('');
@@ -3418,7 +3427,7 @@ function storyChecksHtml(product) {
   return `<section class="story-checks"><h4>剧情检查</h4><p class="hint">原片的剧情可能靠旧商品的某个功能推动。点一下，让模型列出来，你确认新商品支不支持。</p><button class="small ghost" data-story-check ${busy?'disabled':''}>${busy?'正在检查…':error?'重试':'检查剧情是否还成立'}</button>
   ${error?`<p class="caption-warning" role="status">${esc(error)}</p>`:''}${changed?'<p class="caption-warning">商品改过，建议检查</p>':''}
   ${checks.map(c=>`<div class="story-check" data-story-question="${esc(c.id)}"><b>${esc(c.feature)}</b><p class="hint">${esc(c.where)}</p><p>${esc(c.question)}</p><div class="row wrap">${[['yes','支持'],['no','不支持'],['unsure','不确定']].map(([value,label])=>`<label class="check"><input type="radio" name="story-${esc(c.id)}" data-story-answer="${esc(c.id)}" value="${value}" ${c.answer===value?'checked':''}> ${label}</label>`).join('')}</div>${c.answer==='no'?`<label>那这里改成什么 <input type="text" data-story-note="${esc(c.id)}" value="${esc(c.note || '')}"></label>`:''}</div>`).join('')}
-  ${unanswered?`<p class="caption-warning" data-story-unanswered>还有 ${unanswered} 条没确认，在第 04 步写提示词时会按“不确定”处理</p>`:''}${product.story_checks_sig && !checks.length?'<p class="hint">没有发现需要确认的剧情功能。</p>':''}</section>`;
+  ${unanswered?`<p class="caption-warning" data-story-unanswered>还有 ${unanswered} 条没确认，在「对照修改」写提示词时会按“不确定”处理</p>`:''}${product.story_checks_sig && !checks.length?'<p class="hint">没有发现需要确认的剧情功能。</p>':''}</section>`;
 }
 function sourceProductNames(){
   if(P.source_product)return P.source_product;
@@ -3993,7 +4002,7 @@ function speakerEditorHtml(task) {
   if (!lines.length) return '';
   const unknown = lines.filter(l => !l.speaker || l.speaker === 'unknown').length;
   const choices = [...(P.breakdown?.characters || []).map(c => c.id), 'unknown'];
-  return `<div class="speaker-editor"><h4>逐句说话人</h4>${unknown ? `<p class="caption-warning" data-speaker-warning role="status">有 ${unknown} 句台词还没确定是谁说的，请在第 04 步确认</p>` : ''}<div class="speaker-lines">${lines.map((line,i) => `<div class="speaker-line" data-speaker-line="${i}"><span class="mono">${fmt(line.start,2)}–${fmt(line.end,2)} 秒</span><label>台词<textarea data-dialogue-text="${i}" rows="2">${esc(line.text)}</textarea></label><label>说话人 <select data-speaker="${i}">${[...new Set([...choices,line.speaker || 'unknown'])].map(id=>`<option value="${esc(id)}" ${id === (line.speaker || 'unknown') ? 'selected' : ''}>${esc(speakerLabel(id))}</option>`).join('')}</select></label><small class="hint">${esc(typeof line.evidence === 'string' ? line.evidence : JSON.stringify(line.evidence || ''))}</small></div>`).join('')}</div></div>`;
+  return `<div class="speaker-editor"><h4>逐句说话人</h4>${unknown ? `<p class="caption-warning" data-speaker-warning role="status">有 ${unknown} 句台词还没确定是谁说的，请在「对照修改」确认</p>` : ''}<div class="speaker-lines">${lines.map((line,i) => `<div class="speaker-line" data-speaker-line="${i}"><span class="mono">${fmt(line.start,2)}–${fmt(line.end,2)} 秒</span><label>台词<textarea data-dialogue-text="${i}" rows="2">${esc(line.text)}</textarea></label><label>说话人 <select data-speaker="${i}">${[...new Set([...choices,line.speaker || 'unknown'])].map(id=>`<option value="${esc(id)}" ${id === (line.speaker || 'unknown') ? 'selected' : ''}>${esc(speakerLabel(id))}</option>`).join('')}</select></label><small class="hint">${esc(typeof line.evidence === 'string' ? line.evidence : JSON.stringify(line.evidence || ''))}</small></div>`).join('')}</div></div>`;
 }
 function dialogueLineMetrics(task, line) {
   return {changed:line.proposed!==line.original,
@@ -4144,7 +4153,7 @@ function dialogueStatusHtml(task, check) {
   const count = conflicts.reduce((n,c)=>n + (c.terms?.length || Number(c.title?.match(/有\s*(\d+)\s*处/)?.[1]) || 1),0);
   const resolved = kept || adopted || !count;
   const text = kept ? '保持原台词' : adopted ? '已采用改写版' : count ? `有 ${count} 处提到旧外观，还没处理` : '保持原台词';
-  return `<p class="hint" data-dialogue-status="${esc(task.id)}">台词：${text} <button class="small ghost" data-dialogue-jump="${esc(task.id)}">去第 04 步${resolved ? '查看' : '处理'}</button></p>`;
+  return `<p class="hint" data-dialogue-status="${esc(task.id)}">台词：${text} <button class="small ghost" data-dialogue-jump="${esc(task.id)}">去「对照修改」${resolved ? '查看' : '处理'}</button></p>`;
 }
 
 function motionTimelineHtml(rows) {
@@ -4255,9 +4264,9 @@ function firstPersonIndex(task) {
 // UI-only guidance. Server errors remain the sole preview gate.
 const ISSUE_TODOS = {
   analysis_no_caption_bbox: {step:'02',action:'重新拆解原片，补全字幕位置',reason:'上次拆解没有记录字幕在哪，无法处理字幕区域',target:'analysis',label:'去重新拆解'},
-  person_keep_with_image: {step:'03',action:'把第 03 步的人物处理改成“替换”并保存',reason:'这一段选了新人物图，第 03 步人物仍是“保持”',target:'person',label:'去改人物处理'},
-  person_image_mismatch: {step:'03',action:'在第 03 步选用本段对应的人物图并保存',reason:'本段人物图与第 03 步选的人物不一致',target:'person-asset',label:'去选人物图'},
-  product_mismatch: {step:'03',action:'把第 03 步的商品处理改成“替换”并保存',reason:'这一段用了新商品图，但第 03 步商品还是“保持”或选了另一张图',target:'product',label:'去改商品处理'},
+  person_keep_with_image: {step:'03',action:'把「选角换品」的人物处理改成“替换”并保存',reason:'这一段选了新人物图，「选角换品」人物仍是“保持”',target:'person',label:'去改人物处理'},
+  person_image_mismatch: {step:'03',action:'在「选角换品」选用本段对应的人物图并保存',reason:'本段人物图与「选角换品」选的人物不一致',target:'person-asset',label:'去选人物图'},
+  product_mismatch: {step:'03',action:'把「选角换品」的商品处理改成“替换”并保存',reason:'这一段用了新商品图，但「选角换品」商品还是“保持”或选了另一张图',target:'product',label:'去改商品处理'},
   camera_image_stale: {step:'03',action:'重新生成 {scene} 的主镜头图',reason:'人物、商品或场景设定改过，现在的主镜头图还是按旧设定生成的',target:'camera',label:'去生成主镜头图'},
   missing_camera_image: {step:'03',action:'生成 {scene} 的主镜头图',reason:'这一段要换人，这个场景还没有主镜头图',target:'camera',label:'去生成主镜头图'},
   invalid_camera_image: {step:'03',action:'重新生成 {scene} 的主镜头图',reason:'之前的主镜头图是按旧的人物或商品设定生成的，现在已失效',target:'camera',label:'去生成主镜头图'},
@@ -4269,8 +4278,8 @@ const ISSUE_TODOS = {
   missing_dialogue: {step:'04',action:'补全本段台词并保存脚本',reason:'这是口播段落，脚本里还没有台词',target:'dialogue',label:'去补台词'},
   no_images: {step:'05',action:'在本段选上人物或主镜头参考图',reason:'这一段还没有选任何参考图',target:'references',label:'去选参考图'},
   invalid_image: {step:'05',action:'在本段去掉失效参考图并重新选图',reason:'选中的素材已删除或不是图片',target:'references',label:'去选参考图'},
-  product_missing_image: {step:'05',action:'在本段参考图里选上商品图{product}',reason:'这一段要替换商品，还没选上第 03 步的商品图或包含它的主镜头图',target:'references',label:'去选参考图'},
-  person_replace_missing_image: {step:'05',action:'在本段选上{person}的人物图或主镜头图',reason:'第 03 步设置了换人，本段却没有对应人物的参考图',target:'references',label:'去选参考图'},
+  product_missing_image: {step:'05',action:'在本段参考图里选上商品图{product}',reason:'这一段要替换商品，还没选上「选角换品」的商品图或包含它的主镜头图',target:'references',label:'去选参考图'},
+  person_replace_missing_image: {step:'05',action:'在本段选上{person}的人物图或主镜头图',reason:'「选角换品」设置了换人，本段却没有对应人物的参考图',target:'references',label:'去选参考图'},
   image1_not_person: {step:'05',action:'把人物或主镜头图放到本段图1',reason:'口播段落需要用出镜人物作为第一张参考图',target:'references',label:'去调整图1'},
   video_reference_required: {step:'05',action:'把本段参考方式改成“原片片段 + 图”',reason:'复刻动作或运镜需要用到原片片段',target:'mode',label:'去改参考方式'},
   camera_scene_mismatch: {step:'05',action:'换成 {scene} 当前的主镜头图',reason:'图1的场景与本段原片场景不同',target:'references',label:'去更换图1'},
@@ -4303,14 +4312,14 @@ function fixGroups(check, task = {}) {
     const info = ISSUE_TODOS[issue.code] || {step:issue.step || '05',action:issue.title || '核对本段参考图和脚本',reason:issue.fix || '检查发现本段还需要修正，请核对技术明细',target:'references',label:'去核对本段'};
     const scene = issue.scene_id || sid, cid = character(issue);
     const todo = {...info,code:issue.code,cid,sid:scene,tid:task.id || '',issues:[issue]};
-    todo.action = todo.action.replace('{scene}',scene).replace('{product}', product ? `“${product.label || product.id}”` : '（第 03 步所选商品）').replace('{person}',cid || '替换人物');
+    todo.action = todo.action.replace('{scene}',scene).replace('{product}', product ? `“${product.label || product.id}”` : '（「选角换品」所选商品）').replace('{person}',cid || '替换人物');
     if (issue.code === 'product_mismatch') {
       const chosen = P.assets?.find(a=>task.image_ids?.includes(a.id) && a.roles?.includes('product_truth'));
       if (chosen) todo.action += `，选用商品图“${chosen.label || chosen.id}”`;
       todo.alternative = {target:'references',label:'去本段去掉这张商品图',note:'要换商品：改成替换并保存；保留原片商品：从本段去掉这张商品图。'};
     }
-    if (issue.code === 'person_keep_with_image') todo.action = `把第 03 步 ${cid || '出镜人物'} 的人物处理改成“替换”并保存`;
-    if (issue.code === 'person_image_mismatch') todo.action = `在第 03 步 ${cid || '出镜人物'} 的人物图里选用本段人物图并保存`;
+    if (issue.code === 'person_keep_with_image') todo.action = `把「选角换品」 ${cid || '出镜人物'} 的人物处理改成“替换”并保存`;
+    if (issue.code === 'person_image_mismatch') todo.action = `在「选角换品」 ${cid || '出镜人物'} 的人物图里选用本段人物图并保存`;
     if (issue.code === 'person_keep_with_image') todo.alternative = {target:'references',label:'去本段去掉新人物图',note:'要换人：改成替换并保存；保留原片人物：从本段去掉新人物图。'};
     if (cameraCodes.includes(issue.code)) {
       if (issue.expected_asset_id && !roots.some(i=>(i.scene_id || sid) === scene && character(i) === cid)) {
@@ -4404,7 +4413,7 @@ function replacementCheckHtml(check, task = {}) {
   const detailRows = checkIssues(check).map(issue=>({...issue,details:[...new Set([issue.title,...(issue.details || [])].filter(d=>d && !/^seg-[\w-]+$/.test(d.trim())))]}));
   const wizard = todos.length ? `<section class="fix-wizard" aria-label="预览修复向导">
     <h4>${esc(task.id || '本段')} 预览前还要做 ${todos.length} 件事</h4>
-    ${todos.map((todo,index)=>`<div class="fix-step ${index ? 'pending' : 'next'}" data-todo-key="${esc(todo.key)}"><div class="fix-issue" data-fix-code="${esc(todo.key)}"><p class="fix-heading"><b>${index+1}. ${index ? '之后做' : '现在做'} · 第 ${todo.step} 步：${esc(todo.action)}</b></p><p class="hint">为什么：${esc(todo.reason)}</p>${todoButton(todo)}${todo.alternative ? `${todoButton(todo,todo.alternative.target,todo.alternative.label)}<p class="hint">${esc(todo.alternative.note)}</p>` : ''}</div></div>`).join('')}
+    ${todos.map((todo,index)=>`<div class="fix-step ${index ? 'pending' : 'next'}" data-todo-key="${esc(todo.key)}"><div class="fix-issue" data-fix-code="${esc(todo.key)}"><p class="fix-heading"><b>${index+1}. ${index ? '之后做' : '现在做'} · ${esc(stepName(todo.step))}：${esc(todo.action)}</b></p><p class="hint">为什么：${esc(todo.reason)}</p>${todoButton(todo)}${todo.alternative ? `${todoButton(todo,todo.alternative.target,todo.alternative.label)}<p class="hint">${esc(todo.alternative.note)}</p>` : ''}</div></div>`).join('')}
     <details class="technical-details" data-detail-key="technical-details"><summary>技术明细</summary>${detailRows.map(i=>`<details data-detail-key="${esc([i.code,i.character_id,i.scene_id].filter(Boolean).join(':'))}"><summary>${esc(i.code)}（${i.details.length} 条）</summary><ul>${i.details.map(d=>`<li${i.code === 'legacy' ? ' class="hint" style="color:var(--pay)"' : ''}>${esc(d)}</li>`).join('')}</ul></details>`).join('')}</details></section>` : '<p class="hint">替换设定与参考图检查通过</p>';
   const conflicts = check.dialogue_conflicts || [];
   const warnings = (check.warnings || []).filter(w => !conflicts.some(c=>c.title === w) && !(conflicts.length && /台词里有[\s\S]*和新商品可能不符/.test(w))
@@ -5489,8 +5498,8 @@ document.addEventListener("change", (e) => {
     const section = el.closest('.speaker-editor'), t = S.tasks[Number(el.closest('.seg').dataset.seg)];
     const count = dialogueLines(t).filter(l => !l.speaker || l.speaker === 'unknown').length;
     const warning = $('[data-speaker-warning]', section);
-    if (warning) { warning.hidden = !count; warning.textContent = `有 ${count} 句台词还没确定是谁说的，请在第 04 步确认`; }
-    else if (count) { const p = document.createElement('p'); p.setAttribute('class','caption-warning'); p.setAttribute('data-speaker-warning',''); p.setAttribute('role','status'); p.textContent = `有 ${count} 句台词还没确定是谁说的，请在第 04 步确认`; section.insertBefore(p, $('.speaker-lines',section)); }
+    if (warning) { warning.hidden = !count; warning.textContent = `有 ${count} 句台词还没确定是谁说的，请在「对照修改」确认`; }
+    else if (count) { const p = document.createElement('p'); p.setAttribute('class','caption-warning'); p.setAttribute('data-speaker-warning',''); p.setAttribute('role','status'); p.textContent = `有 ${count} 句台词还没确定是谁说的，请在「对照修改」确认`; section.insertBefore(p, $('.speaker-lines',section)); }
     scheduleReplacementCheck(); return;
   }
   const card = el.closest("[data-task]");

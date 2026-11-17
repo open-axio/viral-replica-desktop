@@ -9,8 +9,15 @@ const fs = require('fs');
 const net = require('net');
 const datadir = require('./datadir');
 
-const PORT = 8765;
+// 默认端口。被别的程序（常见是旧版工作台 start.command 留下的服务、或上次强退后没收掉的
+// server.py）占着时，改用一个空闲端口，免得窗口连到别人的服务、自己的服务又起不来。
+const DEFAULT_PORT = 8765;
+let port = DEFAULT_PORT;
 let serverProc = null;
+let quitting = false;
+let serverCtx = null;          // { workbench, dataDir }：服务意外退出后原样重启
+let serverTail = [];           // 服务最近的输出，崩溃时给用户看
+let restartPrompt = false;
 let mainWindow = null;
 let setupWin = null;
 let installProc = null;
@@ -33,6 +40,35 @@ function findWorkbench() {
     if (c && fs.existsSync(path.join(c, 'server.py'))) return c;
   }
   return null;
+}
+
+// 端口能不能由我们监听：能就用它，不能就让系统给一个空闲端口。
+function pickPort(preferred) {
+  const tryListen = (p) => new Promise((resolve) => {
+    const srv = net.createServer();
+    srv.once('error', () => resolve(null));
+    srv.listen(p, '127.0.0.1', () => {
+      const got = srv.address().port;
+      srv.close(() => resolve(got));
+    });
+  });
+  return tryListen(preferred).then((p) => p || tryListen(0));
+}
+
+// 服务的输出写进数据目录，出问题时能拿到日志（从 Finder 启动的应用没有终端可看）。
+function serverLogPath(dataDir) {
+  return path.join(dataDir, 'runtime', 'desktop-server.log');
+}
+function logServer(dataDir, text) {
+  const lines = String(text).split(/\r?\n/).filter(Boolean);
+  if (!lines.length) return;
+  serverTail = serverTail.concat(lines).slice(-40);
+  const stamp = new Date().toISOString();
+  try {
+    const file = serverLogPath(dataDir);
+    try { if (fs.statSync(file).size > 5 * 1024 * 1024) fs.renameSync(file, file + '.1'); } catch (e) { /* 没有旧日志 */ }
+    fs.appendFileSync(file, lines.map((l) => `[${stamp}] ${l}`).join('\n') + '\n');
+  } catch (e) { /* 日志写不了不影响运行 */ }
 }
 
 function waitForPort(port, timeoutMs) {
@@ -67,19 +103,54 @@ function startServer(workbench, dataDir) {
   // 别往应用内部的代码旁边写 .pyc：会改动 bundle、破坏 macOS 签名封印
   env.PYTHONDONTWRITEBYTECODE = '1';
   if (fs.existsSync(ffDir)) env.PATH = ffDir + path.delimiter + (env.PATH || '');
+  // server.py 优先读环境变量 PORT（高于 console.env 里的 PORT）
+  env.PORT = String(port);
 
-  serverProc = spawn(py, ['server.py'], {
+  serverCtx = { workbench, dataDir };
+  serverTail = [];
+  logServer(dataDir, `---- 启动服务 ${py} server.py（端口 ${port}）----`);
+  const proc = spawn(py, ['server.py'], {
     cwd: workbench,
     env,
     windowsHide: true,
     stdio: ['ignore', 'pipe', 'pipe']
   });
-  serverProc.stdout.on('data', (d) => console.log('[server]', d.toString().trim()));
-  serverProc.stderr.on('data', (d) => console.error('[server]', d.toString().trim()));
-  serverProc.on('exit', (code) => {
-    console.log('server exited with code', code);
-    serverProc = null;
+  serverProc = proc;
+  proc.stdout.on('data', (d) => { console.log('[server]', d.toString().trim()); logServer(dataDir, d); });
+  proc.stderr.on('data', (d) => { console.error('[server]', d.toString().trim()); logServer(dataDir, d); });
+  proc.on('exit', (code, signal) => {
+    logServer(dataDir, `---- 服务退出：code=${code} signal=${signal} ----`);
+    if (serverProc === proc) serverProc = null;
+    if (!quitting && mainWindow) onServerDied(code, signal);
   });
+}
+
+// 服务在用户还开着窗口时停了：说清楚，并给「重新启动」，而不是让页面只报「连不上工作台」。
+async function onServerDied(code, signal) {
+  if (restartPrompt || !serverCtx) return;
+  restartPrompt = true;
+  const tail = serverTail.slice(-12).join('\n');
+  const { response } = await dialog.showMessageBox(mainWindow, {
+    type: 'warning',
+    buttons: ['重新启动服务', '退出'],
+    defaultId: 0, cancelId: 1,
+    message: '工作台服务意外停止了',
+    detail: `退出码 ${code}${signal ? '，信号 ' + signal : ''}。项目和设置都还在，重新启动服务即可继续。\n`
+      + `完整日志：${serverLogPath(serverCtx.dataDir)}`
+      + (tail ? `\n\n最后的输出：\n${tail}` : '')
+  });
+  restartPrompt = false;
+  if (response !== 0) return app.quit();
+  try {
+    const before = port;
+    port = await pickPort(port);
+    startServer(serverCtx.workbench, serverCtx.dataDir);
+    await waitForPort(port, 90000);
+    // 端口没变：页面原样接着用，不刷新，没保存的编辑也还在。端口变了才得换地址。
+    if (mainWindow && port !== before) mainWindow.loadURL(`http://127.0.0.1:${port}`);
+  } catch (err) {
+    dialog.showErrorBox('重新启动失败', String(err && err.message || err));
+  }
 }
 
 // ---- 原生对话框：替代 Electron 默认禁用的 prompt/confirm/alert ----
@@ -281,7 +352,21 @@ function createWindow() {
     if (/^https?:/.test(url)) shell.openExternal(url);
     return { action: 'deny' };
   });
-  mainWindow.loadURL(`http://127.0.0.1:${PORT}`);
+  mainWindow.loadURL(`http://127.0.0.1:${port}`);
+  // 网页有未保存的编辑时会在 beforeunload 里拦下关闭。浏览器会弹「确定离开？」，
+  // Electron 却不弹、直接静默取消——表现就是点关闭、在 Dock 里选退出都没反应。
+  // 这里补上这个确认框；用户选「仍然退出」就放行。
+  mainWindow.webContents.on('will-prevent-unload', (event) => {
+    const choice = dialog.showMessageBoxSync(mainWindow, {
+      type: 'question',
+      buttons: ['留在这里', '仍然退出'],
+      defaultId: 0, cancelId: 0,
+      message: '还有没保存的修改',
+      detail: '现在退出，这些修改会丢失。'
+    });
+    if (choice === 1) event.preventDefault();
+    else quitting = false;
+  });
   mainWindow.on('closed', () => { mainWindow = null; });
 }
 
@@ -310,8 +395,9 @@ async function bootstrap() {
   datadir.writeSettings({ dataDir: dir });
 
   try {
+    port = await pickPort(DEFAULT_PORT);
     startServer(workbench, dir);
-    await waitForPort(PORT, 90000);
+    await waitForPort(port, 90000);
     createWindow();
   } catch (err) {
     dialog.showErrorBox('启动失败', String(err && err.message || err));
@@ -322,6 +408,7 @@ async function bootstrap() {
 app.whenReady().then(bootstrap);
 
 function shutdown() {
+  quitting = true;
   if (installProc && !installProc.killed) {
     try { installProc.kill('SIGTERM'); } catch (e) { /* noop */ }
   }
@@ -334,5 +421,8 @@ function shutdown() {
     }, 1500);
   }
 }
-app.on('before-quit', shutdown);
-app.on('window-all-closed', () => { shutdown(); app.quit(); });
+// before-quit 时退出还可能被「还有没保存的修改 → 留在这里」取消，所以这里只打标记，
+// 确定要退（will-quit，所有窗口都关掉之后）才收掉服务。
+app.on('before-quit', () => { quitting = true; });
+app.on('will-quit', shutdown);
+app.on('window-all-closed', () => { app.quit(); });

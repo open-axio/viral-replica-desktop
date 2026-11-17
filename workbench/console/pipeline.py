@@ -161,6 +161,29 @@ class _AnalysisChanged(ValueError):
         self.source, self.started = source, started
 
 
+#: 需要 Key 才能跑的步骤。免费部分跑完、没 Key 时它们标成 needs_key。
+PAID_STEPS = ("overview", "close", "pack")
+
+
+def _stop_for_key(pid: str, reason: str, adir: Path, started: float) -> None:
+    """前三步已跑完、但还没填 Key：停在这里，把免费产物挂出来。"""
+    def fn(x: dict) -> None:
+        a = x.setdefault("analysis", {})
+        if a.get("started") != started:      # 期间被重新拆解覆盖了，别回写旧状态
+            return
+        a["status"] = "free_done"
+        a["key_needed"] = reason
+        a.pop("error", None)
+        steps = a.setdefault("steps", {})
+        for step in PAID_STEPS:
+            steps[step] = {"title": STEP_META[step][0], "tool": STEP_META[step][1],
+                           "status": "needs_key", "note": "填好 Key 后点「继续拆解」"}
+        a["docs"] = {name: f"analysis/{name}" for name in DOC_FILES if (adir / name).exists()}
+    with store._lock(pid):
+        store.update(pid, fn)
+    store.log(pid, "免费拆解已完成：台词、镜头切分和字幕文件都已生成。整片理解和逐段细读需要先填 Key。")
+
+
 def run_analysis(pid: str, provider: str, srt_text: str | None = None, skip_asr: bool = False,
                  send_video: bool = False) -> None:
     """Wrapper: a failure always leaves a visible failed state (never a stuck 'running')."""
@@ -240,13 +263,15 @@ def _run_analysis(pid: str, provider: str, srt_text: str | None = None, skip_asr
     src = d / data["source"]["file"]
     adir = d / "analysis"
     cfg = config.load()
-    settings = {**config.provider_settings(provider), 'model':route['model']}
-    send_video = send_video and provider == "jimmy" and settings["model"].lower().startswith("gemini")
+    # 前三步全在本地跑，不需要 Key。Key 到第 04 步调用大模型前再查，
+    # 没 Key 的用户也能先拿到台词、镜头和字幕文件。
+    model_name = route['model'] or ''
+    send_video = send_video and provider == "jimmy" and model_name.lower().startswith("gemini")
     if cfg.get("HF_ENDPOINT"):
         os.environ["HF_ENDPOINT"] = cfg["HF_ENDPOINT"]
     analysis_started = time.time()
     store.update(pid, lambda x: x.update(analysis={"status": "running", "provider": provider,
-                                                   "request_model": settings["model"], "steps": {},
+                                                   "request_model": model_name, "steps": {},
                                                    "started": analysis_started}))
 
     # 01 probe
@@ -304,6 +329,13 @@ def _run_analysis(pid: str, provider: str, srt_text: str | None = None, skip_asr
     store.update(pid, lambda x: x["analysis"].update(
         shots=shots, transcript=(transcript or {}).get("segments", []),
         overview_grids=[{"file": store.rel(pid, g["file"]), "cells": g["cells"]} for g in overview_grids]))
+
+    # ---- 免费部分到此为止。往下要调用大模型，需要 Key。----
+    try:
+        settings = {**config.provider_settings(provider), 'model': route['model']}
+    except ValueError as exc:
+        _stop_for_key(pid, str(exc), adir, analysis_started)
+        return
 
     # 04 whole piece → ANALYSIS.md
     label = gateway.label(provider,settings["model"])

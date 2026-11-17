@@ -764,18 +764,23 @@ function renderAnalysis() {
   renderProviderSelect(sel,'analysis');
   updateSendVideo();
   $("#analyzeBtn").disabled = !P.source || a.status === "running" || P.jobs?.analyze?.state === "running";
-  $("#analyzeBtn").textContent = a.status === "running" ? "拆解中…" : P.breakdown ? "用所选模型重新拆解" : "开始拆解";
+  $("#analyzeBtn").textContent = a.status === "running" ? "拆解中…" : P.breakdown ? "用所选模型重新拆解"
+    : a.status === "free_done" ? "填好 Key 后继续拆解" : "开始拆解";
   const order = ["probe", "transcribe", "boundaries", "overview", "close", "understand", "pack", "storyboard"];
   const steps = a.steps || {};
   const errMsg = operationErrors.get(operationKey("analyze")) || (a.status === "failed" ? (a.error || P.jobs?.analyze?.error) : (["error","failed"].includes(P.jobs?.analyze?.state) ? P.jobs.analyze.error : ""));
+  // 免费部分跑完、等填 Key：不是错误，单独给一块说明
+  const freeDone = a.status === "free_done" ? `<div class="runstep free-done"><b>免费部分已完成</b>
+    <div class="hint">读视频信息、识别台词、切分镜头都在本机跑完了，没花钱。下面能看到每个镜头的截图，台词表和逐词时间轴可以直接下载。</div>
+    <div class="hint">想继续做「整片理解」和「逐段细读」，需要调用大模型：点右上角“设置”填好 Key，再点上面的「填好 Key 后继续拆解」。</div></div>` : "";
   const err = errMsg ? `<div class="runstep"><span class="st skipped">拆解没有完成：${errorHtml(errMsg,'拆解推理')}</span>${thirdRetry("analyze")}<div class="hint">修正后直接点“开始拆解”重新跑；需要换视频就在第 01 步清除。</div></div>` : "";
   updateHtml($("#analysisSteps"), order.filter((k) => steps[k]).map((k) => {
     const s = steps[k];
     const out = s.output ? JSON.stringify(s.output) : s.note || "";
     return `<div class="runstep"><div class="top"><div><b>${esc(publicText(s.title))}</b><div class="tool">${esc(publicText(s.tool || ""))}</div></div>
-      <span class="st ${s.status}">${{ done: "done · 100%", running: `运行中…${s.progress ? " " + esc(s.progress) : ""}`, skipped: "已跳过", failed: "失败", partial: "部分完成，请重新拆解重试" }[s.status] || esc(s.status)}</span></div>
+      <span class="st ${s.status}">${{ done: "done · 100%", running: `运行中…${s.progress ? " " + esc(s.progress) : ""}`, skipped: "已跳过", failed: "失败", partial: "部分完成，请重新拆解重试", needs_key: "等填 Key" }[s.status] || esc(s.status)}</span></div>
       ${out ? `<pre>${esc(publicText(out))}</pre>` : ""}</div>`;
-  }).join("") + err);
+  }).join("") + freeDone + err);
   const frames = a.shots || [];
   const docs = Object.entries(a.docs || {});
   const passages = a.passages || [];

@@ -29,7 +29,7 @@ async function main(){
  // A stale retry button from another project cannot trigger a request.
  run('operationFailure("script",new Error("官方额度不足"));renderScript()');const oldRetry=$('[data-third-retry="script"]');before=requests.length;run('P.id="other-project"');await click(oldRetry);assert.equal(requests.length,before);run('P.id=project.id');
  assert.equal(run('dirty.rep'),false,'image-channel control does not dirty replacement configuration');
- assert.equal(document.querySelectorAll('nav').length,1,'one workflow navigation');assert.equal(document.querySelectorAll('[data-flow-index]').length,5);assert.match(document.querySelector('#step-1 h2').textContent,/上传对标视频/,'section heading remains');
+ assert.equal(document.querySelectorAll('nav.workflow-progress').length,1,'one workflow step strip');assert.equal(document.querySelectorAll('#stageNav').length,1,'one stage navigation in the top bar');assert.equal(document.querySelectorAll('[data-flow-index]').length,5);assert.match(document.querySelector('#step-1 h2').textContent,/上传对标视频/,'section heading remains');
  assert.doesNotMatch(document.body.textContent,/吉米|Jimmy/);assert.doesNotMatch(run('imageRecordCard({id:"failed",channel:"official",state:"failed",error:"official failed"})'),/data-imgresume/);assert.match(run('imageRecordCard({id:"ok",channel:"official",state:"completed",usage:{total_tokens:28}})'),/28/);
  // Saving the first official key updates automatic defaults, while preserving explicit/project selections.
  $('#settingsDialog').close=()=>{};

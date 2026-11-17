@@ -40,15 +40,46 @@ class AlignmentError(RuntimeError):
     """取证结果和 03 的镜头表对不上。"""
 
 
+PIP_PACKAGE = "opencv-python-headless"
+PIP_MIRROR = "https://pypi.tuna.tsinghua.edu.cn/simple"
+
+
 def missing_dependency() -> str | None:
-    """取证要用 OpenCV 和 NumPy。旧版运行环境没装 OpenCV 时返回原因，调用方据此跳过这一步。"""
+    """取证要用 OpenCV 和 NumPy。缺的话返回缺的模块名。"""
     try:
         import cv2  # noqa: F401
         import numpy  # noqa: F401
     except ImportError as exc:
-        return (f"本机运行环境缺少 {exc.name or 'opencv'}：重新运行一次安装（install.sh / install.bat，"
-                "已装好的部分不会重复下载）即可补上")
+        return exc.name or "cv2"
     return None
+
+
+def install_dependency() -> str | None:
+    """老用户的运行环境是在加入这一步之前装的，没有 OpenCV：用运行环境自带的 uv 补装一次。
+
+    先走官方源，失败再走清华镜像（和 install.sh 一致）。成功返回 None，失败返回给用户看的原因。"""
+    import importlib
+    import subprocess
+    import sys
+
+    from . import paths
+    uv = paths.RUNTIME_DIR / "uv" / ("uv.exe" if os.name == "nt" else "uv")
+    if not uv.is_file():
+        return "找不到运行环境里的安装工具，没法自动补装"
+    last = ""
+    for extra in ([], ["--index-url", PIP_MIRROR]):
+        try:
+            done = subprocess.run([str(uv), "pip", "install", "--python", sys.executable, PIP_PACKAGE, *extra],
+                                  capture_output=True, text=True, timeout=600)
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            last = str(exc)
+            continue
+        if done.returncode == 0:
+            importlib.invalidate_caches()
+            return None if missing_dependency() is None else "装好了但还是加载不了，重启一次应用再试"
+        last = (done.stderr or done.stdout or "").strip().splitlines()[-1:] or [""]
+        last = last[0]
+    return "网络不通，没装上" + (f"（{last[:120]}）" if last else "")
 
 
 def decide_run(cfg: dict, duration: float) -> tuple[bool, str]:
@@ -134,6 +165,7 @@ def analyze(src: Path, shots: list[dict], progress: Callable[[int, int], None] |
             "label": label, "label_zh": str(classify.LABEL_ZH[label]),
             "confidence": round(float(conf), 3),
             "evidence": [_short(e) for e in evidence[:3]],
+            "tags": short_tags(label, rec["features"], facts),
             "runner_up": [{"label": k, "label_zh": str(classify.LABEL_ZH[k]), "p": round(float(v), 3)}
                           for k, v in sorted(probs.items(), key=lambda kv: -kv[1])[1:3]],
             "temporal_family": facts.get("temporal_family"),
@@ -142,6 +174,51 @@ def analyze(src: Path, shots: list[dict], progress: Callable[[int, int], None] |
     return {"engine": ENGINE, "seconds": round(time.time() - t0, 1),
             "context": {k: vctx.get(k) for k in ("transcoded", "platform", "native30", "fps")},
             "counts": {c: sum(1 for r in out if r["class"] == c) for c in CLASSES}, "shots": out}
+
+
+def short_tags(label: str, feats: dict, facts: dict) -> list[str]:
+    """把取证特征压成界面上的短标签（「凭什么这么判断」），最多 3 个，和判定方向一致的排前面。
+
+    完整的判定依据长句仍在 evidence 里，供报告和 prompt 使用。"""
+    cls = CLASS_OF.get(label, "graphic")
+    noise = float(feats.get("noise_sigma") or 0)
+    tags: list[tuple[int, str]] = []          # (与判定是否一致：0 一致 / 1 中性, 文字)
+    fam = facts.get("temporal_family")
+    if fam == "frozen":
+        tags.append((0, "画面完全静止"))
+    elif fam == "planar":
+        tags.append((0, "整张图在推拉平移"))
+    elif fam == "mostly_static":
+        tags.append((0, "只有局部元素在动"))
+    if facts.get("pulldown") and fam == "dynamic":
+        tags.append((0 if cls == "ai" else 1, "有规律的重复帧"))
+    if (feats.get("sharp_period_ac") or 0) > 0.45 and fam == "dynamic":
+        tags.append((0 if cls == "ai" else 1, "清晰度周期起伏"))
+    if noise >= 0.9:
+        tags.append((0 if cls == "live" else 1, "有传感器噪点"))
+    elif noise < 0.5 and fam != "frozen":
+        tags.append((0 if cls != "live" else 1, "几乎没有噪点"))
+    if (facts.get("graphic_score") or 0) > 0.6:
+        tags.append((0 if cls == "graphic" else 1, "大面积纯色色块"))
+    elif (feats.get("palette95") or 0) >= 150:
+        tags.append((0 if cls != "graphic" else 1, "色彩层次丰富"))
+    cam = feats.get("camera")
+    if cam == "handheld_like":
+        tags.append((0 if cls == "live" else 1, "手持抖动"))
+    elif cam == "smooth_move":
+        tags.append((1, "镜头平稳运动"))
+    elif cam == "static" and fam == "dynamic":
+        tags.append((1, "固定机位"))
+    if facts.get("big_face"):
+        tags.append((1, "人物近景"))
+    if (facts.get("ui_text") or 0) > 0.5:
+        tags.append((0 if cls == "graphic" else 1, "界面小字较多"))
+    seen, out = set(), []
+    for _, t in sorted(tags, key=lambda x: x[0]):
+        if t not in seen:
+            seen.add(t)
+            out.append(t)
+    return out[:3]
 
 
 def check_alignment(shots: list[dict], result: list[dict]) -> None:

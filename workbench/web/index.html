@@ -7,54 +7,74 @@
 <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-<header class="topbar">
-  <div class="brand"><span class="logo">◐</span> 爆款复刻工作台</div>
-  <div class="project-switch">
-    <select id="projectSelect"></select>
-    <button class="ghost" id="newProjectBtn">＋ 新项目</button>
-    <button class="danger" id="deleteProjectBtn" title="删除当前项目及其所有视频和结果">删除项目</button>
+<header class="topbar v2">
+  <div class="brand"><svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><rect width="24" height="24" rx="6.5" fill="#2f6f55"></rect><path d="M13 7.6l5.2 4.4L13 16.4z" fill="#fff"></path><path d="M11 7.6L5.8 12 11 16.4z" fill="#fff" opacity=".4"></path><path d="M12 5.6v12.8" stroke="#fff" stroke-width="1" opacity=".55"></path></svg><span>爆款复刻工作台</span></div>
+  <div class="project-switch"><select id="projectSelect" aria-label="切换项目"></select></div>
+  <nav class="stage-nav" id="stageNav" aria-label="流程阶段"></nav>
+  <div class="top-actions">
+    <button class="icon-btn" id="newProjectBtn" title="新建项目" aria-label="新建项目"><svg width="16" height="16" viewBox="0 0 14 14" fill="none" aria-hidden="true"><path d="M7 2.6v8.8M2.6 7h8.8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path></svg></button>
+    <button class="icon-btn" data-library-open title="素材库" aria-label="素材库"><svg width="17" height="17" viewBox="0 0 20 20" fill="none" aria-hidden="true"><rect x="3" y="4" width="14" height="12" rx="2" stroke="currentColor" stroke-width="1.5"></rect><path d="M3.5 13.5l4-4 3 3 2-2 4 4" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"></path><circle cx="13" cy="7.5" r="1.3" fill="currentColor"></circle></svg></button>
+    <button class="icon-btn" id="updatesBtn" title="软件更新" aria-label="软件更新"><svg width="17" height="17" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M10 3.5v7m0 0l3-3m-3 3l-3-3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path><path d="M4 13v2.5h12V13" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"></path></svg></button>
+    <button class="icon-btn" id="settingsBtn" title="设置" aria-label="设置"><svg width="17" height="17" viewBox="0 0 20 20" fill="none" aria-hidden="true"><circle cx="10" cy="10" r="2.6" stroke="currentColor" stroke-width="1.5"></circle><path d="M10 3.2v1.6M10 15.2v1.6M3.2 10h1.6M15.2 10h1.6M5.3 5.3l1.1 1.1M13.6 13.6l1.1 1.1M14.7 5.3l-1.1 1.1M6.4 13.6l-1.1 1.1" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"></path></svg></button>
+    <button class="icon-btn" id="statusToggle" aria-expanded="false" aria-controls="statusPills" title="运行状态与更多" aria-label="运行状态与更多"><svg width="17" height="17" viewBox="0 0 20 20" aria-hidden="true"><circle cx="4.5" cy="10" r="1.5" fill="currentColor"></circle><circle cx="10" cy="10" r="1.5" fill="currentColor"></circle><circle cx="15.5" cy="10" r="1.5" fill="currentColor"></circle></svg></button>
+    <div class="more-menu"><h3>运行状态</h3><div class="status" id="statusPills"></div>
+      <h3>当前项目</h3><button class="danger" id="deleteProjectBtn" title="删除当前项目及其所有视频和结果">删除项目</button></div>
   </div>
-  <button class="ghost" id="statusToggle" aria-expanded="false" aria-controls="statusPills">状态</button>
-  <div class="status" id="statusPills"></div>
-  <button class="ghost" data-library-open>素材库</button>
-  <button class="ghost" id="updatesBtn">软件更新</button>
-  <button class="ghost" id="settingsBtn">设置</button>
 </header>
 
 <div class="stale" id="staleBanner" hidden></div>
 <main id="app">
   <section class="hero" id="emptyState" hidden>
-    <h1>先拆解对标视频，再生成可控的新版本</h1>
-    <p>上传参考视频 → 本地转录、切镜头、取关键帧 → 多模态模型拆成 7 张卡 → 换成你的人和货 → 分段交给 三方渠道（Seedance 2.0 Mini）生成 → 拼成片。</p>
+    <h1>先免费拆解对标视频，再决定要不要复刻</h1>
+    <p>把想复刻的视频放进来：台词、镜头、拍摄方式都在你的电脑上拆好，不花钱、不用填 Key。拿到结果后，想做复刻方案再填 Key。</p>
     <button id="heroNew">新建第一个项目</button>
   </section>
 
   <section id="batchBoard" class="panel batch-board" aria-label="批量看板" hidden></section>
-  <div id="workspace" hidden>
-    <section id="workflow" class="workflow" aria-label="项目流程"></section>
+  <div id="workspace" data-stage="upload" hidden>
     <div class="legacy-notice" id="legacyProjectBanner" role="status" hidden></div>
     <div id="fissionBanner" class="fission-banner" hidden></div>
-      <div class="titlebar">
-      <span class="crumb">视频自动化 / 爆款复刻</span>
-      <h1 id="projectName" contenteditable="true" spellcheck="false"></h1>
-      <p class="sub">先拆解对标视频的角色、剧情、产品和镜头关系，再生成可控的新版本。每一步都可以手动改。</p>
+
+    <!-- ① 上传素材（设计稿 Main） -->
+    <div class="stage-view upload-stage" data-stage-view="upload">
+      <section class="upload-main">
+        <div class="titlebar">
+          <h1 id="projectName" contenteditable="true" spellcheck="false" title="点击可改项目名"></h1>
+          <p class="sub">先把你想复刻的那条视频放进来。拆解全在你这台电脑上跑完，拿到结果再决定要不要做复刻。</p>
+        </div>
+        <section class="panel" id="step-1" data-step="1">
+          <header><span class="no">01</span><div><h2>上传对标视频</h2><p>文件只保存在你的电脑上，上传后自动读取视频信息。</p></div></header>
+          <label class="drop big" id="sourceDrop">
+            <input type="file" id="sourceInput" accept="video/*" hidden>
+            <span class="drop-icon" aria-hidden="true"><svg width="26" height="26" viewBox="0 0 28 28" fill="none"><rect x="3" y="6.5" width="17" height="15" rx="2.6" stroke="#2f6f55" stroke-width="1.7"></rect><path d="M20 12.5l5-2.8v8.6l-5-2.8z" stroke="#2f6f55" stroke-width="1.7" stroke-linejoin="round"></path></svg></span>
+            <strong>把对标视频拖进来</strong><span>或点这里选择文件 · mp4 / mov，建议 60 秒以内</span>
+            <span class="drop-note">视频只留在你的电脑上，不会上传到任何服务器</span>
+          </label>
+          <div class="source-view" id="sourceView"></div>
+        </section>
+        <div id="uploadNext"></div>
+        <div class="free-gains">
+          <div class="free-gains-head"><h2>这一步免费能拿到什么</h2><span class="tag-free">本地完成 · 不花钱 · 不用填 Key</span></div>
+          <ul>
+            <li><span class="tick" aria-hidden="true"></span><span>逐词识别台词<br><small>可导出字幕文件</small></span></li>
+            <li><span class="tick" aria-hidden="true"></span><span>自动切分镜头<br><small>出缩略图和时间轴</small></span></li>
+            <li><span class="tick" aria-hidden="true"></span><span>认出拍摄方式<br><small>实拍 / AI 生成 / 图文</small></span></li>
+          </ul>
+        </div>
+      </section>
+      <aside class="recent" id="recentProjects" aria-label="最近的项目"></aside>
     </div>
 
-    <!-- 01 -->
-    <section class="panel" id="step-1" data-step="1">
-      <header><span class="no">01</span><div><h2>上传对标视频</h2><p>文件只保存在你的电脑上，上传后自动读取视频信息。</p></div></header>
-      <label class="drop" id="sourceDrop">
-        <input type="file" id="sourceInput" accept="video/*" hidden>
-        <strong>拖入或点击选择参考视频</strong><span>mp4 / mov，建议 60 秒以内</span>
-      </label>
-      <div class="source-view" id="sourceView"></div>
-    </section>
+    <!-- ② 免费拆解（设计稿 FreeReport），由 flow.js 渲染 -->
+    <div class="stage-view" data-stage-view="free" id="freeStage"></div>
 
-    <!-- 02 -->
+    <!-- ③ 内容拆解：要 Key -->
+    <div class="stage-view" data-stage-view="content">
+    <div id="keyGateLite"></div>
     <section class="panel" id="step-2" data-step="2">
-      <header><span class="no">02</span><div><h2>拆解对标视频</h2><p>先识别台词和镜头切换，再看整片、逐段分析动作和画面。可以换模型再拆一次对比。</p></div></header>
+      <header><span class="no">03</span><div><h2>内容拆解</h2><p>用大模型看懂整片和每一段：人物、动作、商品什么时候出现，出 7 张拆解卡。按用量计费，可以换模型再拆一次对比。</p></div></header>
       <div class="row wrap">
-        <label>多模态模型 <select id="analyzeProvider"></select></label><span class="legacy-route" data-legacy-route="analysis"></span>
+        <label>会读片子的模型 <select id="analyzeProvider"></select></label><span class="legacy-route" data-legacy-route="analysis"></span>
         <label class="file-inline">已有字幕？上传 SRT 代替转录 <input type="file" id="srtInput" accept=".srt,.txt"></label>
         <label class="check"><input type="checkbox" id="skipAsr"> 跳过转录（无口播的视频）</label>
         <label class="check" title="把原视频压成低帧率小文件整段发给 Gemini，动作和节奏判断更准；只对三方渠道 Gemini 渠道生效"><input type="checkbox" id="sendVideo" disabled> 整段视频发给 Gemini（实验）</label>
@@ -67,6 +87,11 @@
       <details id="breakdownDetails"><summary>展开拆解卡片</summary><div class="cards" id="breakdownCards"></div></details>
       <div id="storyboardView"></div>
     </section>
+    </div>
+
+    <!-- ④ 复刻成片 -->
+    <div class="stage-view" data-stage-view="replicate">
+    <section id="workflow" class="workflow" aria-label="项目流程"></section>
 
     <!-- 03 -->
     <section class="panel" id="step-3" data-step="3">
@@ -99,7 +124,7 @@
     </section>
     <section class="panel" id="step-5" data-step="5"><header><span class="no">05</span><div><h2>成片</h2><p>把每段选定的结果按顺序直接拼成整片预览。</p></div></header><div id="finalPreviewView"></div></section>
 
-    <details id="legacyWorkflow" class="legacy-workflow"><summary>旧流程（过渡用，新流程做完后删除）</summary>
+    <details id="legacyWorkflow" class="legacy-workflow" hidden><summary>旧版脚本工具</summary>
     <!-- 04 -->
     <section class="panel" id="legacy-step-4">
       <header><span class="no">旧</span><div><h2>新脚本生成</h2><p>生成创作方案和可表演段落：口播包含台词与表演方向，无对白画面使用微故事。默认从转录逐字保留台词；时长以原片区间为准，只在长度上限、真实镜头或场景变化、参考图变化时切段。</p></div></header>
@@ -129,11 +154,11 @@
     </section>
 
     </details>
+    </div>
 
-    <section class="panel log-panel">
-      <header><div><h2>运行记录</h2></div></header>
+    <details class="panel log-panel" data-detail-key="log"><summary>运行记录</summary>
       <div class="log" id="logView"></div>
-    </section>
+    </details>
   </div>
 </main>
 
@@ -171,6 +196,7 @@
 <div id="pageConfirmation" class="page-confirmation" role="dialog" aria-modal="true" aria-labelledby="pageConfirmationTitle" hidden></div>
 <div class="toast" id="toast"></div>
 <script src="/static/app.js"></script>
+<script src="/static/flow.js"></script>
 <script src="/static/update.js"></script>
 </body>
 </html>

@@ -125,9 +125,37 @@ def clear_bytecode(root, names):
         source.with_suffix('.pyc').unlink(missing_ok=True)
 
 
+DATA_DIR_ENV = 'VIRALREPLICA_DATA_DIR'
+
+
+def data_root(root):
+    """可写的数据目录。桌面版由 Electron 外壳注入环境变量；源码直跑时就是代码目录。
+
+    刻意不 import console.paths：本模块只用标准库，好让它能稳妥地更新自己。
+    """
+    env = os.environ.get(DATA_DIR_ENV, '').strip()
+    return Path(env).expanduser() if env else Path(root)
+
+
+def code_update_blocker(root):
+    """代码目录不能原地改写时返回原因，能改写就返回空串。
+
+    macOS 的 .app 里改任何文件都会破坏签名封印；用户直接从 dmg 里打开时，
+    系统还会把应用放在只读的随机挂载点上运行。Windows 的 Authenticode 不封
+    资源文件，按用户安装时目录可写，不受影响。
+    """
+    root = Path(root).resolve()
+    if '.app/Contents/' in root.as_posix():
+        return '桌面版的程序代码装在应用内部，原地改写会破坏 macOS 签名。请到 Releases 下载新版安装包。'
+    if not os.access(root, os.W_OK):
+        return '程序目录没有写权限，无法原地更新。请下载新版安装包。'
+    return ''
+
+
 def state_dir(root):
-    path = root / 'runtime/updates'
-    if (root / 'runtime').is_symlink() or path.is_symlink():
+    base = data_root(root)
+    path = base / 'runtime/updates'
+    if (base / 'runtime').is_symlink() or path.is_symlink():
         raise UpdateError('更新备份目录不能是符号链接')
     path.mkdir(parents=True, exist_ok=True)
     return path
@@ -397,7 +425,9 @@ class Updater:
                     self.message = '当前已是最新发布版本。'
                 else:
                     self.release = {'sha': sha, 'manifest': manifest}
-                    self.message = '发现新版本，只更新程序代码。'
+                    blocker = code_update_blocker(self.root)
+                    self.message = ('发现新版本 ' + manifest['version'] + '。' + blocker) if blocker \
+                        else '发现新版本，只更新程序代码。'
                 self.phase = 'idle'
         except Exception as exc:
             with self.lock: self.phase, self.message = 'error', str(exc)
@@ -405,6 +435,9 @@ class Updater:
         return self.status()
 
     def start(self, sha='', *, busy=lambda: False, validate=lambda: '', rollback_only=False, restart=True):
+        blocker = code_update_blocker(self.root)
+        if blocker:
+            raise UpdateError(blocker)
         with self.lock:
             if self.applying() or self.phase in {'checking', 'restarting'}:
                 raise UpdateError('已有更新操作正在进行')

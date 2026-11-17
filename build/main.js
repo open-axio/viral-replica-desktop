@@ -64,6 +64,8 @@ function startServer(workbench, dataDir) {
   const env = Object.assign({}, process.env);
   // server.py 侧由 console/paths.py 读这个变量决定 Key、项目和 runtime 的位置
   env[datadir.ENV_NAME] = dataDir;
+  // 别往应用内部的代码旁边写 .pyc：会改动 bundle、破坏 macOS 签名封印
+  env.PYTHONDONTWRITEBYTECODE = '1';
   if (fs.existsSync(ffDir)) env.PATH = ffDir + path.delimiter + (env.PATH || '');
 
   serverProc = spawn(py, ['server.py'], {

@@ -255,6 +255,12 @@ const KEY_TABS = {
     hint: "一个 Key 把读片子、生图、生视频全包了，不用分别开通。",
     covers: [[true, "读片子、出复刻方案", "按量计费"], [true, "画新分镜图", "按张计费"], [true, "生成分段视频", "按秒计费"]],
   },
+  qwen: {
+    name: "通义千问 · 阿里云百炼", badge: "国内直连", keyLabel: "阿里云百炼 API Key",
+    desc: "阿里云的大模型平台，国内网络直连。默认用能看图、看视频的千问 Qwen3-VL 读片子；同一个 Key 在百炼里还能开通 DeepSeek、Kimi、GLM。画分镜图和生成视频这两步需要另配。",
+    hint: "在阿里云百炼控制台「API Key」里创建，充值后按量计费。",
+    covers: [[true, "读片子、出复刻方案", "按量计费"], [false, "画新分镜图", "需另配渠道"], [false, "生成分段视频", "需另配三方渠道"]],
+  },
   doubao: {
     name: "豆包 · 火山方舟", badge: "国内直连", keyLabel: "火山方舟 API Key",
     desc: "在国内网络下最稳，读片子的单价也低。画分镜图和生成视频这两步它在工作台里还接不上，需要在设置里另配三方渠道。",
@@ -263,15 +269,17 @@ const KEY_TABS = {
   },
   custom: {
     name: "我已经有 Key 了", badge: "", keyLabel: "API Key",
-    desc: "手上已经有 OpenAI、DeepSeek，或其他 OpenAI 兼容接口的 Key 就填这里，直接拿来读片子。生成视频这一步工作台只接三方渠道，到时候还得另配。",
+    desc: "手上已经有 OpenAI、智谱、Kimi、DeepSeek，或其他 OpenAI 兼容接口的 Key 就填这里。生成视频这一步工作台只接三方渠道，到时候还得另配。",
     hint: "",
     covers: null,  // 按下面选的渠道算
   },
 };
 const CUSTOM_KINDS = {
-  openai: { label: "OpenAI 官方", hint: "OpenAI 官方的 Key。也能画分镜图。", image: true },
-  deepseek: { label: "DeepSeek（经 OpenRouter）", hint: "OpenRouter 的 Key，默认用 DeepSeek V4.1 Flash，最便宜。", image: false },
-  custom: { label: "其他 OpenAI 兼容接口", hint: "填接口地址、Key 和模型名。任何兼容 OpenAI 格式的接口都行。", image: false },
+  openai: { label: "OpenAI 官方", hint: "OpenAI 官方的 Key。也能画分镜图。", image: true, read: true },
+  zhipu: { label: "智谱 GLM", hint: "智谱开放平台（open.bigmodel.cn）的 Key，默认用能看图的 GLM-4.6V。", image: false, read: true },
+  kimi: { label: "Kimi（月之暗面）", hint: "月之暗面开放平台的 Key，默认用能看图的 Kimi K2.5。", image: false, read: true },
+  deepseek: { label: "DeepSeek 官方", hint: "DeepSeek 开放平台的 Key。DeepSeek 看不了图：读片子要另配能看图的模型，它适合写脚本、改台词，最便宜。", image: false, read: false },
+  custom: { label: "其他 OpenAI 兼容接口", hint: "填接口地址、Key 和模型名。任何兼容 OpenAI 格式的接口都行，读片子要选能看图的模型。", image: false, read: true },
 };
 const keyTabState = new Map();   // pid → {tab, kind, busy, error}
 
@@ -290,7 +298,7 @@ function contentRunning() {
 }
 function keyCovers(tab, kind) {
   if (tab !== "custom") return KEY_TABS[tab].covers;
-  return [[true, "读片子、出复刻方案", "按你的渠道计价"],
+  return [[CUSTOM_KINDS[kind].read, "读片子、出复刻方案", CUSTOM_KINDS[kind].read ? "按你的渠道计价" : "看不了图，需另配"],
     [CUSTOM_KINDS[kind].image, "画新分镜图", CUSTOM_KINDS[kind].image ? "按张计费" : "需另配渠道"],
     [false, "生成分段视频", "需另配三方渠道"]];
 }
@@ -315,10 +323,10 @@ function renderKeyGate() {
       <div class="keygate-panel" role="tabpanel">
         <p class="keygate-desc">${esc(t.desc)}</p>
         ${customFields}
-        <div class="key-field"><label for="keyValue">${esc(st.tab === "custom" && st.kind === "deepseek" ? "OpenRouter API Key" : t.keyLabel)}</label>
+        <div class="key-field"><label for="keyValue">${esc(st.tab === "custom" ? (CUSTOM_KINDS[st.kind]?.label || "") + " API Key" : t.keyLabel)}</label>
           <input id="keyValue" data-key-input type="password" placeholder="粘贴到这里" autocomplete="off" value="${esc(st.values?.keyValue || "")}"><span class="hint">${esc(hint)}</span></div>
         <div class="covers"><div class="covers-head">这个 Key 能管到哪几步</div><ul>${covers}</ul></div>
-        <p class="hint">缺的那几步可以在设置里单独指另一个渠道，比如读片子用 DeepSeek、生图和视频用三方渠道。</p>
+        <p class="hint">缺的那几步可以在设置里单独指另一个渠道，比如读片子用通义千问、写脚本用 DeepSeek、生图和视频用三方渠道。</p>
       </div>
     </div>
     <div class="keygate-safe"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 1.9l5 2.2v3.5c0 3.1-2 5.3-5 6.2-3-.9-5-3.1-5-6.2V4.1l5-2.2z" stroke="#2f6f55" stroke-width="1.4" stroke-linejoin="round"></path><path d="M5.9 8.1l1.5 1.5 2.8-3.1" stroke="#2f6f55" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"></path></svg>
@@ -333,8 +341,14 @@ function keySettingsBody(st) {
   if (!key) throw new Error("先把 Key 粘贴进来");
   if (st.tab === "viraltok") return [{ JIMMY_API_KEY: key, DEFAULT_LLM: "jimmy", ROUTE_ANALYSIS: "jimmy", ROUTE_SCRIPT: "jimmy" }, "jimmy"];
   if (st.tab === "doubao") return [{ DOUBAO_API_KEY: key, ROUTE_ANALYSIS: "doubao", ROUTE_SCRIPT: "doubao" }, "doubao"];
+  if (st.tab === "qwen") return [{ QWEN_API_KEY: key, ROUTE_ANALYSIS: "qwen", ROUTE_SCRIPT: "qwen" }, "qwen"];
+  if (st.kind === "zhipu") return [{ ZHIPU_API_KEY: key, ROUTE_ANALYSIS: "zhipu", ROUTE_SCRIPT: "zhipu" }, "zhipu"];
+  if (st.kind === "kimi") return [{ KIMI_API_KEY: key, ROUTE_ANALYSIS: "kimi", ROUTE_SCRIPT: "kimi" }, "kimi"];
   if (st.kind === "openai") return [{ OPENAI_API_KEY: key, ROUTE_ANALYSIS: "openai", ROUTE_SCRIPT: "openai" }, "openai"];
-  if (st.kind === "deepseek") return [{ DEEPSEEK_API_KEY: key, ROUTE_ANALYSIS: "deepseek", ROUTE_SCRIPT: "deepseek" }, "deepseek"];
+  if (st.kind === "deepseek") {
+    if (!analysisRoute().ready) throw new Error("DeepSeek 看不了图，读不了片子。先在上面选一个能看图的（通义千问、豆包、三方渠道都行）；DeepSeek 以后可以在设置里专门用来写脚本、改台词。");
+    return [{ DEEPSEEK_API_KEY: key, ROUTE_SCRIPT: "deepseek" }, "deepseek"];
+  }
   const base = $("#keyBase")?.value.trim(), model = $("#keyModel")?.value.trim();
   if (!base || !model) throw new Error("接口地址和模型名都要填");
   return [{ CUSTOM_API_KEY: key, CUSTOM_BASE_URL: base, CUSTOM_MODEL: model, ROUTE_ANALYSIS: "custom", ROUTE_SCRIPT: "custom" }, "custom"];

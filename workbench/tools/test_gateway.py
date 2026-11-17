@@ -93,6 +93,8 @@ def frozen(name):
 class ByteCompatibilityTests(unittest.TestCase):
     def setUp(self):
         GatewayTests.setUp(self)
+        # DeepSeek 默认地址已改成官方（看不了图）；这里测的是 OpenRouter 上的 DeepSeek 的请求字节，地址保持原样
+        self.values.update(DEEPSEEK_BASE_URL='https://openrouter.ai/api/v1')
         self.values.update(DEEPSEEK_API_KEY='offline',DOUBAO_API_KEY='offline',CUSTOM_API_KEY='offline',
                            CUSTOM_MODEL='custom',CUSTOM_BASE_URL='https://offline.invalid/v1')
         self.before = frozen('llm')

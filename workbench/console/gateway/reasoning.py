@@ -8,6 +8,11 @@ from .adapters import official, third_party, deepseek, doubao, custom
 
 ADAPTERS = {"openai": official, "jimmy": third_party, "deepseek": deepseek, "doubao": doubao, "custom": custom}
 
+def _has_images(messages: list[dict]) -> bool:
+    return any(isinstance(m.get("content"), list) and any(c.get("type") in {"image_url", "input_image", "image"} for c in m["content"] if isinstance(c, dict))
+               for m in messages)
+
+
 def chat(provider: str, messages: list[dict], *, temperature: float = 0.4, max_tokens: int = 8000,
          model: str | None = None) -> dict:
     try:
@@ -37,6 +42,13 @@ def _chat(provider: str, messages: list[dict], *, temperature: float, max_tokens
         llm._jimmy_dns_shim()
     if any(isinstance(m["content"], list) and any(c.get("type") == "video_file" for c in m["content"]) for m in messages):
         raise LLMError("只有三方渠道 Gemini 支持直接发送整段视频")
+    # 只在确定看不了图时拦：用的是这个渠道默认的官方地址。改过地址（比如走 OpenRouter）就不知道背后是什么模型，照常发。
+    default_base = config.DEFAULTS.get(provider.upper() + "_BASE_URL", "").rstrip("/")
+    if (config.PROVIDERS.get(provider, {}).get("vision") is False and s["base_url"].rstrip("/") == default_base
+            and _has_images(messages)):
+        name = config.PROVIDERS[provider]["label"].split("（")[0]
+        raise LLMError(f"「{name}」看不了图，这一步要看画面。请在设置里给这一步换一个能看图的模型（比如通义千问、豆包）",
+                       kind="invalid_request")
     adapter = ADAPTERS.get(provider, custom)
     body = adapter.reason_body(s, messages, temperature=temperature, max_tokens=max_tokens)
     started = time.time()

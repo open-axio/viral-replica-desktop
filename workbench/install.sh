@@ -35,6 +35,10 @@ export HF_HOME="$RT/models/huggingface" TORCH_HOME="$RT/models/torch" NLTK_DATA=
 export XDG_CACHE_HOME="$RT/temp/cache" XDG_CONFIG_HOME="$RT/temp/config" TMPDIR="$RT/temp"
 export PIP_NO_CACHE_DIR=1 HF_HUB_DISABLE_TELEMETRY=1
 PIP_MIRROR="https://pypi.tuna.tsinghua.edu.cn/simple"
+# 国内镜像不一定都能用（例：清华镜像对部分网络直接返回 403），装依赖时依次换源，哪个能用就一直用哪个
+PIP_MIRRORS="$PIP_MIRROR https://mirrors.aliyun.com/pypi/simple/ https://mirrors.cloud.tencent.com/pypi/simple https://repo.huaweicloud.com/repository/pypi/simple"
+if [ "$USE_MIRROR" = 1 ]; then INDEXES="$PIP_MIRRORS https://pypi.org/simple"; else INDEXES="https://pypi.org/simple $PIP_MIRRORS"; fi
+[ -n "${VIRALREPLICA_PIP_INDEXES:-}" ] && INDEXES="$VIRALREPLICA_PIP_INDEXES"   # 测试用：指定换源顺序
 HF_MIRROR="https://hf-mirror.com"
 PY_MIRROR="https://registry.npmmirror.com/-/binary/python-build-standalone"
 if [ "$USE_MIRROR" = 1 ]; then
@@ -46,9 +50,17 @@ set_env_line() {  # write KEY=VALUE into this folder's console.env
   local f="$ROOT/console.env"; touch "$f"; chmod 600 "$f"
   if grep -q "^$1=" "$f"; then sed -i '' "s|^$1=.*|$1=$2|" "$f"; else echo "$1=$2" >> "$f"; fi
 }
-pkg() {  # install packages into runtime/venv, retry once through the domestic mirror
-  "$UV" pip install --python "$PY" "$@" || { [ "$USE_MIRROR" = 1 ] && return 1
-    echo "官方源失败，改用清华镜像重试"; UV_DEFAULT_INDEX="$PIP_MIRROR" "$UV" pip install --python "$PY" "$@"; }
+pkg() {  # install packages into runtime/venv; try each index in turn and keep the first one that works
+  local idx rest
+  for idx in $INDEXES; do
+    if UV_DEFAULT_INDEX="$idx" "$UV" pip install --python "$PY" "$@"; then
+      rest=""; for i in $INDEXES; do [ "$i" = "$idx" ] || rest="$rest $i"; done
+      INDEXES="$idx$rest"; return 0
+    fi
+    echo "这个源装不上（$idx），换下一个源重试"
+  done
+  echo "安装失败：$*。试过的下载源都不行，检查一下网络后重新打开应用即可（已装好的部分不会重复下载）"
+  return 1
 }
 
 say "1/5 安装 uv 和 Python 3.12（runtime/uv、runtime/python）"

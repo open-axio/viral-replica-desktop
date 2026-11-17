@@ -33,6 +33,11 @@ $env:NLTK_DATA = Join-Path $RT "models\nltk"; $env:XDG_CACHE_HOME = Join-Path $R
 $env:TEMP = Join-Path $RT "temp"; $env:TMP = $env:TEMP
 $env:PIP_NO_CACHE_DIR = "1"; $env:HF_HUB_DISABLE_TELEMETRY = "1"; $env:PYTHONUTF8 = "1"
 $PipMirror = "https://pypi.tuna.tsinghua.edu.cn/simple"; $HfMirror = "https://hf-mirror.com"
+# 国内镜像不一定都能用（例：清华镜像对部分网络直接返回 403），装依赖时依次换源，哪个能用就一直用哪个
+$PipMirrors = @($PipMirror, "https://mirrors.aliyun.com/pypi/simple/", "https://mirrors.cloud.tencent.com/pypi/simple",
+                "https://repo.huaweicloud.com/repository/pypi/simple")
+$script:Indexes = if ($Mirror) { $PipMirrors + "https://pypi.org/simple" } else { @("https://pypi.org/simple") + $PipMirrors }
+if ($env:VIRALREPLICA_PIP_INDEXES) { $script:Indexes = @($env:VIRALREPLICA_PIP_INDEXES -split '\s+' | Where-Object { $_ }) }   # 测试用：指定换源顺序
 $PyMirror = "https://registry.npmmirror.com/-/binary/python-build-standalone"
 if ($Mirror) { $env:UV_DEFAULT_INDEX = $PipMirror; $env:UV_PYTHON_INSTALL_MIRROR = $PyMirror; $env:HF_ENDPOINT = $HfMirror }
 
@@ -44,12 +49,17 @@ function Set-EnvLine($k, $v) {
   [IO.File]::WriteAllLines($f, [string[]]$lines)   # UTF-8 without BOM
 }
 function Pkg([string[]]$names) {
-  & $UV pip install --python $Py @names
-  if ($LASTEXITCODE -ne 0) {
-    if ($Mirror) { throw "安装失败：$names" }
-    Write-Host "官方源失败，改用清华镜像重试"; $env:UV_DEFAULT_INDEX = $PipMirror
-    Run { & $UV pip install --python $Py @names }
+  foreach ($idx in @($script:Indexes)) {
+    $env:UV_DEFAULT_INDEX = $idx
+    & $UV pip install --python $Py @names
+    if ($LASTEXITCODE -eq 0) {
+      # 记住能用的源，后面的安装先试它
+      $script:Indexes = @($idx) + @($script:Indexes | Where-Object { $_ -ne $idx })
+      return
+    }
+    Write-Host "这个源装不上（$idx），换下一个源重试"
   }
+  throw "安装失败：$names。试过 $(@($script:Indexes).Count) 个下载源都不行，检查一下网络后重新打开应用即可（已装好的部分不会重复下载）"
 }
 
 Say "1/5 安装 uv 和 Python 3.12（runtime\uv、runtime\python）"

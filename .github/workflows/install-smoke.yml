@@ -1,0 +1,47 @@
+name: install-smoke
+# 在真的 Windows / macOS 上把首次安装脚本完整跑一遍。
+# 故意让第一个下载源失效（返回错误），验证会自动换下一个源装完。
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - workbench/install.ps1
+      - workbench/install.sh
+      - workbench/install.bat
+      - .github/workflows/install-smoke.yml
+
+jobs:
+  install:
+    name: 安装 ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+    env:
+      # 第一个源不存在，模拟「国内镜像返回 403」；后面两个能用
+      VIRALREPLICA_PIP_INDEXES: "https://pypi.invalid.example/simple https://mirrors.aliyun.com/pypi/simple/ https://pypi.org/simple"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 运行 install.ps1（Windows，路径带空格，和用户装到 Program Files 一样）
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $target = Join-Path $env:RUNNER_TEMP "Program Files\ViralReplica"
+          & powershell -NoProfile -ExecutionPolicy Bypass -File workbench\install.ps1 -Model base -Target $target
+          if ($LASTEXITCODE -ne 0) { throw "install.ps1 退出码 $LASTEXITCODE" }
+          & (Join-Path $target "runtime\venv\Scripts\python.exe") -c "import faster_whisper, cv2, numpy, static_ffmpeg; print('ok', cv2.__version__)"
+          if ($LASTEXITCODE -ne 0) { throw "依赖没装好" }
+          if (-not (Test-Path (Join-Path $target "runtime\ffmpeg\ffmpeg.exe"))) { throw "没有 ffmpeg" }
+
+      - name: 运行 install.sh（macOS）
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          target="$RUNNER_TEMP/Viral Replica"
+          VIRALREPLICA_DATA_DIR="$target" bash workbench/install.sh --model base
+          "$target/runtime/venv/bin/python" -c "import faster_whisper, cv2, numpy, static_ffmpeg; print('ok', cv2.__version__)"
+          test -x "$target/runtime/ffmpeg/ffmpeg"

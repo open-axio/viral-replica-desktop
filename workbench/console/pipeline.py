@@ -14,11 +14,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-<<<<<<< HEAD
 from . import gateway, asr, config, evidence, forensics, free_report, kits, llm, media, motion, prompts, replacement_guard, scene_edits, scene_plan, segment_timing, speech_lines, store, storyboard
-=======
-from . import gateway, asr, config, evidence, forensics, kits, llm, media, motion, prompts, replacement_guard, scene_edits, scene_plan, segment_timing, speech_lines, store, storyboard
->>>>>>> origin/main
 
 STEP_META = {
     "probe": ("01 媒体探测", "ffprobe（= hypit media probe）· 本地免费"),
@@ -171,21 +167,15 @@ class _AnalysisChanged(ValueError):
 PAID_STEPS = ("overview", "close", "pack")
 
 
-<<<<<<< HEAD
 def _stop_for_key(pid: str, reason: str | None, adir: Path, started: float, free: dict | None = None) -> None:
     """免费的前四步已跑完，停在这里，把免费产物挂出来。
 
     reason 为空：用户只要免费拆解（mode=free）；不为空：本想继续，但还没填 Key。"""
-=======
-def _stop_for_key(pid: str, reason: str, adir: Path, started: float) -> None:
-    """免费的前四步已跑完、但还没填 Key：停在这里，把免费产物挂出来。"""
->>>>>>> origin/main
     def fn(x: dict) -> None:
         a = x.setdefault("analysis", {})
         if a.get("started") != started:      # 期间被重新拆解覆盖了，别回写旧状态
             return
         a["status"] = "free_done"
-<<<<<<< HEAD
         a.pop("error", None)
         a.pop("key_needed", None)
         if reason:
@@ -199,18 +189,6 @@ def _stop_for_key(pid: str, reason: str, adir: Path, started: float) -> None:
         store.update(pid, fn)
     store.log(pid, "免费拆解已完成：台词、镜头切分、拍摄方式和字幕文件都已生成。"
               + ("整片理解和逐段细读需要先填 Key。" if reason else ""))
-=======
-        a["key_needed"] = reason
-        a.pop("error", None)
-        steps = a.setdefault("steps", {})
-        for step in PAID_STEPS:
-            steps[step] = {"title": STEP_META[step][0], "tool": STEP_META[step][1],
-                           "status": "needs_key", "note": "填好 Key 后点「继续拆解」"}
-        a["docs"] = {name: f"analysis/{name}" for name in DOC_FILES if (adir / name).exists()}
-    with store._lock(pid):
-        store.update(pid, fn)
-    store.log(pid, "免费拆解已完成：台词、镜头切分、拍摄方式和字幕文件都已生成。整片理解和逐段细读需要先填 Key。")
->>>>>>> origin/main
 
 
 def run_analysis(pid: str, provider: str, srt_text: str | None = None, skip_asr: bool = False,
@@ -281,7 +259,6 @@ def clear_source(pid: str) -> dict:
     return data
 
 
-<<<<<<< HEAD
 def _build_free_report(pid: str, adir: Path, info: dict, shots: list[dict], transcript: dict | None,
                        forensic: dict | None, source_name: str) -> dict | None:
     """免费拆解包：报告 + 字幕 + 分镜图。生成失败不影响拆解本身。"""
@@ -293,8 +270,6 @@ def _build_free_report(pid: str, adir: Path, info: dict, shots: list[dict], tran
         return None
 
 
-=======
->>>>>>> origin/main
 def _run_forensics(pid: str, src: Path, shots: list[dict], duration: float, cfg: dict, adir: Path) -> dict | None:
     """第 04 步。失败不拖垮整次拆解：记成 failed 或 skipped，后面照常往下走。"""
     for old in ("forensics.json", "拍摄方式.md"):
@@ -302,7 +277,6 @@ def _run_forensics(pid: str, src: Path, shots: list[dict], duration: float, cfg:
     run, why = forensics.decide_run(cfg, duration)
     if run and not shots:
         run, why = False, "03 没有切出镜头，没有可判定的内容"
-<<<<<<< HEAD
     if run and forensics.missing_dependency():
         # 运行环境是加入这一步之前装的：自动补装 OpenCV（约 40MB，只装一次）
         _set_step(pid, "forensics", status="running", progress="第一次使用，正在补装识别组件（约 40MB，只装一次）")
@@ -311,11 +285,6 @@ def _run_forensics(pid: str, src: Path, shots: list[dict], duration: float, cfg:
             run, why = False, f"识别组件没装上，这次先跳过：{failed}。下次拆解会再试一次"
         else:
             store.log(pid, "已补装认拍摄方式所需的识别组件（OpenCV）")
-=======
-    if run:
-        why = forensics.missing_dependency() or ""
-        run = not why
->>>>>>> origin/main
     if not run:
         _set_step(pid, "forensics", status="skipped", note=why)
         return None
@@ -417,24 +386,17 @@ def _run_analysis(pid: str, provider: str, srt_text: str | None = None, skip_asr
 
     # 04 认拍摄方式：吃 03 的切点，按 03 镜号逐镜判定
     forensic = _run_forensics(pid, src, shots, duration, cfg, adir)
-<<<<<<< HEAD
     free = _build_free_report(pid, adir, info, shots, transcript, forensic, data["source"].get("name") or src.name)
     store.update(pid, lambda x: x["analysis"].update(free=free, free_finished=time.time()))
     if free_only:
         _stop_for_key(pid, None, adir, analysis_started, free)
         return
-=======
->>>>>>> origin/main
 
     # ---- 免费部分到此为止。往下要调用大模型，需要 Key。----
     try:
         settings = {**config.provider_settings(provider), 'model': route['model']}
     except ValueError as exc:
-<<<<<<< HEAD
         _stop_for_key(pid, str(exc), adir, analysis_started, free)
-=======
-        _stop_for_key(pid, str(exc), adir, analysis_started)
->>>>>>> origin/main
         return
 
     # 05 whole piece → ANALYSIS.md

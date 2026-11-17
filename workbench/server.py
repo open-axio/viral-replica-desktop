@@ -637,11 +637,8 @@ class Handler(BaseHTTPRequestHandler):
             provider = _route_selection(pid, "analysis", body)
             # 这里不再提前查 Key：前四步全在本地免费跑。没 Key 时流水线会在第 05 步
             # 前停下，状态记为 free_done（见 pipeline._stop_for_key）。
-<<<<<<< HEAD
             # mode=free：只跑本地免费的前四步（第 ② 阶段「免费拆解」），不管有没有 Key 都停在 free_done
             free_only = body.get("mode") == "free"
-=======
->>>>>>> origin/main
             jobs.start(pid, "analyze", lambda: pipeline.run_analysis(pid, provider, body.get("srt_text") or None,
                                                                      bool(body.get("skip_asr")),
                                                                      bool(body.get("send_video")), free_only),

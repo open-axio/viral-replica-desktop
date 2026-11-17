@@ -41,8 +41,10 @@ test('三张卡片、准确说明、高级默认折叠、旧配置字段完整',
   assert.match(t.$('#settingsForm').textContent,/Key 只保存在这台电脑上，不会写进项目文件。/);
   const advanced=t.$('#settingsAdvanced');assert.equal(advanced.open,false);assert.equal(advanced.querySelector('summary').textContent,'高级设置（一般不用动）');
   assert.match(advanced.textContent,/单独给某一步换模型.*不设置时，各步骤跟随上面三张卡片/s);
-  const oldFields=['DEFAULT_LLM','JIMMY_LLM_MODEL','JIMMY_LLM_BASE_URL','OPENAI_BASE_URL','OPENAI_MODEL','OPENAI_IMAGE_MODEL','OPENAI_REASONING_EFFORT','DOUBAO_BASE_URL','DOUBAO_MODEL','DEEPSEEK_BASE_URL','DEEPSEEK_MODEL','CUSTOM_BASE_URL','CUSTOM_MODEL','ASR_MODEL','ASR_COMPUTE_TYPE','ASR_LANGUAGE','ASR_ENGINE','HF_ENDPOINT','MAX_PASSAGES','LLM_PARALLEL',...['ANALYSIS','SCRIPT','CHECK','DIALOGUE_PROPOSAL','CAMERA_PROMPT','CAMERA_IMAGE','VIDEO'].map(s=>'ROUTE_'+s)];
+  const oldFields=['DEFAULT_LLM','JIMMY_LLM_MODEL','JIMMY_LLM_BASE_URL','OPENAI_BASE_URL','OPENAI_MODEL','OPENAI_IMAGE_MODEL','OPENAI_REASONING_EFFORT','DOUBAO_BASE_URL','DOUBAO_MODEL','DEEPSEEK_BASE_URL','DEEPSEEK_MODEL','CUSTOM_BASE_URL','CUSTOM_MODEL','ASR_COMPUTE_TYPE','ASR_LANGUAGE','ASR_ENGINE','HF_ENDPOINT','MAX_PASSAGES','LLM_PARALLEL',...['ANALYSIS','SCRIPT','CHECK','DIALOGUE_PROPOSAL','CAMERA_PROMPT','CAMERA_IMAGE','VIDEO'].map(s=>'ROUTE_'+s)];
   for(const key of oldFields)assert.ok(advanced.querySelector(`[name="${key}"]`),key);
+  // 识别模型改在设置顶部按档位选择（下载 / 切换），不再是高级设置里的文本框：保存表单不会把旧值写回去
+  assert.equal(advanced.querySelector('[name="ASR_MODEL"]'),null);
   for(const channel of ['openai','jimmy','deepseek','doubao','custom'])assert.equal(t.$$(`[data-channel-key="${channel}"]`).length,1);
   assert.doesNotMatch(t.$('#settingsForm').textContent,/WhisperX 对齐模型|三方渠道沿用已有的本机配置|项目显式路由/);
 });

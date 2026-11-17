@@ -12,7 +12,7 @@ const FLOW_STAGES = [
   { id: "replicate", label: "复刻成片", paid: true },
 ];
 const FREE_STEPS = [["probe", "读视频信息"], ["transcribe", "识别台词"], ["boundaries", "切分镜头"], ["forensics", "认拍摄方式"]];
-const VERDICT_CLASS = { live: "实拍", ai: "AI 生成", graphic: "图文动画" };
+const VERDICT_CLASS = { live: "实拍", ai: "AI 生成", graphic: "图文动画", unsure: "待确认" };
 const stageChoice = new Map();   // pid → 用户点选的阶段
 const freePicked = new Map();    // pid → 免费结果里选中的镜号
 
@@ -135,7 +135,8 @@ function freeStepSummary(id) {
     const avg = shots.length ? shots.reduce((n, s) => n + (s.end - s.start), 0) / shots.length : 0;
     return `${shots.length} 个镜头，平均 ${fmt(avg, 1)} 秒`;
   }
-  if (id === "forensics") return Object.entries(VERDICT_CLASS).map(([k, l]) => `${l} ${(P.analysis?.forensics?.counts || {})[k] || 0}`).join(" · ");
+  if (id === "forensics") return Object.entries(VERDICT_CLASS).filter(([k]) => k !== "unsure" || (P.analysis?.forensics?.counts || {}).unsure)
+    .map(([k, l]) => `${l} ${(P.analysis?.forensics?.counts || {})[k] || 0}`).join(" · ");
   return "";
 }
 function freeStepItem([id, label]) {
@@ -192,7 +193,8 @@ function renderFreeReport() {
         <img class="shot-detail-thumb" src="${fileUrl(sel.frame)}" alt="镜头 ${sel.index} 截图">
         <div class="shot-detail-text">
           <h3>这一镜的台词</h3><p>${caption ? esc(caption) : '<span class="hint">（这一镜没有台词）</span>'}</p>
-          ${v ? `<h3>凭什么这么判断</h3><ul class="chips">${(v.tags || []).map((t) => `<li>${esc(t)}</li>`).join("") || "<li>没有特别明显的特征</li>"}</ul>
+          ${v?.class === "unsure" ? '<p class="unsure-note">只看像素分不清这一镜是实拍还是 AI 生成（平台压缩会抹掉判断用的细节）。做内容拆解时，会让大模型看图再确认。</p>' : ""}
+          ${v ? `<h3>${v.class === "unsure" ? "看到的特征" : "凭什么这么判断"}</h3><ul class="chips">${(v.tags || []).map((t) => `<li>${esc(t)}</li>`).join("") || "<li>没有特别明显的特征</li>"}</ul>
           <details class="why-more" data-detail-key="why-${sel.index}"><summary>看完整依据</summary><ul>${(v.evidence || []).map((e) => `<li>${esc(e)}</li>`).join("")}</ul></details>`
           : `<h3>拍摄方式</h3><p class="hint">${esc(a.steps?.forensics?.note || "这次没有做认拍摄方式")}</p>`}
         </div>
@@ -232,30 +234,270 @@ function renderFreeStage() {
   updateHtml(box, html);
 }
 
-// ---------- ③ 内容拆解前的 Key 提示（完整的 Key 引导屏在下一批） ----------
-function renderKeyGateLite() {
+// ---------- ③ 内容拆解（设计稿 KeyGate + 内容拆解进度/结果） ----------
+const KEY_TABS = {
+  viraltok: {
+    name: "三方渠道 ViralTok", badge: "推荐", keyLabel: "ViralTok API Key",
+    desc: "如果你不想研究模型这些事，用这个。开通一个账号充值就能用，读片子、画新分镜、生成视频三样都走同一个 Key。",
+    hint: "一个 Key 把读片子、生图、生视频全包了，不用分别开通。",
+    covers: [[true, "读片子、出复刻方案", "按量计费"], [true, "画新分镜图", "按张计费"], [true, "生成分段视频", "按秒计费"]],
+  },
+  doubao: {
+    name: "豆包 · 火山方舟", badge: "国内直连", keyLabel: "火山方舟 API Key",
+    desc: "在国内网络下最稳，读片子的单价也低。画分镜图和生成视频这两步它在工作台里还接不上，需要在设置里另配三方渠道。",
+    hint: "国内直连不用代理。只管读片子和出复刻方案。",
+    covers: [[true, "读片子、出复刻方案", "按量计费"], [false, "画新分镜图", "需另配渠道"], [false, "生成分段视频", "需另配三方渠道"]],
+  },
+  custom: {
+    name: "我已经有 Key 了", badge: "", keyLabel: "API Key",
+    desc: "手上已经有 OpenAI、DeepSeek，或其他 OpenAI 兼容接口的 Key 就填这里，直接拿来读片子。生成视频这一步工作台只接三方渠道，到时候还得另配。",
+    hint: "",
+    covers: null,  // 按下面选的渠道算
+  },
+};
+const CUSTOM_KINDS = {
+  openai: { label: "OpenAI 官方", hint: "OpenAI 官方的 Key。也能画分镜图。", image: true },
+  deepseek: { label: "DeepSeek（经 OpenRouter）", hint: "OpenRouter 的 Key，默认用 DeepSeek V4.1 Flash，最便宜。", image: false },
+  custom: { label: "其他 OpenAI 兼容接口", hint: "填接口地址、Key 和模型名。任何兼容 OpenAI 格式的接口都行。", image: false },
+};
+const keyTabState = new Map();   // pid → {tab, kind, busy, error}
+
+function analysisRoute() {
+  const r = routeFor("analysis") || {};
+  return { channel: r.channel, model: r.model, ready: !!STATUS?.providers?.[r.channel]?.ready };
+}
+const contentStarting = new Map();   // pid → 点下开始的时间：任务登记为运行中之前，也别再显示「开始」按钮
+function contentRunning() {
+  const a = P?.analysis || {};
+  if (a.status === "running" && a.free_finished) { contentStarting.delete(P.id); return true; }
+  const t = contentStarting.get(P?.id);
+  if (t && Date.now() - t < 15000 && a.status !== "failed") return true;
+  contentStarting.delete(P?.id);
+  return false;
+}
+function keyCovers(tab, kind) {
+  if (tab !== "custom") return KEY_TABS[tab].covers;
+  return [[true, "读片子、出复刻方案", "按你的渠道计价"],
+    [CUSTOM_KINDS[kind].image, "画新分镜图", CUSTOM_KINDS[kind].image ? "按张计费" : "需另配渠道"],
+    [false, "生成分段视频", "需另配三方渠道"]];
+}
+function renderKeyGate() {
+  const st = keyTabState.get(P.id) || { tab: "viraltok", kind: "openai" };
+  const t = KEY_TABS[st.tab], kind = CUSTOM_KINDS[st.kind];
+  const covers = keyCovers(st.tab, st.kind).map(([ok, step, note]) =>
+    `<li><span class="cover-mark ${ok ? "ok" : ""}">${ok ? "✓" : "—"}</span><span class="cover-step">${step}</span><span class="cover-note">${note}</span></li>`).join("");
+  const customFields = st.tab === "custom" ? `
+      <div class="key-field"><label for="keyKind">哪一家的 Key</label>
+        <select id="keyKind" data-key-kind>${Object.entries(CUSTOM_KINDS).map(([k, v]) => `<option value="${k}" ${k === st.kind ? "selected" : ""}>${v.label}</option>`).join("")}</select></div>
+      ${st.kind === "custom" ? `<div class="key-field"><label for="keyBase">接口地址</label><input id="keyBase" data-key-input placeholder="https://…/v1" autocomplete="off" value="${esc(st.values?.keyBase || "")}"></div>
+      <div class="key-field"><label for="keyModel">用哪个模型读片子</label><input id="keyModel" data-key-input placeholder="模型名，例如 gpt-5.6-sol" autocomplete="off" value="${esc(st.values?.keyModel || "")}"></div>` : ""}` : "";
+  const hint = st.tab === "custom" ? kind.hint : t.hint;
+  return `<div class="keygate">
+    <div class="keygate-head"><span class="keygate-icon" aria-hidden="true"><svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M14.6 9.4a3.6 3.6 0 10-4 4l-.8.8H8v2.4H5.6V19H3v-2.6l7.6-7.6z" stroke="#2f6f55" stroke-width="1.6" stroke-linejoin="round"></path><circle cx="16.4" cy="7.6" r="1.1" fill="#2f6f55"></circle></svg></span>
+      <div><h1>再往下，需要一个会读片子的模型</h1>
+      <p>刚才那一步已经把「这条片子是怎么拍的」弄清楚了，全程免费。但要知道它<strong>为什么抓人</strong>、台词该怎么改、哪一镜能换成你的店和你的人，得让大模型把片子读一遍——这部分按量计费，所以 Key 填在你自己手里。</p></div></div>
+    <div class="keygate-card">
+      <div class="keygate-tabs" role="tablist" aria-label="选择模型渠道">${Object.entries(KEY_TABS).map(([id, v]) =>
+        `<button type="button" role="tab" aria-selected="${id === st.tab}" class="${id === st.tab ? "on" : ""}" data-key-tab="${id}">${esc(v.name)}${v.badge ? `<span class="tab-badge">${esc(v.badge)}</span>` : ""}</button>`).join("")}</div>
+      <div class="keygate-panel" role="tabpanel">
+        <p class="keygate-desc">${esc(t.desc)}</p>
+        ${customFields}
+        <div class="key-field"><label for="keyValue">${esc(st.tab === "custom" && st.kind === "deepseek" ? "OpenRouter API Key" : t.keyLabel)}</label>
+          <input id="keyValue" data-key-input type="password" placeholder="粘贴到这里" autocomplete="off" value="${esc(st.values?.keyValue || "")}"><span class="hint">${esc(hint)}</span></div>
+        <div class="covers"><div class="covers-head">这个 Key 能管到哪几步</div><ul>${covers}</ul></div>
+        <p class="hint">缺的那几步可以在设置里单独指另一个渠道，比如读片子用 DeepSeek、生图和视频用三方渠道。</p>
+      </div>
+    </div>
+    <div class="keygate-safe"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 1.9l5 2.2v3.5c0 3.1-2 5.3-5 6.2-3-.9-5-3.1-5-6.2V4.1l5-2.2z" stroke="#2f6f55" stroke-width="1.4" stroke-linejoin="round"></path><path d="M5.9 8.1l1.5 1.5 2.8-3.1" stroke="#2f6f55" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+      <p>Key 只写进你电脑上的 <code>console.env</code>，不会上传，也不会写进项目文件。换电脑要重新填一次。</p></div>
+    ${st.error ? `<div class="keygate-error" role="alert">${esc(st.error)}</div>` : ""}
+    <div class="keygate-actions"><button type="button" class="big-cta" data-key-save ${st.busy ? "disabled" : ""}>${st.busy ? "正在检查 Key…" : "保存并开始内容拆解"} ${st.busy ? "" : ICON_ARROW}</button>
+      <button type="button" class="link-btn" data-stage-go="free">先不填，回去导出免费结果</button></div>
+  </div>`;
+}
+function keySettingsBody(st) {
+  const key = $("#keyValue")?.value.trim();
+  if (!key) throw new Error("先把 Key 粘贴进来");
+  if (st.tab === "viraltok") return [{ JIMMY_API_KEY: key, DEFAULT_LLM: "jimmy", ROUTE_ANALYSIS: "jimmy", ROUTE_SCRIPT: "jimmy" }, "jimmy"];
+  if (st.tab === "doubao") return [{ DOUBAO_API_KEY: key, ROUTE_ANALYSIS: "doubao", ROUTE_SCRIPT: "doubao" }, "doubao"];
+  if (st.kind === "openai") return [{ OPENAI_API_KEY: key, ROUTE_ANALYSIS: "openai", ROUTE_SCRIPT: "openai" }, "openai"];
+  if (st.kind === "deepseek") return [{ DEEPSEEK_API_KEY: key, ROUTE_ANALYSIS: "deepseek", ROUTE_SCRIPT: "deepseek" }, "deepseek"];
+  const base = $("#keyBase")?.value.trim(), model = $("#keyModel")?.value.trim();
+  if (!base || !model) throw new Error("接口地址和模型名都要填");
+  return [{ CUSTOM_API_KEY: key, CUSTOM_BASE_URL: base, CUSTOM_MODEL: model, ROUTE_ANALYSIS: "custom", ROUTE_SCRIPT: "custom" }, "custom"];
+}
+async function saveKeyAndStart() {
+  const pid = P.id, st = { ...(keyTabState.get(pid) || { tab: "viraltok", kind: "openai" }) };
+  let body, channel;
+  try { [body, channel] = keySettingsBody(st); }
+  catch (e) { keyTabState.set(pid, { ...st, error: e.message }); renderContentStage(); return; }
+  keyTabState.set(pid, { ...st, busy: true, error: "" }); renderContentStage();
+  try {
+    await api("POST", "settings", body);
+    const test = await api("POST", "settings/test-connection", { channel });
+    if (test.status !== "可用") {
+      const why = { "key 无效": "这个 Key 用不了，检查一下有没有复制完整", "额度不足": "Key 是对的，但账户余额不够了，充值后再试" }[test.status] || "连不上这个渠道，检查一下网络或接口地址";
+      throw new Error(why + "。Key 已经保存，改好后再点一次就行。");
+    }
+    STATUS = await api("GET", "status");
+    delete P.resolved_routes;
+    keyTabState.set(pid, { ...st, busy: false, error: "" });
+    if (P?.id === pid) await startContent(false);
+  } catch (e) {
+    keyTabState.set(pid, { ...st, busy: false, error: e.message || String(e) });
+    if (P?.id === pid) renderContentStage();
+  }
+}
+async function startContent(confirmFirst = true) {
+  const pid = P.id, r = analysisRoute();
+  if (confirmFirst && !await pageConfirm(`内容拆解会用「${publicText(providerLabel(r.channel, STATUS?.providers?.[r.channel]))}」读一遍整条片子，按用量计费。现在开始？`)) return;
+  operationErrors.delete(operationKey("analyze"));
+  contentStarting.set(pid, Date.now());
+  try { await api("POST", `projects/${pid}/analyze`, { ...requestRoute("analysis", $("#analyzeProvider")), mode: "content" }); }
+  catch (e) { contentStarting.delete(pid); throw e; }
+  if (P?.id !== pid) return;
+  stageChoice.set(pid, "content");
+  toast("开始内容拆解");
+  await refresh(true);
+}
+
+const CONTENT_STEPS = [["overview", "整片理解", "看懂整条片子讲什么、为什么抓人"], ["close", "逐段细读", "每一段谁在做什么、说什么、商品什么时候出现"],
+  ["pack", "拆解卡片", "整理成人物、场景、分镜、台词等 7 张卡"], ["storyboard", "原片分镜", "按镜头截图，9 格一张"]];
+function contentStepItem([id, label, what]) {
+  const st = P.analysis?.steps?.[id] || {};
+  const tone = { done: "done", running: "running", partial: "skipped", failed: "failed", skipped: "done" }[st.status] || "pending";
+  const icon = tone === "done" ? ICON_DONE_DOT : `<span class="dot ${tone}" aria-hidden="true"></span>`;
+  const note = st.status === "running" ? `正在进行${st.progress ? " · " + esc(st.progress) : "…"}` : st.status === "failed" ? esc(st.note || "没完成")
+    : st.status === "partial" ? "部分段落没读完，可以重新拆解" : esc(what);
+  return `<li class="free-step ${tone}"><div class="free-step-head"><span class="free-step-name">${icon}${label}</span><span class="tag-paid">计费</span></div><p>${note}</p></li>`;
+}
+function renderContentStart() {
+  const r = analysisRoute();
+  return `<div class="content-start">
+    <h1>内容拆解</h1>
+    <p>用「${esc(publicText(providerLabel(r.channel, STATUS?.providers?.[r.channel])))}」把整条片子读一遍，会直接用上一步免费拆好的台词、镜头和拍摄方式，不用再等一遍。按用量计费。</p>
+    <ol class="free-steps">${CONTENT_STEPS.map(contentStepItem).join("")}</ol>
+    <div class="keygate-actions"><button type="button" class="big-cta" data-content-start>开始内容拆解 ${ICON_ARROW}</button>
+      <button type="button" class="link-btn" data-flow-settings>换一个模型</button></div>
+  </div>`;
+}
+function renderContentProgress() {
+  const a = P.analysis || {}, failed = a.status === "failed";
+  return `<div class="free-layout">
+    <aside class="free-aside"><h2>${failed ? "内容拆解没有完成" : "正在做这几件事"}</h2><ol class="free-steps">${CONTENT_STEPS.map(contentStepItem).join("")}</ol></aside>
+    <section class="free-main">${failed ? `<div class="free-error"><b>内容拆解没有完成</b><p>${esc(publicText(a.error || ""))}</p>
+      <button type="button" data-content-start>重新拆解</button> <button type="button" class="ghost" data-flow-settings>检查 Key 和模型</button></div>`
+      : `<div class="free-wait"><span class="spinner" aria-hidden="true"></span><h2>大模型正在读这条片子…</h2><p>一般几分钟。台词、镜头沿用了免费拆解的结果，没有重跑。</p></div>`}</section>
+  </div>`;
+}
+function renderContentDone() {
+  const a = P.analysis || {}, ov = P.breakdown?.overview || {}, vl = P.breakdown?.viralLogic || {};
+  const ready = stageDone("content");
+  const lines = [["一句话", ov.summary || ov.logline], ["钩子", vl.hook], ["结构", vl.structure]].filter(([, v]) => v);
+  return `<div class="content-done">
+    <div class="free-done-card"><div class="free-done-title">${ICON_DONE_DOT}<h1>内容拆解${a.status === "partial" ? "部分完成" : "完成"}</h1></div>
+      ${lines.length ? `<dl class="content-summary">${lines.map(([k, v]) => `<dt>${k}</dt><dd>${esc(publicText(v))}</dd>`).join("")}</dl>` : "<p>拆解卡片和原片分镜在下面。</p>"}</div>
+    <div class="keygate-actions">${ready ? `<button type="button" class="big-cta" data-stage-go="replicate">继续：复刻成片 ${ICON_ARROW}</button>`
+      : '<span class="hint">原片分镜还没生成好，生成完就能进入复刻。</span>'}
+      <button type="button" class="link-btn" data-content-start>重新拆一次（会产生费用）</button></div>
+  </div>`;
+}
+function renderContentStage() {
   const box = $("#keyGateLite");
   if (!box || !P) return;
-  updateHtml(box, hasAnyKey()
-    ? `<div class="gate-note"><b>内容拆解会调用大模型，按用量计费。</b> 它会看懂整片和每一段的人物、动作、商品，出 7 张拆解卡，后面做复刻方案要用。</div>`
-    : `<section class="gate-card">
-        <h1>下一步要用「会读片子的大模型」，需要先填 Key</h1>
-        <p>免费拆解只认出了「拍了什么、怎么拍的」。要做复刻方案，得让大模型看懂整片在讲什么、每段谁在做什么、商品什么时候出现——这一步会产生费用，所以需要你自己的 Key。Key 只保存在这台电脑上。</p>
-        <div class="gate-actions"><button type="button" data-flow-settings>去填 Key</button><button type="button" class="ghost" data-stage-go="free">先回到免费结果</button></div>
-      </section>`);
-  $("#step-2").hidden = !hasAnyKey();
+  const a = P.analysis || {}, r = analysisRoute();
+  let view;
+  if (P.breakdown && !contentRunning()) view = "done";
+  else if (contentRunning() || (a.status === "failed" && a.free_finished && a.content_started)) view = "progress";
+  else if (!r.ready) view = "gate";
+  else view = "start";
+  updateHtml(box, { gate: renderKeyGate, start: renderContentStart, progress: renderContentProgress, done: renderContentDone }[view]());
+  $("#step-2").hidden = view !== "done";
+  $("#step-2").classList.toggle("content-results", view === "done");
+}
+
+// ---------- 首页 ----------
+function hasUnsavedEdits() {
+  return !!(P && (dirty.script || dirty.rep || dirty.breakdown || (typeof directorDrafts !== "undefined" && directorDrafts.get(P.id)?.dirty)));
+}
+function homeStatus(p) {
+  if (p.analysis === "running") return ["拆解中", "busy", "看进度"];
+  if (p.has_final) return ["已出片", "ok", "打开"];
+  if (p.has_breakdown) return ["内容拆解已完成", "ok", "继续复刻"];
+  if (p.analysis === "free_done") return ["免费拆解已完成", "ok", "看结果"];
+  if (p.has_source) return ["视频已放好", "", "开始拆解"];
+  return ["还没放视频", "", "放视频"];
+}
+function renderHome() {
+  const box = $("#homeBody");
+  if (!box) return;
+  const list = (projectList || []).filter((p) => !p.derived_from);
+  const day = (v) => { const d = v ? new Date(String(v).replace(" ", "T")) : null; return d && !isNaN(d) ? `${d.getMonth() + 1} 月 ${d.getDate()} 日` : ""; };
+  updateHtml(box, list.length ? `<div class="home-recent-head"><h2>最近的项目</h2><span class="hint">共 ${list.length} 个</span></div>
+    <ul class="home-recent">${list.slice(0, 12).map((p) => {
+      const [label, tone, action] = homeStatus(p);
+      const thumb = p.thumb ? `<img src="/files/${esc(p.id)}/${esc(p.thumb)}" alt="" loading="lazy">` : '<span class="home-thumb-empty" aria-hidden="true"></span>';
+      return `<li><button type="button" class="home-card" data-open-recent="${esc(p.id)}">
+        <span class="home-thumb">${thumb}</span>
+        <span class="home-card-text"><b>${esc(p.name || "未命名项目")}</b><span class="badge ${tone}">${label}</span>
+        <small>${day(p.created_at)}${p.shots ? ` · ${p.shots} 个镜头` : ""}</small></span>
+        <span class="home-card-go">${action} ${ICON_ARROW}</span></button></li>`;
+    }).join("")}</ul>` : `<p class="home-empty">还没有项目。点上面的按钮，放一条你想复刻的视频进来就能开始。</p>`);
+}
+async function showHome() {
+  if (hasUnsavedEdits() && !await pageConfirm("还有没保存的修改，回到首页会丢掉这些修改。仍然回到首页？")) {
+    renderProjectOptions(P?.id);
+    return;
+  }
+  beginProjectView();
+  if (typeof closeBatchBoard === "function") closeBatchBoard();
+  P = null; S = null;
+  Object.keys(dirty).forEach((k) => (dirty[k] = false));
+  $("#workspace").hidden = true;
+  $("#emptyState").hidden = false;
+  renderFlow();
+  window.scrollTo({ top: 0 });
+  try { await refreshProjectList(); } catch (_) { /* 列表刷新失败就用旧的 */ }
+  renderProjectOptions(null);
+  renderHome();
+}
+
+// ---------- 设置：识别台词的模型 ----------
+let asrModels = null, asrTimer = null;
+function renderAsrModels() {
+  const box = $("#asrModelsBox");
+  if (!box) return;
+  if (!asrModels) { updateHtml(box, '<h3>识别台词的模型</h3><p class="hint">正在读取…</p>'); return; }
+  const busy = asrModels.tiers.some((t) => t.state === "running");
+  updateHtml(box, `<h3>识别台词的模型</h3><p class="hint">越大越准，也越慢、越占硬盘。随时可以换，换了下次拆解就生效。</p>
+    <div class="asr-tiers">${asrModels.tiers.map((t) => {
+      let action;
+      if (t.current && t.installed) action = '<span class="asr-current">正在使用</span>';
+      else if (t.state === "running") action = `<span class="asr-progress"><span style="width:${Math.round((t.progress || 0) * 100)}%"></span></span><small>下载中 ${Math.round((t.progress || 0) * 100)}%</small><button type="button" class="link-btn small" data-asr="cancel" data-tier="${t.id}">取消</button>`;
+      else if (t.installed) action = `<button type="button" class="ghost small" data-asr="use" data-tier="${t.id}">换成这个</button>`;
+      else action = `<button type="button" class="small" data-asr="download" data-tier="${t.id}" ${busy ? "disabled" : ""}>下载并使用</button>`;
+      return `<div class="asr-tier ${t.current ? "is-current" : ""}"><div class="asr-tier-head"><b>${esc(t.name)}</b>${t.tag ? `<span class="tab-badge">${esc(t.tag)}</span>` : ""}<span class="hint">${esc(t.size)}</span></div>
+        <p>${esc(t.desc)}</p>${t.error ? `<p class="asr-error">${esc(t.error)}</p>` : ""}<div class="asr-action">${action}</div></div>`;
+    }).join("")}</div>`);
+}
+async function loadAsrModels() {
+  clearTimeout(asrTimer);
+  try { asrModels = await api("GET", "asr-models"); } catch (_) { asrModels = asrModels || null; }
+  renderAsrModels();
+  if ($("#settingsDialog")?.open && asrModels?.tiers.some((t) => t.state === "running")) asrTimer = setTimeout(loadAsrModels, 2000);
 }
 
 // ---------- 总入口 ----------
 function renderFlow() {
-  if (!P) { updateHtml($("#stageNav"), ""); return; }
+  document.body.classList.toggle("at-home", !P);
+  if (!P) { updateHtml($("#stageNav"), ""); renderHome(); return; }
   const stage = currentStage();
   $("#workspace").dataset.stage = stage;
   renderStageNav(stage);
   renderRecentProjects();
   renderUploadNext();
   renderFreeStage();
-  renderKeyGateLite();
+  renderContentStage();
 }
 
 async function submitFreeAnalyze() {
@@ -284,9 +526,34 @@ document.addEventListener("click", async (e) => {
     guard(submitFreeAnalyze);
     return;
   }
+  if (e.target.closest("[data-go-home]")) { if (P) showHome(); return; }
   const recent = e.target.closest("[data-open-recent]");
   if (recent) { if (recent.dataset.openRecent !== P?.id) openProject(recent.dataset.openRecent); return; }
   if (e.target.closest("[data-flow-new]")) { newProject(); return; }
-  if (e.target.closest("[data-flow-settings]")) { openSettings(); return; }
+  if (e.target.closest("[data-flow-settings]")) { openSettings(); loadAsrModels(); return; }
+  if (e.target.closest("#settingsBtn")) { loadAsrModels(); return; }
+  const asr = e.target.closest("[data-asr]");
+  if (asr) {
+    e.preventDefault();
+    try { asrModels = await api("POST", `asr-models/${asr.dataset.tier}/${asr.dataset.asr}`); }
+    catch (err) { toast(err.message, true); }
+    renderAsrModels();
+    if (asr.dataset.asr !== "cancel") loadAsrModels();
+    return;
+  }
   if (e.target.closest("[data-pick-source]")) { $("#sourceInput")?.click(); return; }
+  const tab = e.target.closest("[data-key-tab]");
+  if (tab && P) { const st = keyTabState.get(P.id) || { kind: "openai" }; keyTabState.set(P.id, { ...st, tab: tab.dataset.keyTab, error: "" }); renderContentStage(); return; }
+  if (e.target.closest("[data-key-save]")) { if (!(keyTabState.get(P?.id) || {}).busy) saveKeyAndStart(); return; }
+  if (e.target.closest("[data-content-start]")) { if (!contentRunning()) guard(() => startContent(true)); return; }
+});
+
+// 输入的 Key 暂存在内存里：页面每次刷新重画时原样放回去，不会被清空
+document.addEventListener("input", (e) => {
+  const el = e.target.closest?.("[data-key-input]");
+  if (el && P) { const st = keyTabState.get(P.id) || { tab: "viraltok", kind: "openai" }; keyTabState.set(P.id, { ...st, values: { ...(st.values || {}), [el.id]: el.value } }); }
+});
+document.addEventListener("change", (e) => {
+  const kind = e.target.closest("[data-key-kind]");
+  if (kind && P) { const st = keyTabState.get(P.id) || { tab: "custom" }; keyTabState.set(P.id, { ...st, kind: kind.value, error: "" }); renderContentStage(); }
 });

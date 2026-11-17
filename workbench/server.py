@@ -413,6 +413,12 @@ class Handler(BaseHTTPRequestHandler):
                     "openai_image_model": config.get('OPENAI_IMAGE_MODEL') or 'gpt-image-2'}
         if parts == ["settings", "test-connection"] and method == "POST":
             return gateway.test_connection(self._body_json().get('channel'))
+        if parts == ["asr-models"] and method == "GET":
+            from console import asr_models
+            return asr_models.status()
+        if len(parts) == 3 and parts[0] == "asr-models" and method == "POST" and parts[2] in ("download", "use", "cancel"):
+            from console import asr_models
+            return getattr(asr_models, parts[2])(parts[1])
         if parts == ["settings", "local-models"] and method == "GET":
             from console import local_models
             return {"models": local_models.report(config.get('ASR_MODEL') or 'medium')}
@@ -638,11 +644,12 @@ class Handler(BaseHTTPRequestHandler):
             # 这里不再提前查 Key：前四步全在本地免费跑。没 Key 时流水线会在第 05 步
             # 前停下，状态记为 free_done（见 pipeline._stop_for_key）。
             # mode=free：只跑本地免费的前四步（第 ② 阶段「免费拆解」），不管有没有 Key 都停在 free_done
-            free_only = body.get("mode") == "free"
+            # mode=content：第 ③ 阶段「内容拆解」，免费结果还在就直接沿用，从 05 开始，不重跑前四步
+            free_only, resume = body.get("mode") == "free", body.get("mode") == "content"
             jobs.start(pid, "analyze", lambda: pipeline.run_analysis(pid, provider, body.get("srt_text") or None,
                                                                      bool(body.get("skip_asr")),
-                                                                     bool(body.get("send_video")), free_only),
-                       "免费拆解" if free_only else "拆解")
+                                                                     bool(body.get("send_video")), free_only, resume),
+                       "免费拆解" if free_only else "内容拆解" if resume else "拆解")
             return {"ok": True}
         if rest == ["breakdown"] and method == "PUT":
             body = self._body_json()

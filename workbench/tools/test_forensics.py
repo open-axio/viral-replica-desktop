@@ -37,6 +37,28 @@ class AlignmentTests(unittest.TestCase):
         self.assertTrue(set(forensics.CLASS_OF.values()) <= set(forensics.CLASSES))
 
 
+class DecideTests(unittest.TestCase):
+    def test_rendered_pictures_stay_graphic(self):
+        self.assertEqual(forensics.decide_class({"code_render": 0.8, "live_action": 0.1, "ai_video": 0.1})[0], "graphic")
+
+    def test_ai_needs_clear_lead(self):
+        self.assertEqual(forensics.decide_class({"ai_video": 0.8, "live_action": 0.15, "code_render": 0.05})[0], "ai")
+        # 抖音转码的手机实拍：AI 略占优，不能下结论
+        self.assertEqual(forensics.decide_class({"ai_video": 0.55, "avatar": 0.05, "live_action": 0.35, "cg_3d": 0.05})[0], "unsure")
+
+    def test_live_when_live_leads(self):
+        cls, p = forensics.decide_class({"live_action": 0.58, "ai_video": 0.32, "cg_3d": 0.1})
+        self.assertEqual(cls, "live")
+        self.assertAlmostEqual(p, 0.58)
+
+    def test_unsure_shows_up_in_prompt(self):
+        r = {"shots": [{**SHOTS[0], "class": "unsure", "class_zh": "待确认", "label": "ai_video", "label_zh": "AI 生成视频",
+                        "confidence": 0.55, "evidence": ["x"]}]}
+        line = forensics.prompt_lines(r)[0]
+        self.assertIn("分不清实拍还是 AI", line)
+        self.assertNotIn("细分", line)
+
+
 class SwitchTests(unittest.TestCase):
     def test_auto_follows_duration_limit(self):
         self.assertTrue(forensics.decide_run({}, 119)[0])

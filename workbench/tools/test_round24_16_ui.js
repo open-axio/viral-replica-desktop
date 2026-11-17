@@ -50,6 +50,8 @@ async function setup(ids = ['A', 'B']) {
   const wiring = source.indexOf('$("#newProjectBtn").onclick');
   run(source.slice(wiring, source.indexOf('$("#settingsBtn").onclick', wiring)));
   await run('boot()');
+  // 打开 app 先到首页；这里的删除场景都在某个项目里，等同原先 boot 自动打开第一个项目
+  await run(`openProject(${JSON.stringify(ids[0])})`);
   const pollTimers = () => [...timers.entries()].filter(([, timer]) => [3000, 15000].includes(timer.ms));
   const hold = (method, url) => {
     const pending = deferred(); routes.set(method + ' ' + url, () => pending.promise); return pending;
@@ -79,17 +81,18 @@ test('确认后立即禁用按钮、停轮询，重复点击和后续项目请�
   t.projects.delete('A'); hold.resolve(response({deleted: true})); await pending;
   assert.equal(button.disabled, false); assert.equal(button.textContent, '删除项目');
 });
-test('成功后提示已删除、清除旧项目记忆并按列表选择下一项目', async () => {
+test('成功后提示已删除、清除旧项目记忆并回到首页', async () => {
   const t = await setup(['A', 'C', 'B']); await t.$('#deleteProjectBtn').onclick();
   assert.equal(t.$('#toast').textContent, '项目已删除'); assert.doesNotMatch(t.$('#toast').className, /err/);
-  assert.equal(t.run('P.id'), 'C'); assert.equal(t.$('#projectSelect').value, 'C'); assert.equal(t.storage.get('vrc.project'), 'C');
-  assert.equal(t.$('#projectSelect option[value="A"]'), null); assert.equal(t.$('#workspace').hidden, false); assert.equal(t.pollTimers().length, 1);
+  assert.equal(t.run('P'), null); assert.equal(t.$('#projectSelect').value, ''); assert.equal(t.storage.has('vrc.project'), false);
+  assert.equal(t.$('#projectSelect option[value="A"]'), null); assert.ok(t.$('#projectSelect option[value="C"]'));
+  assert.equal(t.$('#workspace').hidden, true); assert.equal(t.$('#emptyState').hidden, false); assert.equal(t.pollTimers().length, 0);
 });
 test('删除唯一项目进入空状态并彻底停止项目轮询', async () => {
   const t = await setup(['A']); await t.$('#deleteProjectBtn').onclick();
   assert.equal(t.$('#toast').textContent, '项目已删除'); assert.equal(t.run('P'), null); assert.equal(t.run('S'), null);
   assert.equal(t.$('#workspace').hidden, true); assert.equal(t.$('#emptyState').hidden, false);
-  assert.equal(t.storage.has('vrc.project'), false); assert.equal(t.$('#projectSelect').querySelectorAll('option').length, 0);
+  assert.equal(t.storage.has('vrc.project'), false); assert.deepEqual(t.$('#projectSelect').querySelectorAll('option').map(o => o.value), ['']);
   assert.equal(t.pollTimers().length, 0); await t.run('refresh()'); assert.equal(t.pollTimers().length, 0);
 });
 test('后端拒绝删除时显示红色原始原因、恢复按钮与轮询', async () => {
@@ -107,17 +110,16 @@ test('删除期间完成的旧轮询不能覆盖项目或重新启动轮询', as
   oldPoll.resolve(response({...project('A'), name: '过期轮询'})); await refresh;
   assert.equal(t.run('P.name'), '项目 A'); assert.equal(t.pollTimers().length, 0);
   t.projects.delete('A'); deleting.resolve(response({deleted: true})); await pending;
-  assert.equal(t.run('P.id'), 'B'); assert.equal(t.$('#projectName').textContent, '项目 B');
+  assert.equal(t.run('P'), null); assert.equal(t.$('#emptyState').hidden, false); assert.equal(t.pollTimers().length, 0);
 });
-test('删除成功并打开下一项目后，迟到的旧轮询不能改写视图、选择、记忆或轮询', async () => {
+test('删除成功回到首页后，迟到的旧轮询不能改写视图、选择、记忆或轮询', async () => {
   const t = await setup(), oldPoll = t.hold('GET', 'projects/A'), pending = t.run('refresh()');
   await t.$('#deleteProjectBtn').onclick();
-  assert.equal(t.run('P.id'), 'B'); const poll = t.pollTimers()[0][0];
+  assert.equal(t.run('P'), null); assert.equal(t.pollTimers().length, 0);
   oldPoll.resolve(response({...project('A'), name: '已删除项目的迟到轮询'})); await pending;
-  assert.equal(t.run('P.id'), 'B'); assert.equal(t.$('#projectName').textContent, '项目 B');
-  assert.equal(t.$('#projectSelect').value, 'B'); assert.equal(t.storage.get('vrc.project'), 'B');
-  assert.equal(t.$('#workspace').hidden, false); assert.equal(t.$('#emptyState').hidden, true);
-  assert.equal(t.pollTimers().length, 1); assert.equal(t.pollTimers()[0][0], poll);
+  assert.equal(t.run('P'), null); assert.equal(t.$('#projectSelect').value, ''); assert.equal(t.storage.has('vrc.project'), false);
+  assert.equal(t.$('#workspace').hidden, true); assert.equal(t.$('#emptyState').hidden, false);
+  assert.equal(t.pollTimers().length, 0);
 });
 test('普通 API 的迟到响应被拒绝，不会在新项目显示旧操作成功提示', async () => {
   const t = await setup(), oldRequest = t.hold('POST', 'projects/A/analyze');
@@ -128,16 +130,16 @@ test('普通 API 的迟到响应被拒绝，不会在新项目显示旧操作成
   assert.equal(t.run('P.id'), 'B'); assert.equal(t.$('#projectName').textContent, '项目 B');
   assert.equal(t.$('#toast').textContent, toast); assert.equal(t.pollTimers()[0][0], poll);
 });
-test('上传的迟到响应在删除后被拒绝，保留下一项目与删除成功提示', async () => {
+test('上传的迟到响应在删除后被拒绝，留在首页并保留删除成功提示', async () => {
   const t = await setup(), oldUpload = t.hold('POST', 'projects/A/source');
   const pending = t.run('guard(() => upload("projects/A/source", {name:"offline.mp4"}), "旧项目上传成功")');
-  await t.$('#deleteProjectBtn').onclick(); const poll = t.pollTimers()[0][0];
+  await t.$('#deleteProjectBtn').onclick(); assert.equal(t.pollTimers().length, 0);
   oldUpload.resolve(response(project('A')));
   await assert.rejects(pending, error => error.staleProject === true);
-  assert.equal(t.run('P.id'), 'B'); assert.equal(t.$('#projectName').textContent, '项目 B');
-  assert.equal(t.$('#projectSelect').value, 'B'); assert.equal(t.storage.get('vrc.project'), 'B');
+  assert.equal(t.run('P'), null); assert.equal(t.$('#emptyState').hidden, false);
+  assert.equal(t.$('#projectSelect').value, ''); assert.equal(t.storage.has('vrc.project'), false);
   assert.equal(t.$('#toast').textContent, '项目已删除'); assert.doesNotMatch(t.$('#toast').className, /err/);
-  assert.equal(t.pollTimers()[0][0], poll);
+  assert.equal(t.pollTimers().length, 0);
 });
 test('轮询即使切换出去再切回同一项目，也必须忽略旧代响应', async () => {
   const t = await setup(), old = t.hold('GET', 'projects/A'), refresh = t.run('refresh()');

@@ -1,7 +1,7 @@
 """Local settings for the console.
 
-Keys live only in ``console.env`` next to server.py (or the Jimmy secret file the
-existing skill already uses). They are never written into project files and are
+Keys live only in ``console.env`` inside the writable data directory (see
+``console/paths.py``), or the Jimmy secret file the existing skill already uses. They are never written into project files and are
 masked before being sent to the browser.
 """
 from __future__ import annotations
@@ -10,12 +10,19 @@ import os
 import threading
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
-ENV_FILE = ROOT / "console.env"
-PROJECTS_DIR = ROOT / "projects"
-LIBRARY_DIR = ROOT / "library"
-BATCHES_DIR = ROOT / "batches"
+from . import paths
+
+# 只读：代码。ROOT 仍指 server.py 所在目录，engine/ 等随代码走。
+ROOT = paths.CODE_ROOT
 ENGINE_DIR = ROOT / "engine" / "skills"
+
+# 可写：用户数据与运行时，落在应用外部（见 console/paths.py）。
+DATA_DIR = paths.DATA_DIR
+RUNTIME_DIR = paths.RUNTIME_DIR
+ENV_FILE = DATA_DIR / "console.env"
+PROJECTS_DIR = DATA_DIR / "projects"
+LIBRARY_DIR = DATA_DIR / "library"
+BATCHES_DIR = DATA_DIR / "batches"
 JIMMY_SCRIPTS = ENGINE_DIR / "jimmy-video-generator" / "scripts"
 CHAIN5_SCRIPTS = ENGINE_DIR / "seedance-storyboard-replication" / "scripts"
 

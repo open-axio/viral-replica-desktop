@@ -7,12 +7,15 @@ const { spawn } = require('child_process');
 const path = require('path');
 const fs = require('fs');
 const net = require('net');
+const datadir = require('./datadir');
 
 const PORT = 8765;
 let serverProc = null;
 let mainWindow = null;
+let setupWin = null;
+let installProc = null;
 
-// workbench 与 .app 同级放在同一文件夹里。
+// workbench 随包装在 Contents/Resources 下（只读）。开发时则在仓库里与 build/ 同级。
 // 不依赖 app.isPackaged（手动组装的 .app 该值为 false），从 main.js 实际所在位置
 // 和 process.resourcesPath 两个基准分别向上逐级找，命中含 server.py 的目录即用。
 function findWorkbench() {
@@ -49,19 +52,18 @@ function waitForPort(port, timeoutMs) {
   });
 }
 
-function startServer(workbench) {
-  const venvPy = path.join(workbench, 'runtime', 'venv', 'bin', 'python');
-  const ffDir = path.join(workbench, 'runtime', 'ffmpeg');
-  const useExe = process.platform === 'win32';
-  const py = useExe
-    ? path.join(workbench, 'runtime', 'venv', 'Scripts', 'python.exe')
-    : venvPy;
+// 代码在 workbench（只读），运行时和用户数据在 dataDir（可写）。
+function startServer(workbench, dataDir) {
+  const py = datadir.pythonPath(dataDir);
+  const ffDir = path.join(dataDir, 'runtime', 'ffmpeg');
 
   if (!fs.existsSync(py)) {
-    throw new Error('找不到本地运行环境：\n' + py + '\n请确认随包的 workbench/runtime 完整。');
+    throw new Error('找不到本地运行环境：\n' + py);
   }
 
   const env = Object.assign({}, process.env);
+  // server.py 侧由 console/paths.py 读这个变量决定 Key、项目和 runtime 的位置
+  env[datadir.ENV_NAME] = dataDir;
   if (fs.existsSync(ffDir)) env.PATH = ffDir + path.delimiter + (env.PATH || '');
 
   serverProc = spawn(py, ['server.py'], {
@@ -132,6 +134,133 @@ ipcMain.on('dlg-prompt', (event, { message, defaultValue }) => {
   modal.show();
 });
 
+// ---- 首次启动向导：把 install.sh / install.ps1 包成图形界面 ----
+// 安装逻辑一概不在这里重写：脚本本身已经幂等、带国内镜像回退、支持选模型档位。
+// 这里只负责选目录、拼参数、把 stdout 转成进度。
+let setupCtx = null;   // { workbench, dir, resolve, settled }
+
+function openSetup(workbench, defaultDir) {
+  return new Promise((resolve) => {
+    setupCtx = { workbench, dir: defaultDir, resolve, settled: false };
+    setupWin = new BrowserWindow({
+      width: 980,
+      height: 660,
+      resizable: false,
+      maximizable: false,
+      fullscreenable: false,
+      title: '爆款复刻工作台 · 首次启动',
+      webPreferences: {
+        nodeIntegration: false,
+        contextIsolation: true,
+        preload: path.join(__dirname, 'setup-preload.js')
+      }
+    });
+    setupWin.loadFile(path.join(__dirname, 'setup.html'));
+    setupWin.on('closed', () => {
+      setupWin = null;
+      // 用户中途关掉：按取消处理，下次启动会重新引导
+      if (setupCtx && !setupCtx.settled) {
+        setupCtx.settled = true;
+        setupCtx.resolve(null);
+      }
+    });
+  });
+}
+
+function finishSetup(dir) {
+  if (!setupCtx || setupCtx.settled) return;
+  setupCtx.settled = true;
+  const done = setupCtx.resolve;
+  setTimeout(() => {
+    if (setupWin && !setupWin.isDestroyed()) setupWin.close();
+    done(dir);
+  }, 900);   // 让用户看一眼「装好了」
+}
+
+ipcMain.handle('setup:initial', () => {
+  const dir = (setupCtx && setupCtx.dir) || datadir.platformDefault();
+  return { dir, free: datadir.freeSpaceGB(dir) };
+});
+
+ipcMain.handle('setup:pick-dir', async (_e, current) => {
+  const r = await dialog.showOpenDialog(setupWin, {
+    title: '选一个文件夹存数据和模型',
+    defaultPath: current || undefined,
+    properties: ['openDirectory', 'createDirectory']
+  });
+  if (r.canceled || !r.filePaths.length) return null;
+  // 用户选的是上层文件夹，统一在里面建一个自己的目录，免得把别人的文件夹搅乱
+  const dir = path.join(r.filePaths[0], 'ViralReplica');
+  if (setupCtx) setupCtx.dir = dir;
+  return { dir, free: datadir.freeSpaceGB(r.filePaths[0]) };
+});
+
+ipcMain.on('setup:install', (_e, opts) => {
+  if (!setupCtx || installProc) return;
+  const dir = (opts && opts.dir) || setupCtx.dir;
+  const tier = (opts && opts.tier) || 'small';
+  const mirror = !!(opts && opts.mirror);
+  setupCtx.dir = dir;
+
+  const workbench = setupCtx.workbench;
+  const isWin = process.platform === 'win32';
+  const script = path.join(workbench, isWin ? 'install.ps1' : 'install.sh');
+  const cmd = isWin ? 'powershell' : 'bash';
+  const args = isWin
+    ? ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', script,
+       '-Target', dir, '-Model', tier].concat(mirror ? ['-Mirror'] : [])
+    : [script, '--target', dir, '--model', tier].concat(mirror ? ['--mirror'] : []);
+
+  const send = (payload) => {
+    if (setupWin && !setupWin.isDestroyed()) setupWin.webContents.send('setup:progress', payload);
+  };
+  const finish = (payload) => {
+    installProc = null;
+    if (setupWin && !setupWin.isDestroyed()) setupWin.webContents.send('setup:done', payload);
+  };
+
+  if (!fs.existsSync(script)) {
+    return finish({ ok: false, message: '找不到安装脚本：' + script });
+  }
+
+  const env = Object.assign({}, process.env);
+  env[datadir.ENV_NAME] = dir;
+
+  try {
+    installProc = spawn(cmd, args, { cwd: workbench, env, windowsHide: true,
+                                     stdio: ['ignore', 'pipe', 'pipe'] });
+  } catch (err) {
+    return finish({ ok: false, message: String((err && err.message) || err) });
+  }
+
+  // 安装脚本每进一步打一行 "==> N/5 ..."，照这个推进度
+  const onChunk = (buf) => {
+    const text = buf.toString();
+    for (const raw of text.split(/\r?\n/)) {
+      const line = raw.trim();
+      if (!line) continue;
+      const m = line.match(/==>\s*(\d+)\s*\/\s*5/);
+      send(m ? { step: Math.max(0, parseInt(m[1], 10) - 1), line } : { line });
+    }
+  };
+  installProc.stdout.on('data', onChunk);
+  installProc.stderr.on('data', onChunk);
+
+  installProc.on('error', (err) => finish({ ok: false, message: String((err && err.message) || err) }));
+  installProc.on('exit', (code) => {
+    if (code === 0 && datadir.runtimeReady(dir)) {
+      send({ step: 5 });
+      finish({ ok: true });
+      datadir.writeSettings({ dataDir: dir });
+      finishSetup(dir);
+    } else {
+      finish({ ok: false, message: code === 0
+        ? '脚本跑完了，但没找到可用的 Python，安装可能只完成了一半。'
+        : '安装脚本退出码 ' + code + '。' });
+    }
+  });
+});
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1280,
@@ -168,8 +297,18 @@ async function bootstrap() {
     );
     return app.quit();
   }
+  let { dir } = datadir.resolve(workbench);
+
+  // 瘦安装包不带运行时：第一次启动先把它装好，而不是直接报错。
+  if (!datadir.runtimeReady(dir)) {
+    const chosen = await openSetup(workbench, dir);
+    if (!chosen) return app.quit();   // 用户关掉了向导
+    dir = chosen;
+  }
+  datadir.writeSettings({ dataDir: dir });
+
   try {
-    startServer(workbench);
+    startServer(workbench, dir);
     await waitForPort(PORT, 90000);
     createWindow();
   } catch (err) {
@@ -181,6 +320,9 @@ async function bootstrap() {
 app.whenReady().then(bootstrap);
 
 function shutdown() {
+  if (installProc && !installProc.killed) {
+    try { installProc.kill('SIGTERM'); } catch (e) { /* noop */ }
+  }
   if (serverProc && !serverProc.killed) {
     try { serverProc.kill('SIGTERM'); } catch (e) { /* noop */ }
     setTimeout(() => {

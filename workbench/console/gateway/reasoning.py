@@ -49,10 +49,16 @@ def _chat(provider: str, messages: list[dict], *, temperature: float, max_tokens
         name = config.PROVIDERS[provider]["label"].split("（")[0]
         raise LLMError(f"「{name}」看不了图，这一步要看画面。请在设置里给这一步换一个能看图的模型（比如通义千问、豆包）",
                        kind="invalid_request")
-    adapter = ADAPTERS.get(provider, custom)
-    body = adapter.reason_body(s, messages, temperature=temperature, max_tokens=max_tokens)
     started = time.time()
-    data = llm._post(s["base_url"] + "/chat/completions", body, s["api_key"], s["timeout"], provider)
+    if provider == "ollama":
+        from .adapters import ollama
+        from .usage import capture_response
+        data = ollama.chat(s, messages, temperature=temperature, max_tokens=max_tokens)
+        capture_response(data, channel=provider, model=s["model"])
+    else:
+        adapter = ADAPTERS.get(provider, custom)
+        body = adapter.reason_body(s, messages, temperature=temperature, max_tokens=max_tokens)
+        data = llm._post(s["base_url"] + "/chat/completions", body, s["api_key"], s["timeout"], provider)
     if isinstance(data, dict) and not data.get("choices") and ("code" in data or "msg" in data):
         raise LLMError(f"{provider} 返回错误：{data.get('msg') or data.get('message') or data.get('code')}")
     try:

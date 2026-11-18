@@ -37,6 +37,7 @@ PROVIDERS = {
     "zhipu": {"label": "智谱 GLM-4.6V", "video_native": False, "vision": True},
     "kimi": {"label": "Kimi K2.5（月之暗面）", "video_native": False, "vision": True},
     "deepseek": {"label": "DeepSeek V4 Flash", "video_native": False, "vision": False},
+    "ollama": {"label": "本机 · 千问（免费，比云端慢）", "video_native": False, "vision": True},
     "custom": {"label": "自定义（任意 OpenAI 兼容接口）", "video_native": False, "vision": None},
 }
 
@@ -64,6 +65,8 @@ DEFAULTS = {
     "KIMI_BASE_URL": "https://api.moonshot.cn/v1",
     "KIMI_API_KEY": "",
     "KIMI_MODEL": "kimi-k2.5",
+    "OLLAMA_BASE_URL": "http://127.0.0.1:11434",
+    "OLLAMA_MODEL": "",
     "DEEPSEEK_BASE_URL": "https://api.deepseek.com",
     "DEEPSEEK_API_KEY": "",
     "DEEPSEEK_MODEL": "deepseek-v4-flash",
@@ -192,6 +195,14 @@ def provider_settings(name: str) -> dict[str, str]:
     if name not in PROVIDERS:
         raise ValueError(f"未知模型渠道：{name}")
     values = load()
+    if name == "ollama":
+        model = values.get("OLLAMA_MODEL", "")
+        if not model:
+            raise ValueError("还没装本机模型：在「设置 → 本机模型」里下载一个")
+        # 本机不需要 Key；本机模型慢，超时放宽到至少 30 分钟
+        return {"name": name, "base_url": (values.get("OLLAMA_BASE_URL") or DEFAULTS["OLLAMA_BASE_URL"]).rstrip("/"),
+                "api_key": "ollama", "model": model,
+                "timeout": max(float(values.get("LLM_TIMEOUT") or 300), 1800.0)}
     if name == "jimmy":
         key = _parse(ENV_FILE).get("JIMMY_API_KEY", "")
         if not key:

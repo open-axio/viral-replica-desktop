@@ -4898,8 +4898,8 @@ async function resumeImage(iid) {
 }
 
 // ---------- settings ----------
-const SETTINGS_CHANNELS = ['openai','jimmy','qwen','doubao','zhipu','kimi','deepseek','custom'];
-const SETTINGS_KEY_NAMES = {openai:'官方 OpenAI',jimmy:'三方渠道',qwen:'通义千问（阿里云百炼）',doubao:'豆包（火山方舟）',zhipu:'智谱',kimi:'Kimi',deepseek:'DeepSeek',custom:'自定义渠道'};
+const SETTINGS_CHANNELS = ['openai','jimmy','qwen','doubao','zhipu','kimi','deepseek','ollama','custom'];
+const SETTINGS_KEY_NAMES = {openai:'官方 OpenAI',jimmy:'三方渠道',qwen:'通义千问（阿里云百炼）',doubao:'豆包（火山方舟）',zhipu:'智谱',kimi:'Kimi',deepseek:'DeepSeek',ollama:'本机千问',custom:'自定义渠道'};
 let settingsDraft = null;
 const settingsKeyDrafts = new Map(), settingsKeyEditors = new Set();
 function keyChannel(channel) {channel=channel.split(':')[0];return {official:'openai',third_party:'jimmy'}[channel] || channel;}
@@ -4938,7 +4938,7 @@ function changeSettingsImageRoute(select) {
   const step=select.dataset.imageRoute,[route,quality]=select.value.split('|'),key=step.toUpperCase(),form=$('#settingsForm');
   for(const [name,value] of [['ROUTE_'+key,route],[key+'_QUALITY',quality]]){$(`[name="${name}"]`,form).value=value;settingsDraft[name]=value;}
 }
-const SETTINGS_MODEL_CHANNELS = {OPENAI_MODEL:'openai',JIMMY_LLM_MODEL:'jimmy',QWEN_MODEL:'qwen',ZHIPU_MODEL:'zhipu',KIMI_MODEL:'kimi',DEEPSEEK_MODEL:'deepseek',DOUBAO_MODEL:'doubao',CUSTOM_MODEL:'custom',OPENAI_IMAGE_MODEL:'official'};
+const SETTINGS_MODEL_CHANNELS = {OPENAI_MODEL:'openai',JIMMY_LLM_MODEL:'jimmy',QWEN_MODEL:'qwen',ZHIPU_MODEL:'zhipu',KIMI_MODEL:'kimi',DEEPSEEK_MODEL:'deepseek',OLLAMA_MODEL:'ollama',DOUBAO_MODEL:'doubao',CUSTOM_MODEL:'custom',OPENAI_IMAGE_MODEL:'official'};
 function changeSettingsModel(input) {
   const key=input.getAttribute('name'),channel=SETTINGS_MODEL_CHANNELS[key],old=settingsDraft[key];
   if(!channel || old===input.value)return;

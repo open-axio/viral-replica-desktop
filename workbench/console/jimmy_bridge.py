@@ -335,18 +335,40 @@ def verify_preview_current(data: dict, task: dict, run: dict, directory: Path) -
     _check_kind(task, data, directory)
 
 
-def preview(pid: str, tid: str, *, model: str | None = None, fix_plan=None) -> dict:
+def _video_vendor(channel: str | None):
+    from .gateway.adapters import video_vendors
+    return video_vendors if video_vendors.is_vendor(channel) else None
+
+
+def _apply_video_channel(record: dict, job: dict, channel: str | None, model: str | None) -> dict:
+    """预览包照常按三方渠道的格式生成（本地检查都一样），换成别的厂商时改写模型、计费说明和提示。"""
+    vendors = _video_vendor(channel)
+    if not vendors:
+        return record
+    try:
+        info = vendors.plan(channel, model, job["tasks"][0])
+    except vendors.VendorError as exc:
+        raise BridgeError(exc.message) from None
+    record.update(channel=channel, package_model=record.get("model"), model=info["model"], vendor=info,
+                  billing_seconds=info["output_seconds"], billing_note=info["billing_note"],
+                  warnings=list(record.get("warnings") or []) + info["warnings"])
+    return record
+
+
+def preview(pid: str, tid: str, *, model: str | None = None, fix_plan=None, channel: str | None = None) -> dict:
     """Build plan → package; one script-model motion audit, no Jimmy generation."""
     data = store.load(pid)
     task = _task(data, tid)
     if task.get("kind") == "director":
-        return director_preview(pid, tid, model=model, **({'fix_plan': fix_plan} if fix_plan is not None else {}))
+        return director_preview(pid, tid, model=model, channel=channel, **({'fix_plan': fix_plan} if fix_plan is not None else {}))
     if fix_plan is not None:
         raise ValueError('修改方案只适用于导演段落')
     d = store.project_dir(pid)
     rev = _next_rev(data, tid, d / "packages")
     pkg = d / "packages" / f"{tid}-{rev}"
     try:
+        if _video_vendor(channel):
+            return _preview(pid, tid, data, task, d, rev, pkg, channel=channel, vendor_model=model)
         return _preview(pid, tid, data, task, d, rev, pkg, **({"model":model} if model else {}))
     except Exception:
         # A failed preflight leaves nothing behind; the next attempt gets a clean revision.
@@ -356,7 +378,8 @@ def preview(pid: str, tid: str, *, model: str | None = None, fix_plan=None) -> d
         raise
 
 
-def _preview(pid: str, tid: str, data: dict, task: dict, d: Path, rev: str, pkg: Path, *, model: str | None = None) -> dict:
+def _preview(pid: str, tid: str, data: dict, task: dict, d: Path, rev: str, pkg: Path, *, model: str | None = None,
+             channel: str | None = None, vendor_model: str | None = None) -> dict:
     check = replacement_check(data, task, d, compare_motion=True)
     preflight = preflight_fingerprint(data, task, d)
 
@@ -487,6 +510,7 @@ def _preview(pid: str, tid: str, data: dict, task: dict, d: Path, rev: str, pkg:
               "preflight_fingerprint": preflight,
               "person_replaced": bool(replacement_guard.replaced_people(data, task)),
               "created": time.strftime("%H:%M:%S")}
+    _apply_video_channel(record, job, channel, vendor_model)
     # Any older pending preview for this task is superseded.
     def fn(x: dict) -> None:
         runs = x.setdefault("runs", {}).setdefault(tid, [])
@@ -511,7 +535,10 @@ def _prepare_package(plan: dict, pkg: Path) -> tuple[dict, dict]:
             json.loads((review / "jimmy-handoff.json").read_text(encoding="utf-8")))
 
 
-def director_preview(pid: str, seg_id: str, *, model: str | None = None, fix_plan=None) -> dict:
+def director_preview(pid: str, seg_id: str, *, model: str | None = None, fix_plan=None, channel: str | None = None) -> dict:
+    vendor_model = None
+    if _video_vendor(channel):
+        model, vendor_model = None, model
     """Package the authored prompt and ordered full-frame images verbatim."""
     from . import director
     with store._lock(pid):
@@ -633,6 +660,7 @@ def director_preview(pid: str, seg_id: str, *, model: str | None = None, fix_pla
                       "created": time.strftime("%H:%M:%S")}
             if fix_binding:
                 record['fix_plan_binding'] = fix_binding
+            _apply_video_channel(record, job, channel, vendor_model)
             def save(current):
                 runs = current.setdefault("runs", {}).setdefault(seg_id, [])
                 for old in runs:
@@ -748,9 +776,13 @@ def _start_generate(pid: str, tid: str, rev: str, *, resubmitting: bool = False)
                     _check_frozen(frozen, run["job_sha256"])
                     error = None
                     try:
-                        _call([str(_script("jimmy_cli.py")), "generate", "--job", str(frozen),
-                               "--output-root", str(run_dir.parent), "--env-file", str(config.jimmy_env_file()),
-                               "--timeout", "3600"], frozen.parent, timeout=3900)
+                        vendors = _video_vendor(run.get("channel"))
+                        if vendors:
+                            vendors.generate(run["channel"], run["model"], frozen, run_dir, tid, run.get("vendor") or {})
+                        else:
+                            _call([str(_script("jimmy_cli.py")), "generate", "--job", str(frozen),
+                                   "--output-root", str(run_dir.parent), "--env-file", str(config.jimmy_env_file()),
+                                   "--timeout", "3600"], frozen.parent, timeout=3900)
                     except Exception as exc:
                         error = exc
                     child = _video_child(run_dir, tid)
@@ -824,7 +856,11 @@ def _confirm_locked(pid: str, tid: str, rev: str, job_sha256: str) -> dict:
     if run.get("kind") == "director":
         current_task = next((s for s in (data.get("director") or {}).get("segments", []) if s.get("id") == tid), {})
     verify_preview_current(data, current_task, run, d)
-    if not config.jimmy_configured():
+    vendors = _video_vendor(run.get("channel"))
+    if vendors:
+        if not vendors.key_ready(run["channel"]):
+            raise BridgeError(f"还没填{vendors.VENDORS[run['channel']]['account']}的 Key：点右上角“设置”，在「生视频模型」里填写")
+    elif not config.jimmy_configured():
         raise BridgeError("还没填三方渠道 Key：点右上角“设置”，在第一栏填写")
     review = d / run["package"] / "review"
     _call([str(_script("chain5_package.py")), "verify", "--output", str(review)], review)
@@ -849,7 +885,8 @@ def _confirm_locked(pid: str, tid: str, rev: str, job_sha256: str) -> dict:
             fix_plan.mark_video_started(x, tid, r['fix_plan_binding'], rev, d)
         r.update(state="submitting", run_dir=f"jimmy-runs/{run['job_id']}", confirmed_at=time.strftime("%H:%M:%S"), submitted_at=time.time())
     store.update(pid, fn)
-    store.log(pid, f"{tid} {rev} 已确认，交给三方渠道生成（{run['model']}，计费约 {run['billing_seconds']}s）")
+    who = vendors.model_name(run["channel"], run["model"]) if vendors else f"三方渠道，{run['model']}"
+    store.log(pid, f"{tid} {rev} 已确认，交给{who}生成（计费约 {run['billing_seconds']}s）")
 
     _start_generate(pid, tid, rev)
     return {"ok": True}
@@ -910,13 +947,20 @@ def resume(pid: str, tid: str, rev: str, *, _automatic: bool = False, _recover: 
             retry["next_at"] = time.time() + remote_query.DELAYS[min(retry["attempts"], len(remote_query.DELAYS)-1)]
             store.update(pid, lambda d: _find_run(d, tid, rev).update(query_retry=retry))
 
+        vendors = _video_vendor(run.get("channel"))
+
         def work() -> None:
             try:
+                timeout = max(1, min(3600, int(retry.get("started_at", time.time()) + remote_query.MAX_AGE - time.time()))) if _automatic else 3600
+                if vendors:
+                    if not remote:
+                        raise BridgeError("这次生成还没有远端任务 ID：如果对方后台有这条任务，可以把任务 ID 填回来")
+                    vendors.poll(run["channel"], run_dir, tid, timeout=timeout)
+                    return
                 if remote and _recover:
                     _call([str(_script("jimmy_cli.py")), "recover-task-id", "--run", str(run_dir),
                            "--task-id", tid, "--remote-task-id", str(remote),
                            "--env-file", str(config.jimmy_env_file())], run_dir)
-                timeout = max(1, min(3600, int(retry.get("started_at", time.time()) + remote_query.MAX_AGE - time.time()))) if _automatic else 3600
                 _call([str(_script("jimmy_cli.py")), "resume", "--run", str(run_dir), "--env-file",
                        str(config.jimmy_env_file()), "--timeout", str(timeout)], run_dir, timeout=timeout+60)
             except Exception as exc:
@@ -951,6 +995,13 @@ def recover(pid: str, tid: str, rev: str, remote_task_id: str) -> dict:
             raise BridgeError("这次生成还在运行，请稍等再填写远端任务 ID")
         run = _find_run(store.load(pid), tid, rev)
         run_dir = store.project_dir(pid) / run["run_dir"]
+        vendors = _video_vendor(run.get("channel"))
+        if vendors:
+            try:
+                vendors.recover(run_dir, tid, remote_task_id)
+            except vendors.VendorError as exc:
+                raise BridgeError(exc.message) from None
+            return resume(pid, tid, rev, _recover=False)
         _call([str(_script("jimmy_cli.py")), "recover-task-id", "--run", str(run_dir), "--task-id", tid,
                "--remote-task-id", remote_task_id.strip(), "--env-file", str(config.jimmy_env_file())], run_dir)
         return resume(pid, tid, rev, _recover=False)

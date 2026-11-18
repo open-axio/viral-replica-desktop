@@ -137,11 +137,14 @@ def _video(action,pid,tid,*args,override=None,fix_plan=None):
     options = {}
     if action == 'preview':
         explicit = override or (store.load(pid).get('routes') or {}).get('video')
-        if explicit or route['model'] != 'seedance2.0-mini-video': options['model'] = route['model']
+        if route['channel'] != 'third_party':
+            options.update(channel=route['channel'], model=route['model'])
+        elif explicit or route['model'] != 'seedance2.0-mini-video': options['model'] = route['model']
         if fix_plan is not None: options['fix_plan'] = fix_plan
     if action != 'preview' and args:
         run = next((r for r in store.load(pid).get('runs',{}).get(tid,[]) if r.get('rev')==args[0]),{})
         route['model'] = run.get('model') or route['model']
+        route['channel'] = run.get('channel') or route['channel']
     return _call('video',route,'video',pid,lambda:third_party.video(action,pid,tid,*args,**options),
                  f'{tid}:{args[0]}' if args else None)
 

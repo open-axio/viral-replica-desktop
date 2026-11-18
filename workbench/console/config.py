@@ -27,16 +27,64 @@ JIMMY_SCRIPTS = ENGINE_DIR / "jimmy-video-generator" / "scripts"
 CHAIN5_SCRIPTS = ENGINE_DIR / "seedance-storyboard-replication" / "scripts"
 
 # Provider slots. All of them speak the OpenAI-compatible /chat/completions API.
+# 每家常用的模型。vision：True 能看图（读片子要看画面）；False 只能处理文字；None 不确定。
+# 列表外的模型可以在设置里手动填，按厂商默认处理。模型名会过时：以各家控制台为准。
+MODEL_CATALOG = {
+    "openai": [{"id": "gpt-5.6-sol", "name": "GPT-5.6 Sol", "vision": True, "note": "推荐"}],
+    "jimmy": [{"id": "gpt-5.6-sol", "name": "GPT-5.6 Sol", "vision": True, "note": "推荐"}],
+    "qwen": [
+        {"id": "qwen3.6-plus", "name": "千问 3.6 Plus", "vision": True, "note": "推荐：能看图看视频，效果和价格均衡"},
+        {"id": "qwen3.7-plus", "name": "千问 3.7 Plus", "vision": True, "note": "最新，效果更好，贵一些"},
+        {"id": "qwen3.6-flash", "name": "千问 3.6 Flash", "vision": True, "note": "更快更便宜"},
+        {"id": "qwen3-vl-plus", "name": "千问 3 VL Plus", "vision": True, "note": "上一代看图模型"},
+        {"id": "deepseek-v3.2", "name": "DeepSeek V3.2（百炼托管）", "vision": False, "note": "只能文字：适合写脚本、改台词"},
+    ],
+    "doubao": [
+        {"id": "doubao-seed-2-0-pro-260215", "name": "豆包 Seed 2.0 Pro", "vision": True, "note": "推荐：效果最好"},
+        {"id": "doubao-seed-2-0-lite-260215", "name": "豆包 Seed 2.0 Lite", "vision": True, "note": "约为 Pro 的 1/5 价格"},
+        {"id": "doubao-seed-2-0-mini-260215", "name": "豆包 Seed 2.0 Mini", "vision": True, "note": "最便宜，适合简单任务"},
+    ],
+    "zhipu": [
+        {"id": "glm-4.6v", "name": "GLM-4.6V", "vision": True, "note": "推荐：能看图"},
+        {"id": "glm-4.5v", "name": "GLM-4.5V", "vision": True, "note": "上一代看图模型"},
+    ],
+    "kimi": [{"id": "kimi-k2.5", "name": "Kimi K2.5", "vision": True, "note": "能看图"}],
+    "deepseek": [{"id": "deepseek-v4-flash", "name": "DeepSeek V4 Flash", "vision": False, "note": "只能文字：便宜，适合写脚本、改台词"}],
+    "ollama": [
+        {"id": "qwen3.5:9b", "name": "千问 3.5 9B（本机）", "vision": True, "note": "8GB 显存起"},
+        {"id": "qwen3.5:4b", "name": "千问 3.5 4B（本机）", "vision": True, "note": "显卡一般也能跑"},
+    ],
+    "custom": [],
+}
+
+
+def model_info(provider: str, model: str | None) -> dict | None:
+    return next((m for m in MODEL_CATALOG.get(provider, []) if m["id"] == model), None)
+
+
+def model_label(provider: str, model: str | None) -> str:
+    info = model_info(provider, model)
+    return info["name"] if info else ("GPT-5.6 Sol" if model == "gpt-5.6-sol" else str(model or ""))
+
+
+def model_vision(provider: str, model: str | None):
+    """这个模型能不能看图：先查模型表，查不到按厂商默认。"""
+    info = model_info(provider, model)
+    if info is not None:
+        return info["vision"]
+    return PROVIDERS.get(provider, {}).get("vision")
+
+
 # vision：能不能看图。读片子（拆解）要把画面发给模型，看不了图的模型（DeepSeek）只能做写脚本、改台词这类纯文字的步骤。
 # None = 不知道（自定义接口），不拦。
 PROVIDERS = {
     "openai": {"label": "官方 · OpenAI", "video_native": False, "vision": True},
     "jimmy": {"label": "三方渠道 · GPT-5.6 Sol（共用三方渠道 Key）", "video_native": False, "vision": True},
-    "qwen": {"label": "通义千问 Qwen3-VL Plus（阿里云百炼）", "video_native": False, "vision": True},
-    "doubao": {"label": "豆包 Seed 2.0 Pro（火山方舟）", "video_native": True, "vision": True},
-    "zhipu": {"label": "智谱 GLM-4.6V", "video_native": False, "vision": True},
-    "kimi": {"label": "Kimi K2.5（月之暗面）", "video_native": False, "vision": True},
-    "deepseek": {"label": "DeepSeek V4 Flash", "video_native": False, "vision": False},
+    "qwen": {"label": "阿里云百炼（通义千问等）", "video_native": False, "vision": True},
+    "doubao": {"label": "豆包（火山方舟）", "video_native": True, "vision": True},
+    "zhipu": {"label": "智谱", "video_native": False, "vision": True},
+    "kimi": {"label": "Kimi（月之暗面）", "video_native": False, "vision": True},
+    "deepseek": {"label": "DeepSeek", "video_native": False, "vision": False},
     "ollama": {"label": "本机 · 千问（免费，比云端慢）", "video_native": False, "vision": True},
     "custom": {"label": "自定义（任意 OpenAI 兼容接口）", "video_native": False, "vision": None},
 }
@@ -58,7 +106,7 @@ DEFAULTS = {
     "DOUBAO_MODEL": "doubao-seed-2-0-pro-260215",
     "QWEN_BASE_URL": "https://dashscope.aliyuncs.com/compatible-mode/v1",
     "QWEN_API_KEY": "",
-    "QWEN_MODEL": "qwen3-vl-plus",
+    "QWEN_MODEL": "qwen3.6-plus",
     "ZHIPU_BASE_URL": "https://open.bigmodel.cn/api/paas/v4",
     "ZHIPU_API_KEY": "",
     "ZHIPU_MODEL": "glm-4.6v",
@@ -162,6 +210,7 @@ def public_view() -> dict:
     view["_jimmy_configured"] = jimmy_configured()
     from . import gateway
     view["_providers"] = gateway.channels()
+    view["_catalog"] = MODEL_CATALOG
     view["_routes"] = gateway.routes.public_routes()
     view["_route_fallback_reason"] = '' if values.get('OPENAI_API_KEY') else '官方 Key 未配置，官方默认路由暂时使用现有三方渠道 / DeepSeek 配置。'
     return view

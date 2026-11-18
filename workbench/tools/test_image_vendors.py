@@ -106,6 +106,17 @@ class ImageVendorTests(Base):
         self.assertEqual(ctx.exception.kind, "auth")
         self.assertIn("Key 不对", ctx.exception.message)
 
+    def test_bailian_unpurchased_and_arrearage_are_plain_language(self):
+        config.save({"QWEN_API_KEY": "bl-key"})
+        with self.fake({"code": "AccessDenied.Unpurchased", "message": "Access to model denied."}), self.assertRaises(ImageError) as ctx:
+            image_vendors.generate("bailian", self.preview("bailian"), self.tmp / "o.png")
+        self.assertIn("还没开通", ctx.exception.message)
+        err = urllib.error.HTTPError("u", 400, "Bad", {}, io.BytesIO(b'{"code":"Arrearage","message":"Access denied, please make sure your account is in good standing."}'))
+        with self.fake(err), self.assertRaises(ImageError) as ctx:
+            image_vendors.generate("bailian", self.preview("bailian"), self.tmp / "o.png")
+        self.assertEqual(ctx.exception.kind, "quota")
+        self.assertIn("充值", ctx.exception.message)
+
     def test_compat_endpoint_uses_edits_with_its_own_key(self):
         config.save({"IMGCOMPAT_API_KEY": "c-key", "IMGCOMPAT_BASE_URL": "https://agg.example/v1/", "IMGCOMPAT_MODEL": "nano-image"})
         out = self.tmp / "out.png"

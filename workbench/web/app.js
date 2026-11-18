@@ -4899,7 +4899,37 @@ async function resumeImage(iid) {
 
 // ---------- settings ----------
 const SETTINGS_CHANNELS = ['openai','jimmy','qwen','doubao','zhipu','kimi','deepseek','ollama','custom'];
-const SETTINGS_KEY_NAMES = {openai:'官方 OpenAI',jimmy:'三方渠道',qwen:'通义千问（阿里云百炼）',doubao:'豆包（火山方舟）',zhipu:'智谱',kimi:'Kimi',deepseek:'DeepSeek',ollama:'本机千问',custom:'自定义渠道'};
+const SETTINGS_KEY_NAMES = {openai:'官方 OpenAI',jimmy:'三方渠道',qwen:'阿里云百炼',doubao:'火山方舟（豆包）',zhipu:'智谱',kimi:'Kimi',deepseek:'DeepSeek',ollama:'本机千问',custom:'自定义渠道'};
+const VENDOR_NAMES = {openai:'OpenAI 官方',jimmy:'三方渠道（ViralTok）',qwen:'阿里云百炼（千问、DeepSeek 等）',doubao:'火山方舟（豆包）',zhipu:'智谱',kimi:'Kimi（月之暗面）',deepseek:'DeepSeek 官方',ollama:'本机（Ollama）',custom:'自定义（OpenAI 兼容接口）'};
+function modelField(channel){return channel==='jimmy'?'JIMMY_LLM_MODEL':channel.toUpperCase()+'_MODEL';}
+function vendorOptions(){return SETTINGS_CHANNELS.map(channel=>[channel,VENDOR_NAMES[channel] || channel]);}
+function visionText(m){return m?.vision===false?'只能处理文字：读片子要另选能看图的模型':m?.vision?'能看图，读片子、写脚本都能用':'';}
+function renderModelPick() {
+  const card=$('[data-model-card="reason"]'),pick=$('[data-model-pick="reason"]');
+  if(!card || !pick || !settingsDraft)return;
+  const vendor=keyChannel(card.value),catalog=(settingsDraft._catalog || {})[vendor] || [];
+  let catalog2=catalog;const current=settingsDraft[modelField(vendor)] || '';
+  // 列表外但已经在用的模型（之前手动填过）也直接显示成一个选项
+  if(current && !catalog.some(m=>m.id===current))catalog2=[{id:current,name:current==='gpt-5.6-sol'?'GPT-5.6 Sol':current,vision:null,note:''},...catalog];
+  const known=catalog2.find(m=>m.id===current);
+  pick.innerHTML=catalog2.map(m=>`<option value="${esc(m.id)}" ${m.id===current?'selected':''}>${esc(m.name)}${m.vision===false?'（只能文字）':''}</option>`).join('')
+    +`<option value="__other" ${known?'':'selected'}>其他（手动填写模型名）</option>`;
+  const custom=$('[data-model-custom="reason"]');
+  custom.hidden=!!known;
+  const input=$('[data-model-custom-input="reason"]',custom);
+  if(document.activeElement!==input)input.value=known?'':current;
+  input.placeholder=vendor==='ollama'?'比如 qwen3.5:9b':'在这家控制台里看到的模型名';
+  $('[data-model-note="reason"]').textContent=known?.note || known?.vision!=null?[known.note,visionText(known)].filter(Boolean).join(' · '):(current?'自己填的模型：能不能看图以这家的说明为准':'');
+}
+function applyVendorModel(model) {
+  const vendor=keyChannel($('[data-model-card="reason"]').value),input=$(`[name="${modelField(vendor)}"]`,$('#settingsForm'));
+  if(!input || !model)return;
+  input.value=model;changeSettingsModel(input);renderModelPick();
+}
+function changeModelPick(select) {
+  if(select.value==='__other'){$('[data-model-custom="reason"]').hidden=false;$('[data-model-custom-input="reason"]').focus();return;}
+  applyVendorModel(select.value);
+}
 let settingsDraft = null;
 const settingsKeyDrafts = new Map(), settingsKeyEditors = new Set();
 function keyChannel(channel) {channel=channel.split(':')[0];return {official:'openai',third_party:'jimmy'}[channel] || channel;}
@@ -4990,9 +5020,10 @@ function renderSettingsKeys() {
   $('#settingsOtherKeys').innerHTML=SETTINGS_CHANNELS.filter(channel=>!used.has(channel)).map(settingsKeyHtml).join('');
   for(const select of $$('[data-model-card]')) {
     const selected=select.value;
-    select.innerHTML=settingsOptions(settingsDraft,select.dataset.modelCard).map(([channel,label])=>`<option value="${esc(channel)}" ${channel===selected ? 'selected' : ''}>${esc(label)}${settingsKeyFilled(settingsDraft,keyChannel(channel)) ? '' : '（未填 Key）'}</option>`).join('');
+    select.innerHTML=(select.dataset.modelCard==='reason'?vendorOptions():settingsOptions(settingsDraft,select.dataset.modelCard)).map(([channel,label])=>`<option value="${esc(channel)}" ${channel===selected ? 'selected' : ''}>${esc(label)}${settingsKeyFilled(settingsDraft,keyChannel(channel)) ? '' : '（未填 Key）'}</option>`).join('');
     select.value=selected;
   }
+  renderModelPick();
 }
 function changeSettingsCard(select) {
   const channel=select.value,kind=select.dataset.modelCard,form=$('#settingsForm');
@@ -5023,11 +5054,13 @@ async function openSettings() {
   const rt=STATUS?.runtime || {};
   const card=(kind,title,hint,route)=>{
     const selected=kind==='image'?settingsImageChoice(s,'storyboard_image').value:String(s[route] || (kind==='reason'?'openai':'third_party')).split(':')[0];
-    return `<section class="settings-model-card"><h3>${title}</h3><p class="hint">${hint}</p><label class="field" for="model-card-${kind}"><span>用哪个</span><select id="model-card-${kind}" data-model-card="${kind}">${settingsOptions(s,kind).map(([value,label])=>`<option value="${esc(value)}" ${value===selected ? 'selected' : ''}>${esc(label)}</option>`).join('')}</select></label>${kind==='video' ? '<p class="hint">以后接入即梦官方、火山等渠道会出现在这里</p>' : ''}<div data-card-key="${kind}"></div></section>`;
+    const options=kind==='reason'?vendorOptions():settingsOptions(s,kind);
+    const pick=kind==='reason'?`<label class="field" for="model-pick-reason"><span>用这家的哪个模型</span><select id="model-pick-reason" data-model-pick="reason"></select></label><div class="field" data-model-custom="reason" hidden><input type="text" data-model-custom-input="reason" aria-label="手动填写模型名"></div><p class="hint" data-model-note="reason"></p>`:'';
+    return `<section class="settings-model-card"><h3>${title}</h3><p class="hint">${hint}</p><label class="field" for="model-card-${kind}"><span>${kind==='reason'?'用哪家（一个 Key 管这家所有模型）':'用哪个'}</span><select id="model-card-${kind}" data-model-card="${kind}">${options.map(([value,label])=>`<option value="${esc(value)}" ${value===selected ? 'selected' : ''}>${esc(label)}</option>`).join('')}</select></label>${pick}${kind==='video' ? '<p class="hint">以后接入即梦官方、火山等渠道会出现在这里</p>' : ''}<div data-card-key="${kind}"></div></section>`;
   };
   $('#settingsFields').innerHTML=`${card('reason','推理模型','拆解、写脚本、改写台词、安全检查都用它','ROUTE_ANALYSIS')}
-    ${card('image','生图模型','生成新分镜图，包括按格改图和批量裂变。费用按实测估算，参考图越多越贵。','ROUTE_STORYBOARD_IMAGE')}${card('video','生视频模型','生成分段视频','ROUTE_VIDEO')}
-    <details id="settingsAdvanced"><summary>高级设置（一般不用动）</summary>
+    ${card('image','生图模型','生成新分镜图，包括按格改图和批量裂变。费用按实测估算，参考图越多越贵。','ROUTE_STORYBOARD_IMAGE')}${card('video','生视频模型','生成分段视频','ROUTE_VIDEO')}`;
+  $('#settingsMore').innerHTML=`<details id="settingsAdvanced"><summary>高级设置（一般不用动）</summary>
       <div id="settingsStepRoutes">${settingsRoutes(s)}</div>
       <h3>各渠道地址与模型</h3>
       ${f('OPENAI_BASE_URL','官方 Base URL')}${f('OPENAI_MODEL','官方推理模型 ID')}${f('OPENAI_IMAGE_MODEL','官方生图模型 ID')}${f('OPENAI_REASONING_EFFORT','推理强度（留空不发送）')}
@@ -5477,6 +5510,8 @@ document.addEventListener("change", (e) => {
   if(sd.scenePick){if(!sceneEl.value || !scenePhotoChoice)return;const choice=scenePhotoChoice,aid=sceneEl.value;scenePhotoChoice=null;sceneAddChoice=null;sceneChangePlan(choice.sid,plan=>{if(choice.add)plan.added=[...new Set([...(plan.added || []),choice.key])];plan.subjects ||= {};plan.subjects[choice.key]={...(plan.subjects[choice.key] || {}),on:true,asset_id:aid};});$(`[data-scene-camera="${choice.sid}"] [data-scene-photo="${choice.key}"]`)?.focus({preventScroll:true});return;}
   if(sd.cast || sd.castDesc || sceneEl.id==='sceneRep' && sceneEditorEnabled()) {sceneCaptureCasting();dirty.rep=true;for(const row of sceneEditorRows())if(sceneEl.id==='sceneRep' || row.subjects.some(s=>s.key===(sd.cast || sd.castDesc) && !s.override))sceneEdited.add(`${P.id}:${row.scene_id}`);renderReplacements(true);scheduleReplacementCheck();return;}
   if(e.target.hasAttribute('data-model-card'))return changeSettingsCard(e.target);
+  if(e.target.hasAttribute('data-model-pick'))return changeModelPick(e.target);
+  if(e.target.hasAttribute('data-model-custom-input'))return applyVendorModel(e.target.value.trim());
   if(e.target.hasAttribute('data-image-route'))return changeSettingsImageRoute(e.target);
   if(e.target.closest('#settingsForm') && SETTINGS_MODEL_CHANNELS[e.target.getAttribute('name')])return changeSettingsModel(e.target);
   if(['analyzeProvider','scriptProvider'].includes(e.target.id))e.target.dataset.userSelected=e.target.value ? '1' : '';

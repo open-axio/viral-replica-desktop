@@ -44,9 +44,10 @@ def _chat(provider: str, messages: list[dict], *, temperature: float, max_tokens
         raise LLMError("只有三方渠道 Gemini 支持直接发送整段视频")
     # 只在确定看不了图时拦：用的是这个渠道默认的官方地址。改过地址（比如走 OpenRouter）就不知道背后是什么模型，照常发。
     default_base = config.DEFAULTS.get(provider.upper() + "_BASE_URL", "").rstrip("/")
-    if (config.PROVIDERS.get(provider, {}).get("vision") is False and s["base_url"].rstrip("/") == default_base
+    known_text_only = (config.model_info(provider, s["model"]) or {}).get("vision") is False
+    if (config.model_vision(provider, s["model"]) is False and (known_text_only or s["base_url"].rstrip("/") == default_base)
             and _has_images(messages)):
-        name = config.PROVIDERS[provider]["label"].split("（")[0]
+        name = config.model_label(provider, s["model"]) or config.PROVIDERS[provider]["label"].split("（")[0]
         raise LLMError(f"「{name}」看不了图，这一步要看画面。请在设置里给这一步换一个能看图的模型（比如通义千问、豆包）",
                        kind="invalid_request")
     started = time.time()

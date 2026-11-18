@@ -74,7 +74,7 @@ test('已填Key默认无输入，更换才出现；共享只填一次，留空�
 });
 test('未填Key选项仍可选且就地输入；三方三卡共用，切换保留未保存Key',async()=>{
   const t=setup({OPENAI_API_KEY:'',JIMMY_API_KEY:'',_jimmy_configured:false});await t.open();
-  assert.match(t.$('[data-model-card="reason"]').textContent,/官方 · GPT-5.6 Sol（未填 Key）/);
+  assert.match(t.$('[data-model-card="reason"]').textContent,/OpenAI 官方（未填 Key）/);assert.match(t.$('[data-model-pick="reason"]').textContent,/GPT-5.6 Sol/);
   assert.ok(t.$('[data-card-key="reason"] [name="OPENAI_API_KEY"]'));const reason=t.$('[data-model-card="reason"]');reason.value='jimmy';await t.event('change',reason);
   assert.ok(t.$('[data-card-key="reason"] [name="JIMMY_API_KEY"]'));
   const image=t.$('[data-model-card="image"]');image.value='third_party:gpt-image-2|auto';await t.event('change',image);
@@ -125,7 +125,7 @@ test('高级模型字段修改更新卡片和实际默认路由，独立模型�
   const t=setup({ROUTE_CHECK:'openai:independent-check'});await t.open();
   const model=t.$('[name="OPENAI_MODEL"]');model.value='new-official-model';await t.event('change',model);
   const image=t.$('[name="OPENAI_IMAGE_MODEL"]');image.value='new-image-model';await t.event('change',image);
-  assert.match(t.$('[data-model-card="reason"]').textContent,/官方 · new-official-model/);
+  assert.equal(t.$('[data-model-pick="reason"]').value,'new-official-model');
   assert.doesNotMatch(t.$('[data-model-card="reason"]').textContent,/官方 · GPT-5.6 Sol/);
   assert.match(t.$('[data-model-card="image"]').textContent,/官方 · new-image-model/);
   await t.run('saveSettings({preventDefault(){}})');const body=t.requests.find(r=>r.method==='POST'&&r.url==='settings').body;

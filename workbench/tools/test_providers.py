@@ -35,7 +35,7 @@ class ProviderTests(unittest.TestCase):
         config.save({"QWEN_API_KEY": "sk-qwen-123456"})
         self.assertEqual(config.public_view()["QWEN_API_KEY"], "已填写 ···3456")
         self.assertTrue(gateway.channels()["qwen"]["ready"])
-        self.assertIn("通义千问", gateway.channels()["qwen"]["label"])
+        self.assertEqual(gateway.channels()["qwen"]["label"], "阿里云百炼 · 千问 3.6 Plus")
 
     def test_route_can_pick_new_providers(self):
         for name in ("qwen", "zhipu", "kimi", "deepseek"):
@@ -66,7 +66,27 @@ class ProviderTests(unittest.TestCase):
         with patch("urllib.request.urlopen", side_effect=send):
             out = reasoning.chat("qwen", IMG, max_tokens=50)
         self.assertIn("OK", json.dumps(out, ensure_ascii=False))
-        self.assertEqual(captured, [("https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions", "Bearer sk-q", "qwen3-vl-plus")])
+        self.assertEqual(captured, [("https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions", "Bearer sk-q", "qwen3.6-plus")])
+
+    def test_one_key_many_models_with_per_model_vision(self):
+        cat = config.MODEL_CATALOG
+        self.assertGreaterEqual(len(cat["qwen"]), 3, "百炼一个 Key 要有多个模型可选")
+        self.assertGreaterEqual(len(cat["doubao"]), 3)
+        for vendor, models in cat.items():
+            self.assertIn(vendor, config.PROVIDERS)
+            self.assertEqual(len({m["id"] for m in models}), len(models), vendor)
+        # 同一个百炼 Key：千问能看图，百炼托管的 DeepSeek 只能文字
+        self.assertTrue(config.model_vision("qwen", "qwen3.6-plus"))
+        self.assertFalse(config.model_vision("qwen", "deepseek-v3.2"))
+        self.assertIsNone(config.model_vision("custom", "whatever"))
+        settings = {"name": "qwen", "base_url": "https://my-proxy.example/v1", "api_key": "k", "model": "deepseek-v3.2", "timeout": 1}
+        with patch.object(config, "provider_settings", lambda n: settings), self.assertRaisesRegex(LLMError, "DeepSeek V3.2.*看不了图"):
+            reasoning.chat("qwen", IMG)
+        # 路由里带模型名：同一个厂商、不同步骤用不同模型
+        self.assertEqual(gateway.routes.parse("qwen:qwen3.6-flash", "script"), {"channel": "qwen", "model": "qwen3.6-flash"})
+        self.assertEqual(gateway.label("doubao", "doubao-seed-2-0-lite-260215"), "豆包 Seed 2.0 Lite")
+        self.assertIn("_catalog", config.public_view())
+
 
 if __name__ == "__main__":
     unittest.main()

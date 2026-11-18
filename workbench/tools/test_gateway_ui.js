@@ -20,7 +20,7 @@ async function main(){
  run('$("#scriptProvider").dataset.userSelected="1";$("#scriptProvider").value="jimmy"');assert.equal(run('selectedProvider($("#scriptProvider"))'),'jimmy');
  run('P.resolved_routes={dialogue_proposal:{channel:"openai",model:"independent"}}');assert.equal(run('routeFor("dialogue_proposal").model'),'independent');
  $('#settingsDialog').showModal=()=>{};await run('openSettings()');
- assert.match($('#settingsFields').textContent,/单独给某一步换模型/);for(const step of ['ANALYSIS','SCRIPT','CHECK','DIALOGUE_PROPOSAL','CAMERA_PROMPT','CAMERA_IMAGE','VIDEO'])assert.ok($(`[name="ROUTE_${step}"]`));
+ assert.match($('#settingsMore').textContent,/单独给某一步换模型/);for(const step of ['ANALYSIS','SCRIPT','CHECK','DIALOGUE_PROPOSAL','CAMERA_PROMPT','CAMERA_IMAGE','VIDEO'])assert.ok($(`[name="ROUTE_${step}"]`));
  assert.equal(document.querySelectorAll('[data-test-channel]').length,2);assert.match($('#settingsFields').textContent,/会产生极少量费用/);
  await click($('[data-test-channel="openai"]'));assert.equal(requests.at(-1).url,'settings/test-connection');assert.equal(requests.at(-1).body.channel,'openai');
  run('P.usage=[{channel:"openai",kind:"reason",ok:true,tokens:{prompt:7,completion:4},billing:{unit:"tokens",amount:11}},{channel:"third_party",kind:"image",ok:true,billing:{unit:"点",amount:.02}},{channel:"third_party",kind:"video",ok:true,billing:{unit:"秒",amount:8}}]');

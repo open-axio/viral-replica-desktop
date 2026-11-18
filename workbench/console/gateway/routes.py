@@ -24,8 +24,9 @@ def parse(value, step, values=None):
         channel, sep, model = str(value).partition(':')
         model = model if sep else None
     if step in {'camera_image','storyboard_image','image'}:
+        from .adapters import image_vendors
         channel = {'openai':'official','jimmy':'third_party'}.get(channel,channel)
-        valid = {'official','third_party'}
+        valid = {'official','third_party',*image_vendors.VENDORS}
     elif step == 'video':
         channel = {'jimmy':'third_party'}.get(channel,channel)
         valid = {'third_party'}
@@ -37,7 +38,11 @@ def parse(value, step, values=None):
     if not model:
         values = config.load() if values is None else values
         if step in {'camera_image','storyboard_image','image'}:
-            model = values.get('OPENAI_IMAGE_MODEL') if channel == 'official' else 'gpt-image-2'
+            from .adapters import image_vendors
+            if image_vendors.is_vendor(channel):
+                model = values.get('IMGCOMPAT_MODEL') if channel == 'imgcompat' else image_vendors.VENDORS[channel]['models'][0]['id']
+            else:
+                model = values.get('OPENAI_IMAGE_MODEL') if channel == 'official' else 'gpt-image-2'
         elif step == 'video': model = 'seedance2.0-mini-video'
         else: model = values.get('JIMMY_LLM_MODEL' if channel == 'jimmy' else channel.upper() + '_MODEL')
     return {'channel':channel, 'model':model or ''}

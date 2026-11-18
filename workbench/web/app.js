@@ -4899,7 +4899,7 @@ async function resumeImage(iid) {
 
 // ---------- settings ----------
 const SETTINGS_CHANNELS = ['openai','jimmy','qwen','doubao','zhipu','kimi','deepseek','ollama','custom'];
-const SETTINGS_KEY_NAMES = {openai:'官方 OpenAI',jimmy:'三方渠道',qwen:'阿里云百炼',doubao:'火山方舟（豆包）',zhipu:'智谱',kimi:'Kimi',deepseek:'DeepSeek',ollama:'本机千问',custom:'自定义渠道'};
+const SETTINGS_KEY_NAMES = {openai:'官方 OpenAI',jimmy:'三方渠道',qwen:'阿里云百炼',doubao:'火山方舟（豆包）',zhipu:'智谱',kimi:'Kimi',deepseek:'DeepSeek',ollama:'本机千问',custom:'自定义渠道',imgcompat:'OpenAI 兼容生图接口'};
 const VENDOR_NAMES = {openai:'OpenAI 官方',jimmy:'三方渠道（ViralTok）',qwen:'阿里云百炼（千问、DeepSeek 等）',doubao:'火山方舟（豆包）',zhipu:'智谱',kimi:'Kimi（月之暗面）',deepseek:'DeepSeek 官方',ollama:'本机（Ollama）',custom:'自定义（OpenAI 兼容接口）'};
 function modelField(channel){return channel==='jimmy'?'JIMMY_LLM_MODEL':channel.toUpperCase()+'_MODEL';}
 function vendorOptions(){return SETTINGS_CHANNELS.map(channel=>[channel,VENDOR_NAMES[channel] || channel]);}
@@ -4932,7 +4932,8 @@ function changeModelPick(select) {
 }
 let settingsDraft = null;
 const settingsKeyDrafts = new Map(), settingsKeyEditors = new Set();
-function keyChannel(channel) {channel=channel.split(':')[0];return {official:'openai',third_party:'jimmy'}[channel] || channel;}
+function keyChannel(channel) {channel=channel.split(':')[0];return {official:'openai',third_party:'jimmy',ark:'doubao',bailian:'qwen'}[channel] || channel;}
+const KEY_CHANNELS = () => [...SETTINGS_CHANNELS,'imgcompat'];
 function keyField(channel) {return channel.toUpperCase()+'_API_KEY';}
 function settingsKeyFilled(s,channel) {
   const field=keyField(channel);
@@ -4940,8 +4941,14 @@ function settingsKeyFilled(s,channel) {
 }
 function settingsOptions(s,kind) {
   if(kind==='image') {
-    const options=[['official:gpt-image-2|auto','官方 · gpt-image-2 · 自动画质（一张约 $0.05）'],['official:gpt-image-2|high','官方 · gpt-image-2 · 高画质（一张约 $0.20，细节更好，更慢）'],['official:gpt-image-2.6-sunburst|high','官方 · gpt-image-2.6 sunburst · 高画质（一张约 $0.08）'],['third_party:gpt-image-2|auto','三方渠道 · gpt-image-2']];
-    const custom=(route,quality)=>{const value=route+'|'+quality;if(!options.some(([v])=>v===value)){const [channel,...model]=route.split(':');options.push([value,`${channel==='official'?'官方':'三方渠道'} · ${imageModelLabel(model.join(':'))} · ${quality==='high'?'高画质':'自动画质'}`]);}};
+    const G={official:'OpenAI 官方',third_party:'三方渠道（ViralTok）',ark:'火山方舟（用豆包的 Key）',bailian:'阿里云百炼（用千问的 Key）',imgcompat:'OpenAI 兼容生图接口（聚合平台等）'};
+    const options=[['official:gpt-image-2|auto','官方 · gpt-image-2 · 自动画质（一张约 $0.05）',G.official],['official:gpt-image-2|high','官方 · gpt-image-2 · 高画质（一张约 $0.20，细节更好，更慢）',G.official],['official:gpt-image-2.6-sunburst|high','官方 · gpt-image-2.6 sunburst · 高画质（一张约 $0.08）',G.official],['third_party:gpt-image-2|auto','三方渠道 · gpt-image-2',G.third_party]];
+    for(const [vendor,meta] of Object.entries(s._image_vendors || {})){
+      const models=vendor==='imgcompat'?(s.IMGCOMPAT_MODEL?[{id:s.IMGCOMPAT_MODEL,name:s.IMGCOMPAT_MODEL,note:''}]:[]):meta.models;
+      for(const m of models)options.push([`${vendor}:${m.id}|auto`,`${meta.name.split(' ')[0]} · ${m.name}${m.note?'（'+m.note+'）':''}`,G[vendor]]);
+      if(vendor==='imgcompat' && !models.length)options.push(['imgcompat:|auto','OpenAI 兼容生图接口（先在「高级设置」里填地址和模型名）',G.imgcompat]);
+    }
+    const custom=(route,quality)=>{const value=route+'|'+quality;if(!options.some(([v])=>v===value)){const [channel,...model]=route.split(':');options.push([value,`${G[channel]?G[channel].split('（')[0]:channel==='official'?'官方':'三方渠道'} · ${imageModelLabel(model.join(':'))}${['official','third_party'].includes(channel)?' · '+(quality==='high'?'高画质':'自动画质'):''}`,G[channel]]);}};
     if(s.OPENAI_IMAGE_MODEL && !['gpt-image-2','gpt-image-2.6-sunburst'].includes(s.OPENAI_IMAGE_MODEL))custom('official:'+s.OPENAI_IMAGE_MODEL,'auto');
     for(const step of ['storyboard_image','camera_image']){const {route,quality}=settingsImageChoice(s,step);custom(route,quality);}
     return options;
@@ -4957,6 +4964,14 @@ function settingsOptions(s,kind) {
     }
     return [channel,label];
   });
+}
+function optionList(options,selected,suffix=()=>'') {
+  let html='',group=null;
+  for(const [value,label,g] of options){
+    if(g!==group){if(group)html+='</optgroup>';if(g)html+=`<optgroup label="${esc(g)}">`;group=g;}
+    html+=`<option value="${esc(value)}" ${value===selected?'selected':''}>${esc(label)}${suffix(value)}</option>`;
+  }
+  return html+(group?'</optgroup>':'');
 }
 function settingsImageChoice(s,step) {
   let route=s['ROUTE_'+step.toUpperCase()] || 'official';
@@ -4981,7 +4996,7 @@ function changeSettingsModel(input) {
   $('#settingsStepRoutes').innerHTML=settingsRoutes(settingsDraft);
   if(key==='OPENAI_IMAGE_MODEL'){
     const selected=settingsImageChoice(settingsDraft,'storyboard_image').value;
-    $('[data-model-card="image"]').innerHTML=settingsOptions(settingsDraft,'image').map(([value,label])=>`<option value="${esc(value)}" ${value===selected?'selected':''}>${esc(label)}</option>`).join('');
+    $('[data-model-card="image"]').innerHTML=optionList(settingsOptions(settingsDraft,'image'),selected);
   }
   renderSettingsKeys();
 }
@@ -4997,7 +5012,7 @@ function settingsRoutes(s) {
     return `<div class="field"><label for="setting-${key}">${title}</label><select id="setting-${key}" ${image?`data-image-route="${step}"`:`name="${key}"`}>${options.map(([v,l])=>`<option value="${esc(v)}" ${v===selected ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select>${image?`<input type="hidden" name="${key}" value="${esc(choice.route)}"><input type="hidden" name="${step.toUpperCase()}_QUALITY" value="${esc(choice.quality)}">`:''}</div>`;
   }).join('');
 }
-function connectionButton(channel) {return `<p><button type="button" class="small ghost" data-test-channel="${channel}">测试连接</button> <span class="hint">会产生极少量费用（使用已保存的配置）</span> <span data-connection-result="${channel}" role="status"></span></p>`;}
+function connectionButton(channel) {if(channel==='imgcompat')return '';return `<p><button type="button" class="small ghost" data-test-channel="${channel}">测试连接</button> <span class="hint">会产生极少量费用（使用已保存的配置）</span> <span data-connection-result="${channel}" role="status"></span></p>`;}
 async function testChannel(channel,button) {
   const result=$(`[data-connection-result="${channel}"]`);button.disabled=true;result.textContent='测试中…';
   try {const r=await api('POST','settings/test-connection',{channel});result.textContent=`${r.status || '网络失败'} · ${r.elapsed_ms ?? 0} ms`;}
@@ -5010,17 +5025,17 @@ function settingsKeyHtml(channel) {
     ${!filled || editing ? `<label class="field" for="setting-${keyField(channel)}"><span>${name} Key</span><input id="setting-${keyField(channel)}" name="${keyField(channel)}" type="password" autocomplete="new-password" value="${esc(settingsKeyDrafts.get(channel) || '')}" placeholder="${filled ? '粘贴新 Key（留空保持不变）' : '粘贴 '+name+' Key'}"></label><p class="hint">${filled ? '留空保持已保存的 Key 不变。' : channel==='openai' ? '推理和生图共用这个 Key，填一次后保存即可。' : channel==='jimmy' ? '推理、生图和视频共用这个 Key，填一次后保存即可。' : '填入这个渠道的 Key 后保存即可。'}</p>` : ''}</div>`;
 }
 function renderSettingsKeys() {
-  for(const channel of SETTINGS_CHANNELS){const input=$(`[name="${keyField(channel)}"]`);if(input)settingsKeyDrafts.set(channel,input.value);}
+  for(const channel of KEY_CHANNELS()){const input=$(`[name="${keyField(channel)}"]`);if(input)settingsKeyDrafts.set(channel,input.value);}
   const used=new Set();
   for(const kind of ['reason','image','video']) {
     const channel=keyChannel($(`[data-model-card="${kind}"]`).value),box=$(`[data-card-key="${kind}"]`);
     box.innerHTML=used.has(channel) ? `<p class="hint">✓ 和上面用的是同一个 ${SETTINGS_KEY_NAMES[channel]} Key，不用再填</p>` : settingsKeyHtml(channel);
     used.add(channel);
   }
-  $('#settingsOtherKeys').innerHTML=SETTINGS_CHANNELS.filter(channel=>!used.has(channel)).map(settingsKeyHtml).join('');
+  $('#settingsOtherKeys').innerHTML=KEY_CHANNELS().filter(channel=>!used.has(channel)).map(settingsKeyHtml).join('');
   for(const select of $$('[data-model-card]')) {
     const selected=select.value;
-    select.innerHTML=(select.dataset.modelCard==='reason'?vendorOptions():settingsOptions(settingsDraft,select.dataset.modelCard)).map(([channel,label])=>`<option value="${esc(channel)}" ${channel===selected ? 'selected' : ''}>${esc(label)}${settingsKeyFilled(settingsDraft,keyChannel(channel)) ? '' : '（未填 Key）'}</option>`).join('');
+    select.innerHTML=optionList(select.dataset.modelCard==='reason'?vendorOptions():settingsOptions(settingsDraft,select.dataset.modelCard),selected,channel=>settingsKeyFilled(settingsDraft,keyChannel(channel)) ? '' : '（未填 Key）');
     select.value=selected;
   }
   renderModelPick();
@@ -5056,7 +5071,7 @@ async function openSettings() {
     const selected=kind==='image'?settingsImageChoice(s,'storyboard_image').value:String(s[route] || (kind==='reason'?'openai':'third_party')).split(':')[0];
     const options=kind==='reason'?vendorOptions():settingsOptions(s,kind);
     const pick=kind==='reason'?`<label class="field" for="model-pick-reason"><span>用这家的哪个模型</span><select id="model-pick-reason" data-model-pick="reason"></select></label><div class="field" data-model-custom="reason" hidden><input type="text" data-model-custom-input="reason" aria-label="手动填写模型名"></div><p class="hint" data-model-note="reason"></p>`:'';
-    return `<section class="settings-model-card"><h3>${title}</h3><p class="hint">${hint}</p><label class="field" for="model-card-${kind}"><span>${kind==='reason'?'用哪家（一个 Key 管这家所有模型）':'用哪个'}</span><select id="model-card-${kind}" data-model-card="${kind}">${options.map(([value,label])=>`<option value="${esc(value)}" ${value===selected ? 'selected' : ''}>${esc(label)}</option>`).join('')}</select></label>${pick}${kind==='video' ? '<p class="hint">以后接入即梦官方、火山等渠道会出现在这里</p>' : ''}<div data-card-key="${kind}"></div></section>`;
+    return `<section class="settings-model-card"><h3>${title}</h3><p class="hint">${hint}</p><label class="field" for="model-card-${kind}"><span>${kind==='reason'?'用哪家（一个 Key 管这家所有模型）':'用哪个'}</span><select id="model-card-${kind}" data-model-card="${kind}">${optionList(options,selected)}</select></label>${pick}${kind==='video' ? '<p class="hint">以后接入即梦官方、火山等渠道会出现在这里</p>' : ''}<div data-card-key="${kind}"></div></section>`;
   };
   $('#settingsFields').innerHTML=`${card('reason','推理模型','拆解、写脚本、改写台词、安全检查都用它','ROUTE_ANALYSIS')}
     ${card('image','生图模型','生成新分镜图，包括按格改图和批量裂变。费用按实测估算，参考图越多越贵。','ROUTE_STORYBOARD_IMAGE')}${card('video','生视频模型','生成分段视频','ROUTE_VIDEO')}`;
@@ -5068,6 +5083,7 @@ async function openSettings() {
       ${f('QWEN_BASE_URL','通义千问 Base URL')}${f('QWEN_MODEL','通义千问模型 ID')}${f('ZHIPU_BASE_URL','智谱 Base URL')}${f('ZHIPU_MODEL','智谱模型 ID')}${f('KIMI_BASE_URL','Kimi Base URL')}${f('KIMI_MODEL','Kimi 模型 ID')}
       ${f('DEEPSEEK_BASE_URL','DeepSeek Base URL')}${f('DEEPSEEK_MODEL','DeepSeek 模型 ID（看不了图，只用于写脚本、改台词）')}${f('DOUBAO_BASE_URL','豆包 Base URL')}${f('DOUBAO_MODEL','豆包模型 ID')}
       ${f('CUSTOM_BASE_URL','自定义 Base URL')}${f('CUSTOM_MODEL','自定义模型 ID')}
+      ${f('IMGCOMPAT_BASE_URL','OpenAI 兼容生图接口地址（例如 https://xxx.com/v1）')}${f('IMGCOMPAT_MODEL','OpenAI 兼容生图模型名')}
       <input type="hidden" name="DEFAULT_LLM" value="${esc(s.DEFAULT_LLM || 'jimmy')}">
       <h3>其他渠道 Key（可选）</h3><div id="settingsOtherKeys"></div>
       <h3>本地拆解</h3>${f('ASR_COMPUTE_TYPE','计算精度')}${f('ASR_LANGUAGE','语言（留空 = 自动识别（推荐））')}

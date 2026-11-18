@@ -90,7 +90,16 @@ def _role_text(asset: dict) -> str:
 
 def max_image_references(channel: str, model: str | None = None) -> int:
     """Image edit limits are separate from video's four-reference limit."""
+    from .gateway.adapters import image_vendors
+    if image_vendors.is_vendor(channel):
+        return image_vendors.max_refs(channel)
     return IMAGE_REFERENCE_LIMITS.get(channel, 10)
+
+
+def _direct_image(channel: str | None) -> bool:
+    """同步出图的渠道（官方 + 新接的厂商）：确认后直接请求、本地保存，没有远端任务可查。"""
+    from .gateway.adapters import image_vendors
+    return channel == "official" or image_vendors.is_vendor(channel)
 
 
 def scene_image_references(data: dict, scene_id: str, *, at: float | None = None) -> dict:
@@ -1133,8 +1142,9 @@ def image_preview(pid: str, prompt: str, image_ids: list[str], ratio: str, model
     key is configured; legacy direct callers and old records never read config
     merely to infer a channel.
     """
+    from .gateway.adapters import image_vendors
     channel = channel or "third_party"
-    if channel not in {"official", "third_party"}:
+    if channel not in {"official", "third_party"} and not image_vendors.is_vendor(channel):
         raise BridgeError("未知生图渠道")
     if channel == "official" and quality not in {"auto", "high"}:
         raise BridgeError("生图画质只能为 auto 或 high")
@@ -1237,6 +1247,16 @@ def image_preview(pid: str, prompt: str, image_ids: list[str], ratio: str, model
                         "n": 1, "images": [{**ref, "sha256": store.sha256_file(Path(ref["path"]))} for ref in refs]}
         store.atomic_write_json(run_dir / "image-job.preview.json", preview_json)
         out = "官方生图：确认后按 OpenAI 计费"
+    elif image_vendors.is_vendor(channel):
+        if len(refs) > image_vendors.max_refs(channel):
+            raise BridgeError(f"{image_vendors.VENDORS[channel]['name']}最多支持 {image_vendors.max_refs(channel)} 张参考图，"
+                              f"这次有 {len(refs)} 张：少勾几张，或在设置里换一个生图模型")
+        job["model"] = model or image_vendors.default_model(channel)
+        job.pop("quality", None)
+        preview_json = {**job, "channel": channel, "size": image_vendors.size_for(channel, ratio), "n": 1,
+                        "images": [{**ref, "sha256": store.sha256_file(Path(ref["path"]))} for ref in refs]}
+        store.atomic_write_json(run_dir / "image-job.preview.json", preview_json)
+        out = f"{image_vendors.VENDORS[channel]['name']}生图：确认后按{image_vendors.VENDORS[channel]['account']}账户计费"
     else:
         out = _call([str(_script("chain5_image.py")), "prepare", "--job", str(job_path), "--run", str(run_dir)], d)
         preview_json = json.loads((run_dir / "image-job.preview.json").read_text(encoding="utf-8"))
@@ -1244,7 +1264,7 @@ def image_preview(pid: str, prompt: str, image_ids: list[str], ratio: str, model
               "for_task": for_task, "preview": preview_json,
               "preview_sha256": store.sha256_file(run_dir / "image-job.preview.json"),
               "run_dir": store.rel(pid, run_dir),
-              "summary": out.strip() if channel == "official" else "三方渠道生图：确认后约 0.02 点", **camera_fields}
+              "summary": out.strip() if channel != "third_party" else "三方渠道生图：确认后约 0.02 点", **camera_fields}
     store.update(pid, lambda x: x.setdefault("images", {}).__setitem__(iid, record))
     return record
 
@@ -1323,7 +1343,7 @@ def _image_poll(pid: str, iid: str, run_dir: Path, env: str, *, wait: bool) -> N
 
 def _image_query_failure(pid: str, iid: str, exc: object) -> bool:
     rec = store.load(pid)["images"][iid]
-    if rec.get("channel") == "official":
+    if _direct_image(rec.get("channel")):
         return False
     run_dir = store.project_dir(pid) / rec["run_dir"]
     child = _read_state(run_dir / "image-state.json")
@@ -1379,7 +1399,7 @@ def _refresh_image_queries(pid: str, *, active=None) -> None:
     for iid, rec in store.load(pid).get("images", {}).items():
         if active is not None and f'img:{iid}' not in active:
             continue
-        if rec.get("channel") == "official" or rec.get("state") not in {"failed", "running", "query_pending"}:
+        if _direct_image(rec.get("channel")) or rec.get("state") not in {"failed", "running", "query_pending"}:
             continue
         if rec.get("query_retry"):
             _schedule_image_query(pid, iid)
@@ -1424,7 +1444,7 @@ def image_confirm(pid: str, iid: str) -> dict:
         rec = (data.get("images") or {}).get(iid)
         if not rec or rec["state"] != "pending_confirmation":
             raise BridgeError("这张图的预览不存在或已提交")
-        official = rec.get("channel") == "official"
+        official = _direct_image(rec.get("channel"))
         preview = _official_preview_current(pid, iid) if official else None
         if not official and not config.jimmy_configured():
             raise BridgeError("还没填三方渠道 Key：点右上角“设置”，在第一栏填写")
@@ -1437,8 +1457,12 @@ def image_confirm(pid: str, iid: str) -> dict:
             try:
                 if official:
                     output = run_dir / "result.png"
-                    result = openai_image.generate(preview, output,
-                        before_send=lambda: _official_preview_current(pid, iid))
+                    check = lambda: _official_preview_current(pid, iid)
+                    if rec.get("channel") == "official":
+                        result = openai_image.generate(preview, output, before_send=check)
+                    else:
+                        from .gateway.adapters import image_vendors
+                        result = image_vendors.generate(rec["channel"], preview, output, before_send=check)
                     store.update(pid, lambda x: x["images"][iid].update(result))
                     _image_done(pid, iid, output)
                 else:
@@ -1544,7 +1568,7 @@ def _image_resume_locked(pid: str, iid: str) -> dict:
     rec = data["images"][iid]
     d = store.project_dir(pid)
     run_dir = d / rec["run_dir"]
-    official = rec.get("channel") == "official"
+    official = _direct_image(rec.get("channel"))
     restoring = official or rec.get("state") == "completed" or _read_state(run_dir / "image-state.json").get("phase") == "completed"
     if restoring:
         candidates = [run_dir / "result.png", *run_dir.glob("result.*")]
@@ -1556,7 +1580,7 @@ def _image_resume_locked(pid: str, iid: str) -> dict:
                 _image_done(pid, iid, local)
                 return {"ok": True}
     if official:
-        raise BridgeError("官方生图没有可恢复的远端任务，请重新确认生图（先重新生成预览）")
+        raise BridgeError(("官方生图" if rec.get("channel") == "official" else "这家的生图") + "没有可恢复的远端任务，请重新确认生图（先重新生成预览）")
     if _upload_retryable(_read_state(run_dir / "image-state.json"), image=True):
         _verify_camera_image_current(pid, iid)
     env = str(config.jimmy_env_file())

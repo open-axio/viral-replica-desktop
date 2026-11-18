@@ -737,6 +737,8 @@ function renderLocalLlm() {
   if (!ol.running) {
     step = `<div class="local-step"><b>第 1 步：安装 Ollama</b><p class="hint">${ol.installed ? "Ollama 已经装了，但还没打开：打开它（Windows 右下角、Mac 菜单栏会出现它的图标），再点「重新检查」。" : "Ollama 是免费的本机模型运行软件，千问靠它在你电脑上跑。下载安装后打开它，再回来点「重新检查」。"}</p>
       <div class="local-actions">${ol.installed ? "" : `<a class="button" href="${esc(localLlm.download_url)}" target="_blank" rel="noopener">去官网下载 Ollama</a>`}<button type="button" class="ghost" data-local-llm="refresh">重新检查</button></div></div>`;
+    // 这台电脑本来就跑不动：别把安装步骤摆在最显眼的地方，收起来给想试的人
+    if (!rec.model) step = `<p class="hint">这台电脑跑本机大模型会很慢，用上面的云端模型就好。</p><details class="local-anyway"><summary>还是想试试？</summary>${step}</details>`;
   } else {
     const busy = pull?.state === "running";
     const pct = pull?.total ? Math.round((pull.completed / pull.total) * 100) : 0;

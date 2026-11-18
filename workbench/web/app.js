@@ -882,7 +882,7 @@ function renderAssets() {
     </div>`;
   // Generated images pile up with every storyboard version; keep the user's own photos first.
   const visible = (P.assets || []).filter(a => !internalAsset(a)), own = visible.filter(a => !a.generated), made = visible.filter(a => a.generated);
-  updateHtml($("#assetGrid"), own.map(card).join("") + (made.length ? `<details class="generated-assets" data-detail-key="generated-assets"><summary>模型生成的图（${made.length} 张）· 生成分镜时自动存的，一般不用动</summary><div class="assets">${made.map(card).join("")}</div></details>` : "") || `<p class="hint">还没有素材。</p>`);
+  updateHtml($("#assetGrid"), own.map(card).join("") + (made.length ? `<details class="generated-assets" data-detail-key="generated-assets"><summary>模型生成的图（${made.length} 张）· 生成分镜时自动存的，一般不用动</summary><div class="assets">${made.map(card).join("")}</div></details>` : "") || `<div class="asset-empty"><b>先放几张照片进来，复刻时就用它们替换原片里的人和东西：</b><ul><li>要出镜的人：正脸清楚、光线亮，最好一人一张</li><li>你的招牌菜 / 商品：干净背景，拍全</li><li>店面、门头或环境（可选）</li></ul><p class="hint">手机拍的就行。照片只保存在这台电脑上。</p></div>`);
 }
 async function patchAsset(el) {
   const box = el.closest("[data-asset]");

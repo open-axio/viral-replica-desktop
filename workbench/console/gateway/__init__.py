@@ -14,10 +14,17 @@ _depth = ContextVar('gateway_depth',default=0)
 def label(channel, model=None):
     names = {'openai':'官方','official':'官方','jimmy':'三方渠道','third_party':'三方渠道',
              'third-party':'三方渠道','deepseek':'DeepSeek','doubao':'豆包','custom':'自定义',
-             'qwen':'阿里云百炼','zhipu':'智谱','kimi':'Kimi','ollama':'本机'}
+             'qwen':'阿里云百炼','zhipu':'智谱','kimi':'Kimi','ollama':'本机',
+             'ark':'火山方舟','bailian':'阿里云百炼','kling':'可灵','minimax':'MiniMax 海螺','imgcompat':'兼容生图接口'}
     name = names.get(channel,user_message(channel))
     if model:
         display = config.model_label(channel, model)
+        from .adapters import image_vendors, video_vendors
+        for table in (video_vendors.VENDORS, image_vendors.VENDORS):
+            found = next((m['name'] for m in (table.get(channel) or {}).get('models', []) if m['id'] == model), None)
+            if found:
+                display = found
+                break
         return display if display.startswith(name) else name + ' · ' + display
     return name
 

@@ -268,7 +268,8 @@ function normalizeErrorMarkup(root){
     if(publicErrorText(text)!==publicText(text) || el.matches('.action-error,.library-upload-errors,.fission-block-reason,.dialogue-error,[role="alert"]') || el.matches('.caption-warning,.st.skipped') && /失败|错误|拒绝|未完成|没.*完成|连不上|error|HTTP|request[_ -]?id/i.test(text))el.innerHTML=errorHtml(text);
   }
 }
-function providerLabel(key, value) { return publicText(value?.label || ({openai:'官方',official:'官方',third_party:'三方渠道'}[key]) || key); }
+const VENDOR_LABELS = {openai:'官方',official:'官方',jimmy:'三方渠道',third_party:'三方渠道',ark:'火山方舟',bailian:'阿里云百炼',kling:'可灵',minimax:'MiniMax 海螺',imgcompat:'兼容生图接口'};
+function providerLabel(key, value) { return publicText(value?.label || VENDOR_LABELS[key] || key); }
 function thirdRetry(kind, attrs = '') { return `<button class="small ghost" data-third-retry="${kind}" data-retry-project="${esc(P.id)}" ${attrs}>改用三方渠道重试</button>`; }
 function operationKey(kind, id = '') { return `${P.id}:${kind}:${id}`; }
 function operationFailure(kind, error, id = '') { operationErrors.set(operationKey(kind,id), publicText(error.message || error)); }
@@ -347,7 +348,7 @@ function routeFor(step) {
 function routeName(route = {}) {
   const channel=route.channel || '', provider=STATUS?.providers?.[channel];
   if(provider?.model===route.model && provider?.label?.includes(' · '))return providerLabel(channel,provider);
-  const names={openai:'官方',official:'官方',jimmy:'三方渠道',third_party:'三方渠道'};
+  const names=VENDOR_LABELS;
   const label=providerLabel(channel,provider);
   const name=names[channel] || (provider?.model && label.endsWith(' · '+provider.model) ? label.slice(0,-(provider.model.length+3)) : label);
   const model=route.model==='gpt-5.6-sol' ? 'GPT-5.6 Sol' : publicText(route.model || '未配置');

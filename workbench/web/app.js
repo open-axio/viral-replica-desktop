@@ -2003,7 +2003,7 @@ function v5ConfirmationText(sid,state){
   }
   const rec=state.rec,note=String(rec.billing_note || '').split('；')[0].replace(/(\d+(?:\.\d+)?)\s*s\b/g,'$1 秒');
   const duration=rec.preview?.tasks?.[0]?.duration;
-  const vendor={ark:'火山方舟',bailian:'阿里云百炼',minimax:'MiniMax 海螺'}[rec.channel];
+  const vendor={ark:'火山方舟',bailian:'阿里云百炼',kling:'可灵',minimax:'MiniMax 海螺'}[rec.channel];
   return `${state.fixPlan?'按方案重新生成这一段':'生成这一段的视频'}${vendor?'（'+vendor+' · '+publicText(rec.model)+'）':''}：计费约 ${Number(rec.billing_seconds)} 秒${note?'（'+note+'）':Number.isFinite(Number(duration))?'（输出 '+Number(duration)+' 秒）':''}`;
 }
 function v5InlineAction(sid,state){
@@ -4933,7 +4933,7 @@ function changeModelPick(select) {
 }
 let settingsDraft = null;
 const settingsKeyDrafts = new Map(), settingsKeyEditors = new Set();
-function keyChannel(channel) {channel=channel.split(':')[0];return {official:'openai',third_party:'jimmy',ark:'doubao',bailian:'qwen'}[channel] || channel;}
+function keyChannel(channel) {channel=channel.split(':')[0];return {official:'openai',third_party:'jimmy',ark:'doubao',bailian:'qwen',kling:'qwen'}[channel] || channel;}
 const KEY_CHANNELS = () => [...SETTINGS_CHANNELS,'imgcompat','minimax'];
 function keyField(channel) {return channel.toUpperCase()+'_API_KEY';}
 function settingsKeyFilled(s,channel) {
@@ -4959,7 +4959,7 @@ function settingsOptions(s,kind) {
     return options;
   }
   if(kind==='video') {
-    const G={third_party:'三方渠道（ViralTok）',ark:'火山方舟（用豆包的 Key）',bailian:'阿里云百炼（用千问的 Key）',minimax:'MiniMax 海螺（单独的 Key）'};
+    const G={third_party:'三方渠道（ViralTok）',ark:'火山方舟（用豆包的 Key）',bailian:'阿里云百炼（用千问的 Key）',kling:'可灵（经阿里云百炼，用千问的 Key）',minimax:'MiniMax 海螺（单独的 Key）'};
     const options=[['third_party','三方渠道 · Seedance 2.0 mini（能直接照着原片动作拍）',G.third_party]];
     for(const [vendor,meta] of Object.entries(s._video_vendors || {}))
       for(const m of meta.models)options.push([`${vendor}:${m.id}`,`${meta.name.split(' ')[0]} · ${m.name}${m.note?'（'+m.note+'）':''}`,G[vendor]]);

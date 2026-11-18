@@ -86,6 +86,21 @@ class PlanTests(Base):
             routes.parse("minimax", "storyboard_image")
 
 
+class SegmentModeTests(Base):
+    def test_plan_switches_to_image_when_video_model_cannot_use_clip(self):
+        from console import segment_plan
+        config.save({"ROUTE_VIDEO": "ark:doubao-seedance-2-0-260128"})
+        plan = segment_plan.fit_video_model({"segments": [{"mode": "video", "duration": 8}, {"mode": "image", "duration": 5}]}, {})
+        self.assertEqual([r["mode"] for r in plan["segments"]], ["image", "image"])
+        self.assertIn("不能参考原片片段", plan["segments"][0]["mode_reason"])
+        config.save({"ROUTE_VIDEO": "bailian:wan2.7-r2v"})
+        plan = segment_plan.fit_video_model({"segments": [{"mode": "video", "duration": 8}, {"mode": "video", "duration": 12}]}, {})
+        self.assertEqual([r["mode"] for r in plan["segments"]], ["video", "image"])
+        config.save({"ROUTE_VIDEO": "third_party"})
+        plan = segment_plan.fit_video_model({"segments": [{"mode": "video", "duration": 12}]}, {})
+        self.assertEqual(plan["segments"][0]["mode"], "video")
+
+
 class GenerateTests(Base):
     def run_generate(self, channel, task, *replies, **info):
         job = self.tmp / "job.json"

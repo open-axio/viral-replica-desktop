@@ -340,6 +340,30 @@ def validate_plan(value, data, directory, *, assign_ids=False):
                 skip_cells=list(skip),questions=[_cn(q,numbers) for q in questions if isinstance(q,str)] if isinstance(questions,list) else [],segments=segments)
 
 
+def fit_video_model(plan, data):
+    """现在选的生视频模型用不了原片片段时，把 video 段改成 image，并说明原因（提示词会把动作写完整）。"""
+    try:
+        from .gateway import routes
+        from .gateway.adapters import video_vendors
+        route = routes.resolve('video', data)
+    except Exception:
+        return plan
+    channel = route.get('channel')
+    if not video_vendors.is_vendor(channel):
+        return plan
+    meta = video_vendors.VENDORS[channel]
+    for row in plan.get('segments') or []:
+        if row.get('mode') != 'video':
+            continue
+        if meta['reference_video'] and row.get('duration', 0) <= 10:
+            continue
+        why = (f'现在用的{meta["name"]}带原片片段最长只能出 10 秒，这段 {row.get("duration")} 秒' if meta['reference_video']
+               else f'现在用的{meta["name"]}不能参考原片片段')
+        row['mode'] = 'image'
+        row['mode_reason'] = why + '，改用目标画面和照片，动作写进提示词。'
+    return plan
+
+
 def messages(data, directory):
     board=data.get('storyboard') or {};pack=data.get('breakdown') or {};context=[]
     for i,c in enumerate(board.get('cells',[]),1):
@@ -416,6 +440,7 @@ def generate(pid):
                 plan = validate_plan(value, data, directory, assign_ids=True)
             except (ValueError, CheckedLLMError, JSONResponseError, OSError):
                 store.log(pid, '口播分界自动重写没完成，已保留首个可用分段方案，请留意分界提示。', 'warn')
+        fit_video_model(plan, data)
         for row in plan['segments']:
             row['mode_suggested']=row['mode']
         plan.update(inputs_sig=sig,generated_at=datetime.now().astimezone().isoformat())

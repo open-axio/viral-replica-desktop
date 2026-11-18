@@ -1,11 +1,11 @@
 {
   "format": 1,
   "runtime": 1,
-  "version": "20261118-1330",
+  "version": "20261118-1400",
   "files": {
     "LICENSE": "eb110e8e29566fd4de1da50097ff397b38df7ec36183e61249290a6b3164e6d1",
     "README.md": "fb00b1cb5dbf461447368aefb7f9b426a237d16d7e5f7298ac40a9da717f0877",
-    "VERSION": "6d70d3476c35d4aa2fd73f97338425c66e00574f657bca66d745e98d4ef9cfef",
+    "VERSION": "7c85bb2a206e0c1f3340a3cc3252891652c04a57600c87d9a2c5bbd03357b2e2",
     "console/align_models.py": "be4dd845b67a642da38b7d234b4134bbc53047094e6946a20db925a75018ae01",
     "console/asr.py": "062ccb7ca162bce9a017ce85156ffe51b357ed68eff9d0851158143c5d280983",
     "console/asr_models.py": "72ab7da54a32d676f63e839fce0235fbf326e9bc9fa5c26f48f1b29ffe90c8ab",
@@ -96,11 +96,11 @@
     "start.bat": "2e3620ab636b12fdca3daf31bea89e022e2f48c96a4d2f1a8803947dc162dff5",
     "start.command": "41d0e5923a3c010d26bc81faab7fc3bd6b7145872129ba1726be554f99154979",
     "updater.py": "a31c9d1b757ec991f8500027e14e081beb516e3da50285027f896cf8b0a30000",
-    "web/app.js": "bb42949be24f5407a05d1ddb2237200def3e8fbbe92bfc6543473c46c6460ae3",
-    "web/changelog.json": "bf6f37c7dbd60a455f6b9c93e025857aa2e39aed5bdb55b32333649a0c85e2f9",
-    "web/flow.js": "ec3fcbed90979984f6b10847ce8173bbe810a9d6411e24c2a1a76836b7acf669",
+    "web/app.js": "f6c0fb2cd602ba1effe95f9e210e9531f0bb8b87298277e4ec05b28e963ee918",
+    "web/changelog.json": "ee88f61e5967b500988673fed9feb06648a9131a132da3e09e3cffd2b04ba04c",
+    "web/flow.js": "f5ba5d2175790b26cde4323e0def271410b2fa6cb402a9b1342c3a6f0e5fb9be",
     "web/index.html": "1d3aabecac445b006a77cead5566f4aa25bb7d1c7fb4221e690c923fcd58aabb",
-    "web/style.css": "e712c0a1f2bf629ce37494f7a4fcd4ef8b3d5cb4a47fbab5a61b42412a4ab0ec",
+    "web/style.css": "3e2b7b8a8560b8ade6d3ef305b291df463c5fcc6955b5c14c0834a97a4c73b3d",
     "web/update.js": "b3257ef625c82a6168526c32c3f92ac2db3360df5d0a9fce07094e94198f3aba"
   }
 }

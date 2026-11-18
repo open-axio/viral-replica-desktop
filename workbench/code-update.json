@@ -1,11 +1,11 @@
 {
   "format": 1,
   "runtime": 1,
-  "version": "20261118-1100",
+  "version": "20261118-1130",
   "files": {
     "LICENSE": "eb110e8e29566fd4de1da50097ff397b38df7ec36183e61249290a6b3164e6d1",
     "README.md": "fb00b1cb5dbf461447368aefb7f9b426a237d16d7e5f7298ac40a9da717f0877",
-    "VERSION": "831f1e14792450a110c9d12457ea41a8fdbf7643d560c03cd20bce91eb782999",
+    "VERSION": "b45c287818b877505d80f0569a42dcec5f0459344db964fe16e50c4e2b03b66d",
     "console/align_models.py": "be4dd845b67a642da38b7d234b4134bbc53047094e6946a20db925a75018ae01",
     "console/asr.py": "062ccb7ca162bce9a017ce85156ffe51b357ed68eff9d0851158143c5d280983",
     "console/asr_models.py": "72ab7da54a32d676f63e839fce0235fbf326e9bc9fa5c26f48f1b29ffe90c8ab",
@@ -47,7 +47,7 @@
     "console/motion.py": "61b07aaf34af2c13ca428c825abdf50fc683a8a291b8aa0f03708d86a8ff51e9",
     "console/openai_image.py": "e4a55c68893c2546dc7a973da431e32a980875d7d4a9c334bfe899582e2d8b90",
     "console/paths.py": "b1d7488c54032445870c6415fb5bb36b748e6a4315b49af2df42447c9bdbe8ec",
-    "console/pipeline.py": "902f7a14519fa747750754632a54541484ca4ec971697077a6494e6d0a14ec50",
+    "console/pipeline.py": "ddc594d7254df61a0a071a6622235977dd29dac3ac374d038741dfea41bb618b",
     "console/prompts.py": "d7301b29c1739b976eac0b4a0ed94e07c081639c0c181f6a6fbf4055e8bf5e8f",
     "console/remote_query.py": "68cb40fc4d89118b38e89c2cfc4cda52d28c9daca118204dc8cf3913f3174df5",
     "console/replacement_guard.py": "b28f450a0a86ecd7113af8332880107ad6c2a14920dddc00b1e7ba5f8f2e85f9",
@@ -62,7 +62,7 @@
     "console/segment_timing.py": "6a2ea10c674a916e6802d8733a5beae36e964e6f7682beb8f91d1ac5776d55eb",
     "console/speech_lines.py": "719f0138d22d131b9cf4ddab60ab70c87e60e3e7bc386008cd574a8e48c6e672",
     "console/speech_timing.py": "804ddfd40bf380b77fdef820700591d458eca79eb6f8ae843abeb318be4bd00c",
-    "console/store.py": "c24ce93d08d25e132052b843e5de43003ed80289502194d50c05eea9c60640fd",
+    "console/store.py": "de464f88b8bab49239968082d83fff6e9881ce4897f3eaf986e6962f2abb8794",
     "console/storyboard.py": "cb178efde5fa17b5355661987bb04e141feb7f6c4775f3195765eca7814ef298",
     "console/storyboard_edits.py": "afa014cad97bc4721997fe93ca2ddb8e2863a617efe4ab01419ad4ce0891102a",
     "console/storyboard_images.py": "97f2ce12e215988f7e1f378682bc57b28ccb80b3c03dd19bd9f1b7d667480101",
@@ -96,11 +96,11 @@
     "start.bat": "2e3620ab636b12fdca3daf31bea89e022e2f48c96a4d2f1a8803947dc162dff5",
     "start.command": "41d0e5923a3c010d26bc81faab7fc3bd6b7145872129ba1726be554f99154979",
     "updater.py": "a31c9d1b757ec991f8500027e14e081beb516e3da50285027f896cf8b0a30000",
-    "web/app.js": "6c4d9b4a125ce3dec0d39952e1fe00ee7e45b13a9057a65e460ca633d0a14882",
-    "web/changelog.json": "82fea50919c29942233983596ee9afd8bca3a64ebb5de3ea46302a175b916cae",
+    "web/app.js": "2a1d34e355e806d1997bd2f1e3908beba1b6ea7a47053c4a8d4602cdb9f831ab",
+    "web/changelog.json": "ff765716e23431f1c5bca5f7ef2b6f8d5158d4aab569e60f8dd77817b7a3f56f",
     "web/flow.js": "d840d4e00003e17635122d5e62343495f38c05cc94d48a4c61efaea109c4dc90",
     "web/index.html": "1d3aabecac445b006a77cead5566f4aa25bb7d1c7fb4221e690c923fcd58aabb",
-    "web/style.css": "7deee0f95b5819689393ee189c5529555b2261181811efc091054eed33b839fc",
+    "web/style.css": "46e8dd55167a0622516a68aabdea3a126bcc5b3dc64ef51105b481a26087393c",
     "web/update.js": "b3257ef625c82a6168526c32c3f92ac2db3360df5d0a9fce07094e94198f3aba"
   }
 }

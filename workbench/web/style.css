@@ -1293,3 +1293,6 @@ button.paid:not(.ghost):not(.danger)::before { background: rgba(255,255,255,.8);
 .asset-empty { grid-column: 1 / -1; max-width: 620px; margin-bottom: 8px; padding: 12px 14px; border-radius: 10px; background: var(--chip); font-size: 14px; }
 .asset-empty ul { margin: 6px 0; padding-left: 20px; line-height: 1.8; color: var(--ink); }
 .asset-empty .hint { margin: 2px 0 0; }
+
+.asr-quick { margin-top: 8px; display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
+.asr-quick .asr-progress { width: 100%; }

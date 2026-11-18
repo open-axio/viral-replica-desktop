@@ -290,6 +290,8 @@ function imageEstimate(rec) {
 }
 function imageFee(rec) {
   const {channel}=imageRecordInfo(rec),estimate=imageEstimate(rec),label=imageModelAnnotation(rec);
+  const vendor={ark:['火山方舟','火山方舟'],bailian:['阿里云百炼','阿里云百炼'],imgcompat:['OpenAI 兼容接口','这个接口的']}[channel];
+  if(vendor){const model=imageRecordInfo(rec).model;return `${vendor[0]}${model?' · '+publicText(model):''}，按${vendor[1]}账户计费`;}
   return channel==='official'?`官方${label?' · '+label:''}，${estimate===null?'按 OpenAI 计费':'约 $'+(estimate/100).toFixed(2)}`:channel==='third_party'?'三方渠道，约 0.02 点':'生成预览后显示费用';
 }
 function imageBatchFee(records) {

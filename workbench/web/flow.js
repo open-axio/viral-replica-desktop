@@ -150,8 +150,28 @@ function freeStepItem([id, label]) {
   if (st === "running" && analyzeJobError()) st = "failed";
   const tone = { done: "done", running: "running", skipped: "skipped", failed: "failed" }[st] || "pending";
   const icon = st === "done" ? ICON_DONE_DOT : `<span class="dot ${tone}" aria-hidden="true"></span>`;
+  const quick = id === "transcribe" && st === "skipped" && /还没装/.test(P.analysis?.steps?.[id]?.note || "") ? asrQuickHtml() : "";
   return `<li class="free-step ${tone}"><div class="free-step-head"><span class="free-step-name">${icon}${label}</span><span class="tag-free">免费</span></div>
-    <p>${freeStepSummary(id)}</p></li>`;
+    <p>${freeStepSummary(id)}</p>${quick}</li>`;
+}
+// 台词因为没装识别模型被跳过：就地给一个「下载 → 重新拆解」的按钮，不用钻进设置
+let asrQuickLoading = false;
+function asrQuickHtml() {
+  if (!asrModels) {
+    if (!asrQuickLoading) { asrQuickLoading = true; setTimeout(loadAsrModels, 0); }
+    return '<div class="asr-quick" data-asr-quick><span class="hint">正在检查识别模型…</span></div>';
+  }
+  const running = asrModels.tiers.find((t) => t.state === "running");
+  if (running) {
+    const pct = Math.round((running.progress || 0) * 100);
+    return `<div class="asr-quick" data-asr-quick><span class="asr-progress"><span style="width:${pct}%"></span></span><small>正在下载「${esc(running.name)}」识别模型 ${pct}%，下完就能把台词补上</small></div>`;
+  }
+  if (asrModels.tiers.some((t) => t.installed)) {
+    return '<div class="asr-quick" data-asr-quick><button type="button" class="small" data-free-start>识别模型装好了，重新拆解把台词补上</button></div>';
+  }
+  const tier = asrModels.tiers.find((t) => t.id === "small") || asrModels.tiers[0];
+  const failed = asrModels.tiers.find((t) => t.error);
+  return `<div class="asr-quick" data-asr-quick>${failed ? `<p class="asr-error">上次没下完：${esc(failed.error)}</p>` : ""}<button type="button" class="small" data-asr="download" data-tier="${esc(tier.id)}">下载识别模型（${esc(tier.size)}，免费）</button></div>`;
 }
 function freeElapsed() {
   const a = P.analysis || {};
@@ -716,7 +736,9 @@ async function loadAsrModels() {
   clearTimeout(asrTimer);
   try { asrModels = await api("GET", "asr-models"); } catch (_) { asrModels = asrModels || null; }
   renderAsrModels();
-  if ($("#settingsDialog")?.open && asrModels?.tiers.some((t) => t.state === "running")) asrTimer = setTimeout(loadAsrModels, 2000);
+  const quick = !!document.querySelector("[data-asr-quick]");
+  if (quick && P) renderFlow();
+  if (($("#settingsDialog")?.open || quick) && asrModels?.tiers.some((t) => t.state === "running")) asrTimer = setTimeout(loadAsrModels, 2000);
 }
 
 // ---------- 设置：电脑体检 + 本机模型（Ollama 跑千问） ----------
@@ -843,6 +865,7 @@ document.addEventListener("click", async (e) => {
     try { asrModels = await api("POST", `asr-models/${asr.dataset.tier}/${asr.dataset.asr}`); }
     catch (err) { toast(err.message, true); }
     renderAsrModels();
+    if (document.querySelector("[data-asr-quick]") && P) renderFlow();
     if (asr.dataset.asr !== "cancel") loadAsrModels();
     return;
   }

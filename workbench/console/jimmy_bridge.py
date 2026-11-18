@@ -92,7 +92,7 @@ def max_image_references(channel: str, model: str | None = None) -> int:
     """Image edit limits are separate from video's four-reference limit."""
     from .gateway.adapters import image_vendors
     if image_vendors.is_vendor(channel):
-        return image_vendors.max_refs(channel)
+        return image_vendors.max_refs(channel, model)
     return IMAGE_REFERENCE_LIMITS.get(channel, 10)
 
 
@@ -1299,8 +1299,8 @@ def image_preview(pid: str, prompt: str, image_ids: list[str], ratio: str, model
         store.atomic_write_json(run_dir / "image-job.preview.json", preview_json)
         out = "官方生图：确认后按 OpenAI 计费"
     elif image_vendors.is_vendor(channel):
-        if len(refs) > image_vendors.max_refs(channel):
-            raise BridgeError(f"{image_vendors.VENDORS[channel]['name']}最多支持 {image_vendors.max_refs(channel)} 张参考图，"
+        if len(refs) > image_vendors.max_refs(channel, model):
+            raise BridgeError(f"{image_vendors.VENDORS[channel]['name']}的这个模型最多支持 {image_vendors.max_refs(channel, model)} 张参考图，"
                               f"这次有 {len(refs)} 张：少勾几张，或在设置里换一个生图模型")
         job["model"] = model or image_vendors.default_model(channel)
         job.pop("quality", None)

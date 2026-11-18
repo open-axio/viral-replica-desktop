@@ -283,9 +283,9 @@ const KEY_TABS = {
   },
   qwen: {
     name: "通义千问 · 阿里云百炼", badge: "国内直连", keyLabel: "阿里云百炼 API Key",
-    desc: "阿里云的大模型平台，国内网络直连。一个 Key 全包：千问读片子、千问图像编辑画分镜、万相生成视频（10 秒以内还能照着原片动作拍）；同一个 Key 也能用百炼里的 DeepSeek、可灵。",
+    desc: "阿里云的大模型平台，国内网络直连。一个 Key 全包：千问读片子、万相画分镜、万相生成视频（10 秒以内还能照着原片动作拍）；同一个 Key 也能用百炼里的 DeepSeek、可灵。",
     hint: "在阿里云百炼控制台「API Key」里创建；新账号每个模型都有免费额度。",
-    covers: [[true, "读片子、出复刻方案", "千问，按量计费"], [true, "画新分镜图", "千问图像编辑，按张计费"], [true, "生成分段视频", "万相 2.7，按秒计费"]],
+    covers: [[true, "读片子、出复刻方案", "千问，按量计费"], [true, "画新分镜图", "万相 2.7 图像，按张计费"], [true, "生成分段视频", "万相 2.7，按秒计费"]],
   },
   custom: {
     name: "我已经有 Key 了", badge: "", keyLabel: "API Key",
@@ -376,7 +376,7 @@ function keySettingsBody(st) {
   if (st.tab === "doubao") return [{ DOUBAO_API_KEY: key, DEFAULT_LLM: "doubao", ROUTE_ANALYSIS: "doubao", ROUTE_SCRIPT: "doubao",
     ...fill("ark:doubao-seedream-4-5-251128", "ark:doubao-seedance-2-0-260128") }, "doubao"];
   if (st.tab === "qwen") return [{ QWEN_API_KEY: key, DEFAULT_LLM: "qwen", ROUTE_ANALYSIS: "qwen", ROUTE_SCRIPT: "qwen",
-    ...fill("bailian:qwen-image-edit-plus", "bailian:wan2.7-r2v") }, "qwen"];
+    ...fill("bailian:wan2.7-image-pro", "bailian:wan2.7-r2v") }, "qwen"];
   if (st.kind === "zhipu") return [{ ZHIPU_API_KEY: key, ROUTE_ANALYSIS: "zhipu", ROUTE_SCRIPT: "zhipu" }, "zhipu"];
   if (st.kind === "kimi") return [{ KIMI_API_KEY: key, ROUTE_ANALYSIS: "kimi", ROUTE_SCRIPT: "kimi" }, "kimi"];
   if (st.kind === "openai") return [{ OPENAI_API_KEY: key, ROUTE_ANALYSIS: "openai", ROUTE_SCRIPT: "openai" }, "openai"];

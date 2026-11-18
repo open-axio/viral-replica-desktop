@@ -1256,3 +1256,14 @@ button.paid:not(.ghost):not(.danger)::before { background: rgba(255,255,255,.8);
 @keyframes upd-slide { 0% { transform: translateX(-100%); } 100% { transform: translateX(300%); } }
 #updatesBtn[data-has-update="1"]::before { content: ""; position: absolute; top: 6px; right: 6px; width: 7px; height: 7px; border-radius: 50%; background: #d9534f; box-shadow: 0 0 0 2px #fff; }
 #updatesBtn { position: relative; }
+/* ---- 设置：电脑体检 + 本机模型 ---- */
+.local-llm-box .hw-line { margin: 10px 0 6px; padding: 8px 12px; background: var(--chip); border-radius: 8px; font-size: 13px; }
+.hw-verdict { list-style: none; margin: 8px 0 14px; padding: 0; display: grid; gap: 6px; }
+.hw-verdict li { display: grid; grid-template-columns: 22px 96px 1fr; align-items: baseline; gap: 6px; font-size: 13px; }
+.hw-verdict small { color: var(--muted); }
+.local-step { padding: 12px 14px; border: 1px dashed var(--line); border-radius: 10px; }
+.local-step p { margin: 6px 0 10px; }
+.local-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.local-actions a.button { display: inline-flex; align-items: center; padding: 8px 14px; border-radius: 8px; background: var(--accent); color: #fff; text-decoration: none; font-weight: 600; }
+.local-scope { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 12px; font-size: 13px; }
+.hint.warn { color: var(--warn); }

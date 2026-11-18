@@ -420,6 +420,17 @@ class Handler(BaseHTTPRequestHandler):
         if len(parts) == 3 and parts[0] == "asr-models" and method == "POST" and parts[2] in ("download", "use", "cancel"):
             from console import asr_models
             return getattr(asr_models, parts[2])(parts[1])
+        if parts == ["local-llm"] and method == "GET":
+            from console import local_llm
+            return local_llm.status()
+        if len(parts) == 2 and parts[0] == "local-llm" and method == "POST" and parts[1] in ("pull", "cancel", "use"):
+            from console import local_llm
+            body = self._body_json()
+            if parts[1] == "pull":
+                return local_llm.pull(str(body.get("model") or ""))
+            if parts[1] == "use":
+                return local_llm.use(str(body.get("model") or ""), str(body.get("scope") or "text"))
+            return local_llm.cancel()
         if parts == ["settings", "local-models"] and method == "GET":
             from console import local_models
             return {"models": local_models.report(config.get('ASR_MODEL') or 'medium')}

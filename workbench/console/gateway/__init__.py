@@ -14,7 +14,7 @@ _depth = ContextVar('gateway_depth',default=0)
 def label(channel, model=None):
     names = {'openai':'官方','official':'官方','jimmy':'三方渠道','third_party':'三方渠道',
              'third-party':'三方渠道','deepseek':'三方渠道 · DeepSeek','doubao':'三方渠道 · 豆包','custom':'三方渠道 · 自定义',
-             'qwen':'通义千问','zhipu':'智谱','kimi':'Kimi'}
+             'qwen':'通义千问','zhipu':'智谱','kimi':'Kimi','ollama':'本机'}
     name = names.get(channel,user_message(channel))
     if model:
         display = 'GPT-5.6 Sol' if model == 'gpt-5.6-sol' else user_message(model)
@@ -29,7 +29,7 @@ def channels():
         prefix = 'JIMMY_LLM' if channel == 'jimmy' else channel.upper()
         model = values.get(prefix+'_MODEL','')
         result[channel] = {**meta,'label':label(channel,model),'model':model,
-            'ready':bool((config.jimmy_configured() if channel == 'jimmy' else values.get(channel.upper()+'_API_KEY')) and model and values.get(prefix+'_BASE_URL')),
+            'ready':bool(model) if channel == 'ollama' else bool((config.jimmy_configured() if channel == 'jimmy' else values.get(channel.upper()+'_API_KEY')) and model and values.get(prefix+'_BASE_URL')),
             'video_native':channel=='jimmy' and model.lower().startswith('gemini')}
     return result
 

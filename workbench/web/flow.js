@@ -704,6 +704,74 @@ async function loadAsrModels() {
   if ($("#settingsDialog")?.open && asrModels?.tiers.some((t) => t.state === "running")) asrTimer = setTimeout(loadAsrModels, 2000);
 }
 
+// ---------- 设置：电脑体检 + 本机模型（Ollama 跑千问） ----------
+let localLlm = null, localLlmTimer = null, localLlmBusy = false;
+function gb(n) { return n ? `${n} GB` : "—"; }
+function renderLocalLlm() {
+  const box = $("#localLlmBox");
+  if (!box) return;
+  if (!localLlm) { updateHtml(box, '<h3>本机模型（免费）</h3><p class="hint">正在检查这台电脑…</p>'); return; }
+  const { hardware: hw, recommend: rec, ollama: ol, pull } = localLlm;
+  const gpu = hw.gpu ? `${esc(hw.gpu.name)} · ${gb(hw.gpu.vram_gb)} 显存` : hw.apple_silicon ? "苹果芯片（显存和内存共用）" : "没有检测到 NVIDIA 显卡";
+  const recModel = localLlm.models.find((m) => m.id === rec.model);
+  const verdict = `<ul class="hw-verdict">
+      <li><span class="cover-mark ok">✓</span><span>识别台词</span><small>能跑（免费拆解就在用）</small></li>
+      <li><span class="cover-mark ${rec.model ? "ok" : ""}">${rec.model ? "✓" : "—"}</span><span>本机大模型</span><small>${esc(rec.speed)}${recModel ? `，推荐 ${esc(recModel.name)}` : ""}</small></li>
+      <li><span class="cover-mark">—</span><span>本机生成视频</span><small>${esc(rec.video)}</small></li></ul>`;
+  let step;
+  if (!ol.running) {
+    step = `<div class="local-step"><b>第 1 步：安装 Ollama</b><p class="hint">${ol.installed ? "Ollama 已经装了，但还没打开：打开它（Windows 右下角、Mac 菜单栏会出现它的图标），再点「重新检查」。" : "Ollama 是免费的本机模型运行软件，千问靠它在你电脑上跑。下载安装后打开它，再回来点「重新检查」。"}</p>
+      <div class="local-actions">${ol.installed ? "" : `<a class="button" href="${esc(localLlm.download_url)}" target="_blank" rel="noopener">去官网下载 Ollama</a>`}<button type="button" class="ghost" data-local-llm="refresh">重新检查</button></div></div>`;
+  } else {
+    const busy = pull?.state === "running";
+    const pct = pull?.total ? Math.round((pull.completed / pull.total) * 100) : 0;
+    step = `<div class="asr-tiers">${localLlm.models.map((m) => {
+      let action;
+      if (m.current) action = '<span class="asr-current">正在使用</span>';
+      else if (busy && pull.model === m.id) action = `<span class="asr-progress"><span style="width:${pct}%"></span></span><small>下载中 ${pct}%</small><button type="button" class="link-btn small" data-local-llm="cancel">取消</button>`;
+      else if (m.installed) action = `<button type="button" class="small" data-local-llm="use" data-model="${m.id}">用它</button>`;
+      else action = `<button type="button" class="small" data-local-llm="pull" data-model="${m.id}" ${busy ? "disabled" : ""}>下载</button>`;
+      return `<div class="asr-tier ${m.current ? "is-current" : ""}"><div class="asr-tier-head"><b>${esc(m.name)}</b>${m.id === rec.model ? '<span class="tag">推荐</span>' : ""}<span class="asr-size">${esc(m.size)}</span></div>
+        <p>${esc(m.desc)}</p><div class="asr-action">${action}</div></div>`;
+    }).join("")}</div>
+    ${pull?.state === "failed" ? `<p class="hint warn">下载没完成：${esc(pull.error || "")}。检查网络后再点一次下载，已下好的部分不会重下。</p>` : ""}
+    ${localLlm.current ? (() => {
+      const all = STATUS?.routes?.analysis?.channel === "ollama";
+      return `<div class="local-scope"><span>本机模型用在：</span>
+      <button type="button" class="small ${all ? "ghost" : ""}" data-local-llm="scope" data-scope="text" data-model="${esc(localLlm.current)}" aria-pressed="${!all}">只写脚本、改台词（推荐）</button>
+      <button type="button" class="small ${all ? "" : "ghost"}" data-local-llm="scope" data-scope="all" data-model="${esc(localLlm.current)}" aria-pressed="${all}">读片子也用它（更慢）</button></div>`;
+    })() : ""}`;
+  }
+  updateHtml(box, `<h3>本机模型（免费）</h3>
+    <p class="hint">在你自己的电脑上跑千问：不花钱，但比云端慢、效果也差一截，适合写脚本、改台词这类纯文字的活。</p>
+    <div class="hw-line">这台电脑：${gpu} ｜ 内存 ${gb(hw.ram_gb)}</div>${verdict}${step}`);
+}
+async function loadLocalLlm() {
+  clearTimeout(localLlmTimer);
+  try { localLlm = await api("GET", "local-llm"); } catch (_) { localLlm = localLlm || null; }
+  renderLocalLlm();
+  if ($("#settingsDialog")?.open && localLlm?.pull?.state === "running") localLlmTimer = setTimeout(loadLocalLlm, 1500);
+}
+document.addEventListener("click", async (e) => {
+  const b = e.target.closest("[data-local-llm]");
+  if (!b || localLlmBusy) return;
+  const act = b.dataset.localLlm;
+  localLlmBusy = true;
+  try {
+    if (act === "refresh") localLlm = await api("GET", "local-llm");
+    else if (act === "cancel") localLlm = await api("POST", "local-llm/cancel", {});
+    else if (act === "pull") localLlm = await api("POST", "local-llm/pull", { model: b.dataset.model });
+    else if (act === "use" || act === "scope") {
+      localLlm = await api("POST", "local-llm/use", { model: b.dataset.model, scope: b.dataset.scope || "text" });
+      toast(b.dataset.scope === "all" ? "读片子、写脚本都改用本机千问了" : "写脚本、改台词改用本机千问了，读片子还用原来的模型");
+      try { await refresh(true); } catch (_) { /* 设置弹窗里不强求刷新项目 */ }
+    }
+  } catch (err) { toast(err.message || String(err), true); }
+  finally { localLlmBusy = false; }
+  renderLocalLlm();
+  if (localLlm?.pull?.state === "running") { clearTimeout(localLlmTimer); localLlmTimer = setTimeout(loadLocalLlm, 1500); }
+});
+
 // ---------- 总入口 ----------
 function renderFlow() {
   document.body.classList.toggle("at-home", !P);
@@ -750,8 +818,8 @@ document.addEventListener("click", async (e) => {
   const recent = e.target.closest("[data-open-recent]");
   if (recent) { if (recent.dataset.openRecent !== P?.id) openProject(recent.dataset.openRecent); return; }
   if (e.target.closest("[data-flow-new]")) { newProject(); return; }
-  if (e.target.closest("[data-flow-settings]")) { openSettings(); loadAsrModels(); return; }
-  if (e.target.closest("#settingsBtn")) { loadAsrModels(); return; }
+  if (e.target.closest("[data-flow-settings]")) { openSettings(); loadAsrModels(); loadLocalLlm(); return; }
+  if (e.target.closest("#settingsBtn")) { loadAsrModels(); loadLocalLlm(); return; }
   const asr = e.target.closest("[data-asr]");
   if (asr) {
     e.preventDefault();

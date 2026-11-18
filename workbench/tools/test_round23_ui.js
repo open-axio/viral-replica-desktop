@@ -63,7 +63,7 @@ const tests = [
     for (let i = 0; i < 3; i++) await t.poll();
     assert.equal(t.run('finalWrites'), 0);
     t.project.usage.push(usage('10:01:00', 6607)); await t.poll();
-    assert.match(details.textContent, /官方 2 次 \/ 约 13040 个 token/);
+    assert.match(details.textContent, /官方 2 次 · 约 13040 个 token/);
     assert.equal(t.run('finalWrites'), 1);
     const summary = details.firstChild;
     for (let i = 0; i < 3; i++) await t.poll();
@@ -76,7 +76,7 @@ const tests = [
   ['usage updates even if automatic preview fails', async () => {
     const t = setup(); t.state.failPreview = true;
     await assert.rejects(t.run('draftSceneCamera("C1","S1")'), /mock preview failure/);
-    assert.match(t.$('[data-detail-key="project-usage"]').textContent, /官方 2 次 \/ 约 13040 个 token/);
+    assert.match(t.$('[data-detail-key="project-usage"]').textContent, /官方 2 次 · 约 13040 个 token/);
   }],
 ];
 (async () => {

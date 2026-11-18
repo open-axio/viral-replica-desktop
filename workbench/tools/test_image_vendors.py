@@ -84,6 +84,7 @@ class ImageVendorTests(Base):
         parts = body["input"]["messages"][0]["content"]
         self.assertEqual([list(p) for p in parts], [["image"], ["image"], ["text"]])
         self.assertEqual((body["model"], body["parameters"]["size"]), ("wan2.7-image-pro", "1080*1920"))
+        self.assertNotIn("prompt_extend", body["parameters"], "万相 2.7 图像没有这个参数")
         self.assertNotIn("Authorization", download.headers, "下载图片不能带上 Key")
         self.assertEqual(out.read_bytes(), PNG)
 

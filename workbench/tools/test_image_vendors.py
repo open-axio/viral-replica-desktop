@@ -120,7 +120,7 @@ class ImageVendorTests(Base):
         self.assertEqual(routes.parse("ark", "storyboard_image"), {"channel": "ark", "model": "doubao-seedream-4-5-251128"})
         self.assertEqual(routes.parse("bailian:qwen-image-2.0-pro", "camera_image")["model"], "qwen-image-2.0-pro")
         with self.assertRaises(ValueError):
-            routes.parse("bailian", "video")
+            routes.parse("imgcompat", "video")
         self.assertTrue(jimmy_bridge._direct_image("ark"))
         self.assertFalse(jimmy_bridge._direct_image("third_party"))
 

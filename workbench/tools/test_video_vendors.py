@@ -112,6 +112,14 @@ class GenerateTests(Base):
         self.assertEqual(Path(child["local_path"]).read_bytes(), MP4)
         self.assertTrue((run_dir / "job.json").is_file())
 
+    def test_dropped_reference_video_is_explained_in_prompt(self):
+        config.save({"DOUBAO_API_KEY": "ark-key"})
+        task = self.task(reference_videos=[self.files["clip.mp4"]])
+        self.run_generate("ark", task, {"id": "c"}, {"status": "succeeded", "content": {"video_url": "https://x.example/v.mp4"}}, MP4)
+        text = json.loads(self.sent[0].data)["content"][0]["text"]
+        self.assertTrue(text.startswith("（说明：这次没有提供参考视频"))
+        self.assertNotIn("video_url", json.dumps(json.loads(self.sent[0].data)["content"]))
+
     def test_bailian_uploads_to_temp_storage_then_submits(self):
         config.save({"QWEN_API_KEY": "bl-key"})
         policy = {"data": {"upload_host": "https://dashscope-file.example", "upload_dir": "dashscope-instant/abc",

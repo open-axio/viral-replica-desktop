@@ -107,7 +107,8 @@ def plan(channel: str, model: str | None, task: dict) -> dict:
         elif meta["reference_video"]:
             warnings.append(f"{meta['name']}带参考视频时最长只能出 10 秒，这段 {duration} 秒，所以这次不参考原片动作，只用参考图")
         else:
-            warnings.append(f"{meta['name']}不能直接用本机的原片片段做动作参考，这次只用参考图；想照着原片动作拍，请换三方渠道或阿里云百炼万相")
+            warnings.append(f"{meta['name']}不能直接用本机的原片片段做动作参考，这次只用参考图。建议把这一段的生成方式改成「只用目标画面和照片」，"
+                            "提示词会把动作写完整；想照着原片动作拍，请换三方渠道或阿里云百炼万相")
     if channel == "minimax" and len(images) > 1:
         warnings.append(f"海螺只用第一张参考图当开头画面，其余 {len(images) - 1} 张不会用到")
         used_images = 1
@@ -252,6 +253,9 @@ def build_request(channel: str, model: str, task: dict, s: dict, info: dict):
     """组装提交任务的请求（百炼会先上传参考素材到临时空间）。"""
     images = task.get("images") or []
     prompt = task["prompt"]
+    if task.get("reference_videos") and not info.get("use_video"):
+        # 提示词是按「有视频1」写的，这次视频没发过去：说清楚，别让模型去找不存在的视频
+        prompt = "（说明：这次没有提供参考视频，提到“视频1”的地方按文字描述的动作和机位来拍。）\n" + prompt
     duration = int(task["duration"])
     ratio = task.get("ratio") or "9:16"
     if channel == "ark":

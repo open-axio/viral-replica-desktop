@@ -5046,7 +5046,7 @@ function keyHelpHtml(channel) {
   const h=KEY_HELP[channel];if(!h)return '';
   return `<details class="key-help"><summary>还没有 Key？怎么拿（3 分钟左右）</summary><ol>${h.steps.map(t=>`<li>${esc(t)}</li>`).join('')}</ol>
     <p><a class="button small" href="${esc(h.url)}" target="_blank" rel="noopener">打开${esc(h.site)}</a>${h.open?` <a class="button small ghost" href="${esc(h.open)}" target="_blank" rel="noopener">去开通模型</a>`:''}</p>
-    <p class="hint">复制好 Key，回到这里粘贴，再点下面的「保存」。</p></details>`;
+    <p class="hint">复制好 Key，回到这里粘贴就行。</p></details>`;
 }
 function settingsKeyHtml(channel) {
   const filled=settingsKeyFilled(settingsDraft,channel),editing=settingsKeyEditors.has(channel),name=SETTINGS_KEY_NAMES[channel];

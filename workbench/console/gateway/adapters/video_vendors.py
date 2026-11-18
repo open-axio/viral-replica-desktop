@@ -16,6 +16,7 @@ import base64
 import json
 import mimetypes
 import re
+import threading
 import time
 import urllib.error
 import urllib.parse
@@ -24,6 +25,7 @@ import uuid
 from pathlib import Path
 
 from ... import config, llm, store
+from . import vendor_errors
 
 VENDORS = {
     "ark": {
@@ -59,6 +61,7 @@ VENDORS = {
     },
 }
 POLL_SECONDS = 10
+_CTX = threading.local()  # 当前在跑哪家、哪个模型：报错时说清楚该去哪里处理
 
 
 class VendorError(Exception):
@@ -163,6 +166,9 @@ def _request(req, *, timeout=120) -> dict:
         detail = exc.read().decode("utf-8", "replace")[:800]
         exc.close()
         kind = "auth" if exc.code in (401, 403) else "quota" if exc.code == 429 else "invalid_request" if 400 <= exc.code < 500 else "transient"
+        known = vendor_errors.explain(detail, getattr(_CTX, "account", "对方"), getattr(_CTX, "model", ""))
+        if known and kind != "transient":
+            raise VendorError(known[1], kind=known[0], technical=f"HTTP {exc.code} {detail}") from None
         raise VendorError(_hint(kind) + _brief(detail), kind=kind, technical=f"HTTP {exc.code} {detail}") from None
     except (urllib.error.URLError, TimeoutError, OSError) as exc:
         raise _Sent(f"{type(exc).__name__}: {exc}") from exc
@@ -291,6 +297,9 @@ def _task_id(channel: str, data: dict) -> str:
     else:
         base = data.get("base_resp") or {}
         if base.get("status_code") not in (0, None):
+            known = vendor_errors.explain(f"{base.get('status_code')} {base.get('status_msg')}", "MiniMax")
+            if known:
+                raise VendorError(known[1], kind=known[0], technical=json.dumps(data, ensure_ascii=False)[:600])
             raise VendorError(f"MiniMax：{base.get('status_msg') or '提交被拒绝'}",
                               kind="quota" if base.get("status_code") == 1008 else "auth" if base.get("status_code") in (1004, 2049) else "invalid_request",
                               technical=json.dumps(data, ensure_ascii=False)[:600])
@@ -379,6 +388,7 @@ def _err(exc: Exception) -> dict:
 
 def generate(channel: str, model: str, job_path: Path, run_dir: Path, tid: str, info: dict, *, timeout: int = 3600) -> dict:
     """确认后跑一次：准备素材 → 提交（只发一次）→ 查询 → 下载。"""
+    _CTX.account, _CTX.model = VENDORS[channel]["account"], model
     job = json.loads(job_path.read_text(encoding="utf-8"))
     task = next(t for t in job["tasks"] if t["id"] == tid)
     run_dir.mkdir(parents=True, exist_ok=True)
@@ -407,6 +417,7 @@ def generate(channel: str, model: str, job_path: Path, run_dir: Path, tid: str, 
 
 def poll(channel: str, run_dir: Path, tid: str, *, timeout: int = 3600) -> dict:
     child = _child(run_dir, tid)
+    _CTX.account, _CTX.model = VENDORS[channel]["account"], child.get("model") or ""
     remote = child.get("jimmy_task_id")
     if not remote:
         raise VendorError("这次生成还没有远端任务 ID，不能查询")
@@ -432,8 +443,9 @@ def poll(channel: str, run_dir: Path, tid: str, *, timeout: int = 3600) -> dict:
                               error={"type": "DownloadError", "message": f"query/download failed: {exc}"})
             return _write(run_dir, tid, phase="completed", status="succeeded", local_path=str(out.resolve()), error=None)
         if result["status"] == "failed":
+            known = vendor_errors.explain(str(result.get("message") or ""), VENDORS[channel]["account"], child.get("model") or "")
             return _write(run_dir, tid, phase="failed", status="failed",
-                          error={"type": "VendorError", "message": f"{VENDORS[channel]['name']}：{result.get('message')}"})
+                          error={"type": "VendorError", "message": known[1] if known else f"{VENDORS[channel]['name']}：{result.get('message')}"})
         _write(run_dir, tid, phase="running", status=result.get("raw") or "running", error=None)
         if time.time() >= deadline:
             return _child(run_dir, tid)

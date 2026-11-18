@@ -20,6 +20,7 @@ from pathlib import Path
 
 from ... import config, llm, store
 from ..errors import ImageError
+from . import vendor_errors
 
 VENDORS = {
     "ark": {
@@ -120,6 +121,9 @@ def _send(req, channel: str, model: str) -> dict:
         detail = exc.read().decode("utf-8", "replace")[:600]
         exc.close()
         kind = "auth" if exc.code in (401, 403) else "quota" if exc.code == 429 else "invalid_request" if exc.code == 400 else "transient"
+        known = vendor_errors.explain(detail, VENDORS[channel]["account"], model)
+        if known:
+            raise ImageError(known[1], kind=known[0], channel=channel, model=model, technical=detail) from None
         hint = {"auth": "Key 不对或没开通这个模型", "quota": "额度不够或请求太频繁", "invalid_request": "请求被拒绝（可能是参考图或提示词没通过审核）"}.get(kind, "服务暂时出错")
         raise ImageError(f"{name}：{hint}。{_brief(detail)}", kind=kind, channel=channel, model=model, technical=detail) from None
     except (urllib.error.URLError, TimeoutError, OSError, ValueError) as exc:
@@ -169,7 +173,9 @@ def generate(channel: str, preview: dict, output: Path, *, before_send=None) -> 
                 "parameters": {"n": 1, "size": size, "watermark": False, "prompt_extend": False}}
         data = _post_json(s["base"] + "/services/aigc/multimodal-generation/generation", body, s["key"], channel, model)
         if data.get("code") and not data.get("output"):
-            raise ImageError(f"阿里云百炼：{data.get('message') or data.get('code')}", kind="invalid_request", channel=channel, model=model,
+            known = vendor_errors.explain(f"{data.get('code')} {data.get('message')}", "阿里云百炼", model)
+            raise ImageError(known[1] if known else f"阿里云百炼：{data.get('message') or data.get('code')}",
+                             kind=known[0] if known else "invalid_request", channel=channel, model=model,
                              technical=json.dumps(data, ensure_ascii=False)[:600])
         try:
             parts = data["output"]["choices"][0]["message"]["content"]

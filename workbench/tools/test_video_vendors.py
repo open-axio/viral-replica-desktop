@@ -172,6 +172,21 @@ class GenerateTests(Base):
         self.assertIn("没通过审核", child["error"]["message"])
         self.assertFalse(jimmy_bridge._upload_retryable(child))
 
+    def test_model_not_open_says_where_to_activate(self):
+        config.save({"DOUBAO_API_KEY": "ark-key"})
+        body = b'{"error":{"code":"ModelNotOpen","message":"Your account 1 has not activated the model doubao-seedance-2-0-260128."}}'
+        err = urllib.error.HTTPError("u", 404, "Not Found", {}, io.BytesIO(body))
+        child, _ = self.run_generate("ark", self.task(), err)
+        self.assertIn("还没开通「doubao-seedance-2-0-260128」", child["error"]["message"])
+        self.assertIn("开通管理", child["error"]["message"])
+        self.assertEqual(child["error"]["kind"], "auth")
+
+    def test_remote_moderation_failure_is_explained(self):
+        config.save({"DOUBAO_API_KEY": "ark-key"})
+        child, _ = self.run_generate("ark", self.task(), {"id": "cgt-2"},
+                                     {"status": "failed", "error": {"code": "InputImageSensitiveContentDetected", "message": "InputImageSensitiveContentDetected"}})
+        self.assertIn("内容审核", child["error"]["message"])
+
     def test_rate_limit_before_task_creation_is_safely_retryable(self):
         config.save({"DOUBAO_API_KEY": "ark-key"})
         err = urllib.error.HTTPError("u", 429, "Too many", {}, io.BytesIO(b"{}"))

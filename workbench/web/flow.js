@@ -398,7 +398,7 @@ async function saveKeyAndStart() {
     await api("POST", "settings", body);
     const test = await api("POST", "settings/test-connection", { channel });
     if (test.status !== "可用") {
-      const why = { "key 无效": "这个 Key 用不了，检查一下有没有复制完整", "额度不足": "Key 是对的，但账户余额不够了，充值后再试" }[test.status] || "连不上这个渠道，检查一下网络或接口地址";
+      const why = test.detail || { "key 无效": "这个 Key 用不了，检查一下有没有复制完整", "额度不足": "Key 是对的，但账户余额不够了，充值后再试" }[test.status] || "连不上这个渠道，检查一下网络或接口地址";
       throw new Error(why + "。Key 已经保存，改好后再点一次就行。");
     }
     STATUS = await api("GET", "status");

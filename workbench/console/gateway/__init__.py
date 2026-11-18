@@ -174,4 +174,9 @@ def test_connection(channel):
     except (GatewayError,ValueError) as exc:
         kind = getattr(exc,'kind',None) or classify(0,str(exc))
         status = {'auth':'key 无效','quota':'额度不足'}.get(kind,'网络失败')
+        message = getattr(exc,'message','') or ''
+        if '还没开通' in message:  # Key 是对的，只是模型没开通：别让人以为 Key 填错了
+            return {'status':'模型没开通','error_kind':kind,'detail':message,'elapsed_ms':round((time.monotonic()-started)*1000)}
+        if '欠费' in message or '余额不够' in message:
+            return {'status':'额度不足','error_kind':kind,'detail':message,'elapsed_ms':round((time.monotonic()-started)*1000)}
     return {'status':status,'error_kind':kind,'elapsed_ms':round((time.monotonic()-started)*1000)}

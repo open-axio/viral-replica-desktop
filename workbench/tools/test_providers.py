@@ -20,6 +20,19 @@ class ProviderTests(unittest.TestCase):
         tmp = Path(tempfile.mkdtemp())
         self.enterContext(patch.object(config, "ENV_FILE", tmp / "providers-test.env"))  # 离线测试禁止写名叫 console.env 的文件
 
+    def test_connection_says_model_not_activated_instead_of_bad_key(self):
+        import io
+        import urllib.error
+        config.save({"DOUBAO_API_KEY": "ark-key"})
+        body = b'{"error":{"code":"ModelNotOpen","message":"Your account 1 has not activated the model doubao-seed-2-0-pro-260215."}}'
+
+        def boom(*a, **k):
+            raise urllib.error.HTTPError("u", 404, "Not Found", {}, io.BytesIO(body))
+        with patch("urllib.request.urlopen", side_effect=boom), patch("time.sleep"):
+            result = gateway.test_connection("doubao")
+        self.assertEqual(result["status"], "模型没开通")
+        self.assertIn("开通管理", result["detail"])
+
     def test_new_providers_have_defaults_and_secret_keys(self):
         for name, base in (("qwen", "dashscope.aliyuncs.com"), ("zhipu", "open.bigmodel.cn"), ("kimi", "api.moonshot.cn"),
                            ("deepseek", "api.deepseek.com")):

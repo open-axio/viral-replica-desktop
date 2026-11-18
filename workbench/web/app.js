@@ -5042,7 +5042,7 @@ function settingsRoutes(s) {
 function connectionButton(channel) {if(['imgcompat','minimax'].includes(channel))return '';return `<p><button type="button" class="small ghost" data-test-channel="${channel}">测试连接</button> <span class="hint">会产生极少量费用（使用已保存的配置）</span> <span data-connection-result="${channel}" role="status"></span></p>`;}
 async function testChannel(channel,button) {
   const result=$(`[data-connection-result="${channel}"]`);button.disabled=true;result.textContent='测试中…';
-  try {const r=await api('POST','settings/test-connection',{channel});result.textContent=`${r.status || '网络失败'} · ${r.elapsed_ms ?? 0} ms`;}
+  try {const r=await api('POST','settings/test-connection',{channel});result.textContent=r.detail?`${r.status}：${r.detail}`:`${r.status || '网络失败'} · ${r.elapsed_ms ?? 0} ms`;}
   catch(error){result.textContent=publicText(error.message);}
   finally {button.disabled=false;}
 }

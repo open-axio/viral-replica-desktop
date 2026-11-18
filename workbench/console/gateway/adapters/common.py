@@ -2,6 +2,7 @@
 from __future__ import annotations
 import http.client
 import json
+import re
 import time
 import urllib.error
 import urllib.request
@@ -56,6 +57,13 @@ def post(url: str, body: dict, api_key: str, timeout: float, provider: str) -> d
             if "参数格式错误" in detail and classify(exc.code, detail) != 'too_large':
                 raise LLMError(f"{provider} 返回 HTTP {exc.code}: 参数格式错误{diagnostics}", kind="invalid_request", channel=provider, model=body.get("model", ""), error_detail=diagnostic_detail(status=exc.code, detail=detail, image_count=image_count, request_bytes=len(payload))) from None
             if attempt == len(delays) or not retryable(exc.code, detail):
+                # 模型没开通、欠费：直接告诉他去哪里点，别甩一串英文
+                if re.search(r"ModelNotOpen|has not activated|AccessDenied\.Unpurchased|Arrearage", detail):
+                    from . import vendor_errors
+                    account = {"doubao": "火山方舟", "qwen": "阿里云百炼"}.get(provider, provider)
+                    known = vendor_errors.explain(detail, account, body.get("model", ""))
+                    if known:
+                        raise LLMError(known[1], kind=known[0], channel=provider, model=body.get("model", ""), error_detail=diagnostic_detail(status=exc.code, detail=detail, image_count=image_count, request_bytes=len(payload))) from None
                 raise LLMError(f"{provider} 返回 HTTP {exc.code}: {detail[:500]}", kind=classify(exc.code, detail), channel=provider, model=body.get("model", ""), error_detail=diagnostic_detail(status=exc.code, detail=detail, image_count=image_count, request_bytes=len(payload))) from None
         except (urllib.error.URLError, OSError, http.client.HTTPException) as exc:
             if attempt == len(delays):

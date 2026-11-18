@@ -174,7 +174,9 @@ def generate(channel: str, preview: dict, output: Path, *, before_send=None) -> 
     elif channel == "bailian":
         content_parts = [{"image": _data_uri(r)} for r in refs] + [{"text": preview["prompt"]}]
         body = {"model": model, "input": {"messages": [{"role": "user", "content": content_parts}]},
-                "parameters": {"n": 1, "size": size, "watermark": False, "prompt_extend": False}}
+                "parameters": {"n": 1, "size": size, "watermark": False,
+                               # 千问图像默认会改写提示词，关掉以免改掉人物和商品；万相 2.7 没有这个参数
+                               **({"prompt_extend": False} if model.startswith("qwen-image") else {})}}
         data = _post_json(s["base"] + "/services/aigc/multimodal-generation/generation", body, s["key"], channel, model)
         if data.get("code") and not data.get("output"):
             known = vendor_errors.explain(f"{data.get('code')} {data.get('message')}", "阿里云百炼", model)

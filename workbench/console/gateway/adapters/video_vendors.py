@@ -208,9 +208,9 @@ def _file(item: dict) -> Path:
 
 def _data_uri(item: dict, kind: str = "image") -> str:
     path = _file(item)
-    mime = mimetypes.guess_type(path.name)[0] or ("image/png" if kind == "image" else "audio/mpeg")
-    if kind == "audio" and path.suffix.lower() == ".mp3":
-        mime = "audio/mp3"
+    mime = mimetypes.guess_type(path.name)[0] or "image/png"
+    if kind == "audio":  # 火山方舟要求 data:audio/<小写格式>，比如 audio/mp3、audio/wav
+        mime = "audio/" + (path.suffix.lower().lstrip(".") or "mp3")
     return f"data:{mime};base64," + base64.b64encode(path.read_bytes()).decode("ascii")
 
 

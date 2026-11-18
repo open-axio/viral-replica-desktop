@@ -622,13 +622,25 @@ async function boot() {
 }
 function renderStatus() {
   const s = STATUS;
-  const pills = [
-    [s.ffmpeg, "FFmpeg"], [s.asr, s.asr ? (s.asr_engines || []).join(" + ") : "未装转录模型"], [s.jimmy, s.jimmy ? "三方渠道 Key" : "未填三方渠道 Key"],
-    ...Object.entries(s.providers).map(([k, v]) => [v.ready, providerLabel(k,v).split("（")[0]]),
-  ];
   const rt = s.runtime || {};
-  pills.push([rt.running_in_venv, rt.running_in_venv ? `依赖在工作台内 · ${rt.runtime_mb} MB` : "未用工作台环境（先运行 install.sh）"]);
-  updateHtml($("#statusPills"), pills.map(([ok, l]) => `<span class="pill ${ok ? "ok" : "bad"}">${esc(l)}</span>`).join(""));
+  // 这台电脑：免费拆解要用的几样东西
+  const local = [
+    [s.ffmpeg, s.ffmpeg ? "视频处理工具" : "视频处理工具没装好", false],
+    [s.asr, s.asr ? "台词识别模型" : "还没装台词识别模型"],
+    [rt.running_in_venv, rt.running_in_venv ? "运行环境" : "运行环境没装好", false],
+  ];
+  // 正在用的模型：只列四步实际在用的那一家，没填 Key 的标出来；没用到的厂商不显示，免得一片红
+  const used = [["analysis", "读片子"], ["script", "写脚本"], ["storyboard_image", "生图"], ["video", "生视频"]].map(([step, name]) => {
+    const r = (typeof routeFor === "function" ? routeFor(step) : null) || s.routes?.[step] || {};
+    const ready = typeof stepKeyReady === "function" ? stepKeyReady(step) : !!s.providers?.[r.channel]?.ready;
+    const who = s.providers?.[r.channel] ? providerLabel(r.channel, s.providers[r.channel]).split("（")[0]
+      : ({ official: "OpenAI 官方", third_party: "三方渠道", ark: "火山方舟", bailian: "阿里云百炼", kling: "可灵", minimax: "MiniMax 海螺", imgcompat: "兼容接口" }[r.channel] || r.channel || "未设置");
+    return [ready, `${name} · ${who}${ready ? "" : "（未填 Key）"}`];
+  });
+  // 红的点一下就去设置里补上（运行环境没装好要重新走安装向导，设置里帮不上，就不做成按钮）
+  const pill = ([ok, l, fixable = true]) => ok || !fixable ? `<span class="pill ${ok ? "ok" : "bad"}">${esc(l)}</span>`
+    : `<button type="button" class="pill bad" data-flow-settings title="去设置里补上">${esc(l)} ›</button>`;
+  updateHtml($("#statusPills"), `<span class="pill-group">这台电脑</span>${local.map(pill).join("")}<span class="pill-group">正在用的模型</span>${used.map(pill).join("")}`);
   // 本机必需的东西（FFmpeg、转录模型、运行环境）缺了才在按钮上亮红点；没填 Key 不算问题，免费拆解用不到
   const broken = !s.ffmpeg || !s.asr || !rt.running_in_venv;
   const t = $("#statusToggle");

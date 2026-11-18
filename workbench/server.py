@@ -414,6 +414,10 @@ class Handler(BaseHTTPRequestHandler):
                     "openai_image_model": config.get('OPENAI_IMAGE_MODEL') or 'gpt-image-2'}
         if parts == ["settings", "test-connection"] and method == "POST":
             return gateway.test_connection(self._body_json().get('channel'))
+        if parts == ["diagnostics"] and method == "GET":
+            from console import diagnostics
+            pid = query.get("project") or None
+            return diagnostics.build(pid if pid and store.SAFE_ID.fullmatch(pid) else None)
         if parts == ["asr-models"] and method == "GET":
             from console import asr_models
             return asr_models.status()

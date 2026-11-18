@@ -350,6 +350,7 @@ def _apply_video_channel(record: dict, job: dict, channel: str | None, model: st
     except vendors.VendorError as exc:
         raise BridgeError(exc.message) from None
     record.update(channel=channel, package_model=record.get("model"), model=info["model"], vendor=info,
+                  model_label=vendors.model_name(channel, info["model"]),
                   billing_seconds=info["output_seconds"], billing_note=info["billing_note"],
                   warnings=list(record.get("warnings") or []) + info["warnings"])
     return record

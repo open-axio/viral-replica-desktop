@@ -81,7 +81,10 @@ def default_model(channel: str) -> str:
 def model_name(channel: str, model: str) -> str:
     meta = VENDORS[channel]
     found = next((m["name"] for m in meta["models"] if m["id"] == model), model)
-    return f"{meta['name'].split(' ')[0]} · {found}"
+    short = meta["name"].split(" ")[0]
+    if found.startswith(short.split("（")[0]):  # 「可灵 3.0 Omni」本身就带厂商名
+        return found
+    return f"{short} · {found}"
 
 
 def key_ready(channel: str) -> bool:

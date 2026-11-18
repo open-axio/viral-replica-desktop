@@ -2019,7 +2019,7 @@ function v5ConfirmationText(sid,state){
   const rec=state.rec,note=String(rec.billing_note || '').split('；')[0].replace(/(\d+(?:\.\d+)?)\s*s\b/g,'$1 秒');
   const duration=rec.preview?.tasks?.[0]?.duration;
   const vendor={ark:'火山方舟',bailian:'阿里云百炼',kling:'可灵',minimax:'MiniMax 海螺'}[rec.channel];
-  return `${state.fixPlan?'按方案重新生成这一段':'生成这一段的视频'}${vendor?'（'+vendor+' · '+publicText(rec.model)+'）':''}：计费约 ${Number(rec.billing_seconds)} 秒${note?'（'+note+'）':Number.isFinite(Number(duration))?'（输出 '+Number(duration)+' 秒）':''}`;
+  return `${state.fixPlan?'按方案重新生成这一段':'生成这一段的视频'}${vendor?'（'+(rec.model_label || vendor+' · '+publicText(rec.model))+'）':''}：计费约 ${Number(rec.billing_seconds)} 秒${note?'（'+note+'）':Number.isFinite(Number(duration))?'（输出 '+Number(duration)+' 秒）':''}`;
 }
 function v5InlineAction(sid,state){
   if(!state)return '';

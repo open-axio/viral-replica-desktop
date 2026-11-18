@@ -1296,3 +1296,13 @@ button.paid:not(.ghost):not(.danger)::before { background: rgba(255,255,255,.8);
 
 .asr-quick { margin-top: 8px; display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
 .asr-quick .asr-progress { width: 100%; }
+
+.diag-link { display: inline-flex; padding: 6px 12px; border: 1px solid var(--line); border-radius: 8px; color: var(--ink); text-decoration: none; font-size: 13px; background: var(--panel); }
+.diag-link:hover { border-color: var(--accent); }
+.diag-hint { margin: 6px 0 4px; font-size: 12px; max-width: 260px; }
+
+#statusPills .pill-group { flex-basis: 100%; margin: 6px 0 0; font-size: 11.5px; color: var(--muted); }
+#statusPills .pill-group:first-child { margin-top: 0; }
+
+button.pill.bad { border: 0; cursor: pointer; font: inherit; font-size: 12px; padding: 2px 8px; border-radius: 99px; }
+button.pill.bad:hover { filter: brightness(0.96); }

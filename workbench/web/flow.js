@@ -859,7 +859,13 @@ document.addEventListener("click", async (e) => {
   if (e.target.closest("[data-flow-new]")) { newProject(); return; }
   const diag = e.target.closest("#diagLink");
   if (diag) { diag.href = "/api/diagnostics" + (P?.id ? "?project=" + encodeURIComponent(P.id) : ""); return; }
-  if (e.target.closest("[data-flow-settings]")) { openSettings(); loadAsrModels(); loadLocalLlm(); return; }
+  const flowSettings = e.target.closest("[data-flow-settings]");
+  if (flowSettings) {
+    Promise.resolve(openSettings()).then(() => {
+      if (flowSettings.hasAttribute("data-open-local") && $("#settingsLocal")) { $("#settingsLocal").open = true; $("#asrModelsBox")?.scrollIntoView({ block: "start" }); }
+    });
+    loadAsrModels(); loadLocalLlm(); return;
+  }
   if (e.target.closest("#settingsBtn")) { loadAsrModels(); loadLocalLlm(); return; }
   const asr = e.target.closest("[data-asr]");
   if (asr) {

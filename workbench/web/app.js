@@ -626,7 +626,7 @@ function renderStatus() {
   // 这台电脑：免费拆解要用的几样东西
   const local = [
     [s.ffmpeg, s.ffmpeg ? "视频处理工具" : "视频处理工具没装好", false],
-    [s.asr, s.asr ? "台词识别模型" : "还没装台词识别模型"],
+    [s.asr, s.asr ? "台词识别模型" : "还没装台词识别模型", true, "local"],
     [rt.running_in_venv, rt.running_in_venv ? "运行环境" : "运行环境没装好", false],
   ];
   // 正在用的模型：只列四步实际在用的那一家，没填 Key 的标出来；没用到的厂商不显示，免得一片红
@@ -638,8 +638,8 @@ function renderStatus() {
     return [ready, `${name} · ${who}${ready ? "" : "（未填 Key）"}`];
   });
   // 红的点一下就去设置里补上（运行环境没装好要重新走安装向导，设置里帮不上，就不做成按钮）
-  const pill = ([ok, l, fixable = true]) => ok || !fixable ? `<span class="pill ${ok ? "ok" : "bad"}">${esc(l)}</span>`
-    : `<button type="button" class="pill bad" data-flow-settings title="去设置里补上">${esc(l)} ›</button>`;
+  const pill = ([ok, l, fixable = true, where = ""]) => ok || !fixable ? `<span class="pill ${ok ? "ok" : "bad"}">${esc(l)}</span>`
+    : `<button type="button" class="pill bad" data-flow-settings ${where ? `data-open-${where}` : ""} title="去设置里补上">${esc(l)} ›</button>`;
   updateHtml($("#statusPills"), `<span class="pill-group">这台电脑</span>${local.map(pill).join("")}<span class="pill-group">正在用的模型</span>${used.map(pill).join("")}`);
   // 本机必需的东西（FFmpeg、转录模型、运行环境）缺了才在按钮上亮红点；没填 Key 不算问题，免费拆解用不到
   const broken = !s.ffmpeg || !s.asr || !rt.running_in_venv;
@@ -5162,10 +5162,10 @@ async function openSettings() {
       <h3>本地拆解</h3>${f('ASR_COMPUTE_TYPE','计算精度')}${f('ASR_LANGUAGE','语言（留空 = 自动识别（推荐））')}
       ${f('ASR_ENGINE','转录引擎（auto / whisperx / faster-whisper）')}${f('HF_ENDPOINT','模型下载镜像（国内可填 https://hf-mirror.com）')}${f('MAX_PASSAGES','最多细读段落数')}${f('LLM_PARALLEL','细读并发数')}
       ${f('DEEP_FORENSICS','深度取证 · 认拍摄方式（auto = 时长在上限内才做 / on / off）')}${f('DEEP_FORENSICS_MAX_SECONDS','深度取证 auto 时长上限（秒）')}
-    </details>
     <div class="settings-utilities"><button type="button" class="ghost" data-installation-toggle aria-controls="installationInfo" aria-expanded="false">查看安装位置</button>
     <div id="installationInfo" hidden><p class="hint">删除整个工作台文件夹即可完全卸载</p><p class="hint mono">工作台：${esc(rt.root)}<br>配置与 Key：${esc(rt.config)}<br>依赖：${esc(rt.runtime)}（${esc(rt.runtime_mb)} MB${rt.models?.length ? '，模型：'+esc(rt.models.join('、')) : '，还没有下载模型'}）<br>项目：${esc(rt.projects)}<br>FFmpeg：${esc(rt.ffmpeg || '未找到')}${rt.ffmpeg && !rt.ffmpeg_local ? '（系统级，卸载工作台时不会一起删除）' : ''}</p></div>
-    <button type="button" class="ghost" data-local-models aria-controls="localModelsInfo" aria-expanded="false">检查本地模型</button><div id="localModelsInfo" role="status" hidden></div></div>`;
+    <button type="button" class="ghost" data-local-models aria-controls="localModelsInfo" aria-expanded="false">检查本地模型</button><div id="localModelsInfo" role="status" hidden></div></div>
+    </details>`;
   renderSettingsKeys();$('#settingsDialog').showModal();
 }
 async function saveSettings(e) {

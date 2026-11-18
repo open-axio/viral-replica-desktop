@@ -5032,10 +5032,26 @@ async function testChannel(channel,button) {
   catch(error){result.textContent=publicText(error.message);}
   finally {button.disabled=false;}
 }
+// 「还没有 Key？」：每家去哪拿、要点几步。都是这家官方控制台的页面，用系统浏览器打开
+const KEY_HELP = {
+  doubao:{url:'https://console.volcengine.com/ark/region:ark+cn-beijing/apiKey',site:'火山方舟控制台',steps:['用手机号注册并登录火山引擎，按提示完成实名认证','在「API Key 管理」点「创建 API Key」，点小眼睛复制','在左侧「开通管理」里开通要用的模型（豆包、Seedream、Seedance），新账号一般有免费额度'],open:'https://console.volcengine.com/ark/region:ark+cn-beijing/openManagement'},
+  qwen:{url:'https://bailian.console.aliyun.com/',site:'阿里云百炼控制台',steps:['用支付宝或阿里云账号登录，同意协议即开通百炼（需实名）','右上角头像旁的设置里找到「API Key」，点「创建 API Key」并复制','地域选华北2（北京）；新账号每个模型都有免费额度']},
+  minimax:{url:'https://platform.minimaxi.com/user-center/basic-information/interface-key',site:'MiniMax 开放平台',steps:['注册并登录 MiniMax 开放平台，完成实名认证','在「账户管理 → 接口密钥」创建一个 Key 并复制（只显示一次）','账户里需要有余额才能生成视频']},
+  deepseek:{url:'https://platform.deepseek.com/api_keys',site:'DeepSeek 开放平台',steps:['手机号登录 DeepSeek 开放平台','在「API keys」创建并复制','先充值少量余额']},
+  kimi:{url:'https://platform.moonshot.cn/console/api-keys',site:'Kimi 开放平台',steps:['手机号登录 Kimi 开放平台','在「API Key 管理」新建并复制']},
+  zhipu:{url:'https://bigmodel.cn/usercenter/proj-mgmt/apikeys',site:'智谱开放平台',steps:['手机号登录智谱开放平台','在「API Keys」添加并复制']},
+  openai:{url:'https://platform.openai.com/api-keys',site:'OpenAI 平台',steps:['登录 OpenAI 平台（需要能访问海外网站）','在「API keys」创建并复制，账户需要先充值']},
+};
+function keyHelpHtml(channel) {
+  const h=KEY_HELP[channel];if(!h)return '';
+  return `<details class="key-help"><summary>还没有 Key？怎么拿（3 分钟左右）</summary><ol>${h.steps.map(t=>`<li>${esc(t)}</li>`).join('')}</ol>
+    <p><a class="button small" href="${esc(h.url)}" target="_blank" rel="noopener">打开${esc(h.site)}</a>${h.open?` <a class="button small ghost" href="${esc(h.open)}" target="_blank" rel="noopener">去开通模型</a>`:''}</p>
+    <p class="hint">复制好 Key，回到这里粘贴，再点下面的「保存」。</p></details>`;
+}
 function settingsKeyHtml(channel) {
   const filled=settingsKeyFilled(settingsDraft,channel),editing=settingsKeyEditors.has(channel),name=SETTINGS_KEY_NAMES[channel];
   return `<div class="settings-channel-key" data-channel-key="${channel}">${filled ? `<p class="key-ready">✓ ${name} Key 已填 <button type="button" class="small ghost" data-change-key="${channel}">更换</button></p>${connectionButton(channel)}` : ''}
-    ${!filled || editing ? `<label class="field" for="setting-${keyField(channel)}"><span>${name} Key</span><input id="setting-${keyField(channel)}" name="${keyField(channel)}" type="password" autocomplete="new-password" value="${esc(settingsKeyDrafts.get(channel) || '')}" placeholder="${filled ? '粘贴新 Key（留空保持不变）' : '粘贴 '+name+' Key'}"></label><p class="hint">${filled ? '留空保持已保存的 Key 不变。' : channel==='openai' ? '推理和生图共用这个 Key，填一次后保存即可。' : channel==='jimmy' ? '推理、生图和视频共用这个 Key，填一次后保存即可。' : '填入这个渠道的 Key 后保存即可。'}</p>` : ''}</div>`;
+    ${!filled || editing ? `<label class="field" for="setting-${keyField(channel)}"><span>${name} Key</span><input id="setting-${keyField(channel)}" name="${keyField(channel)}" type="password" autocomplete="new-password" value="${esc(settingsKeyDrafts.get(channel) || '')}" placeholder="${filled ? '粘贴新 Key（留空保持不变）' : '粘贴 '+name+' Key'}"></label><p class="hint">${filled ? '留空保持已保存的 Key 不变。' : channel==='openai' ? '推理和生图共用这个 Key，填一次后保存即可。' : channel==='jimmy' ? '推理、生图和视频共用这个 Key，填一次后保存即可。' : '填入这个渠道的 Key 后保存即可。'}</p>${filled ? '' : keyHelpHtml(channel)}` : ''}</div>`;
 }
 function renderSettingsKeys() {
   for(const channel of KEY_CHANNELS()){const input=$(`[name="${keyField(channel)}"]`);if(input)settingsKeyDrafts.set(channel,input.value);}

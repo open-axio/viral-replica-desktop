@@ -1279,3 +1279,10 @@ button.paid:not(.ghost):not(.danger)::before { background: rgba(255,255,255,.8);
 .preset[aria-checked="true"] { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
 .preset[aria-checked="true"] b::after { content: " ✓"; color: var(--accent); }
 @media (max-width: 640px) { .preset-row { grid-template-columns: 1fr; } }
+
+/* 还没有 Key？ */
+.key-help { margin: 6px 0 2px; font-size: 13px; }
+.key-help summary { cursor: pointer; color: var(--accent); }
+.key-help ol { margin: 8px 0; padding-left: 20px; color: var(--ink); line-height: 1.7; }
+.key-help a.button { display: inline-flex; align-items: center; padding: 6px 12px; border-radius: 8px; background: var(--accent); color: #fff; text-decoration: none; font-weight: 600; }
+.key-help a.button.ghost { background: transparent; color: var(--ink); border: 1px solid var(--line); font-weight: 400; }

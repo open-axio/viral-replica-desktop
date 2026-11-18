@@ -255,21 +255,21 @@ const KEY_TABS = {
     hint: "一个 Key 把读片子、生图、生视频全包了，不用分别开通。",
     covers: [[true, "读片子、出复刻方案", "按量计费"], [true, "画新分镜图", "按张计费"], [true, "生成分段视频", "按秒计费"]],
   },
-  qwen: {
-    name: "通义千问 · 阿里云百炼", badge: "国内直连", keyLabel: "阿里云百炼 API Key",
-    desc: "阿里云的大模型平台，国内网络直连。默认用能看图、看视频的千问 Qwen3-VL 读片子；同一个 Key 在百炼里还能开通 DeepSeek、Kimi、GLM。画分镜图和生成视频这两步需要另配。",
-    hint: "在阿里云百炼控制台「API Key」里创建，充值后按量计费。",
-    covers: [[true, "读片子、出复刻方案", "按量计费"], [false, "画新分镜图", "需另配渠道"], [false, "生成分段视频", "需另配三方渠道"]],
-  },
   doubao: {
     name: "豆包 · 火山方舟", badge: "国内直连", keyLabel: "火山方舟 API Key",
-    desc: "在国内网络下最稳，读片子的单价也低。画分镜图和生成视频这两步它在工作台里还接不上，需要在设置里另配三方渠道。",
-    hint: "国内直连不用代理。只管读片子和出复刻方案。",
-    covers: [[true, "读片子、出复刻方案", "按量计费"], [false, "画新分镜图", "需另配渠道"], [false, "生成分段视频", "需另配三方渠道"]],
+    desc: "字节的大模型平台，国内网络直连最稳。一个 Key 全包：豆包读片子、Seedream 画分镜、Seedance 生成视频。新账号一般有免费额度。",
+    hint: "在火山方舟控制台创建 API Key；Seedream、Seedance 要先在「开通管理」里点开通。",
+    covers: [[true, "读片子、出复刻方案", "豆包，按量计费"], [true, "画新分镜图", "Seedream，按张计费"], [true, "生成分段视频", "Seedance，按秒计费"]],
+  },
+  qwen: {
+    name: "通义千问 · 阿里云百炼", badge: "国内直连", keyLabel: "阿里云百炼 API Key",
+    desc: "阿里云的大模型平台，国内网络直连。一个 Key 全包：千问读片子、千问图像编辑画分镜、万相生成视频（10 秒以内还能照着原片动作拍）；同一个 Key 也能用百炼里的 DeepSeek、可灵。",
+    hint: "在阿里云百炼控制台「API Key」里创建；新账号每个模型都有免费额度。",
+    covers: [[true, "读片子、出复刻方案", "千问，按量计费"], [true, "画新分镜图", "千问图像编辑，按张计费"], [true, "生成分段视频", "万相 2.7，按秒计费"]],
   },
   custom: {
     name: "我已经有 Key 了", badge: "", keyLabel: "API Key",
-    desc: "手上已经有 OpenAI、智谱、Kimi、DeepSeek，或其他 OpenAI 兼容接口的 Key 就填这里。生成视频这一步工作台只接三方渠道，到时候还得另配。",
+    desc: "手上已经有 OpenAI、智谱、Kimi、DeepSeek，或其他 OpenAI 兼容接口的 Key 就填这里。生成视频要另配一家（火山方舟、阿里云百炼、三方渠道等，在设置里选）。",
     hint: "",
     covers: null,  // 按下面选的渠道算
   },
@@ -296,11 +296,18 @@ function contentRunning() {
   contentStarting.delete(P?.id);
   return false;
 }
+// 某一步现在用的渠道有没有 Key（生图、生视频的渠道名和推理的 Key 对应起来）
+function stepKeyReady(step) {
+  const r = routeFor(step) || {};
+  if (["minimax", "imgcompat"].includes(r.channel)) return true;
+  const k = { official: "openai", third_party: "jimmy", ark: "doubao", bailian: "qwen", kling: "qwen" }[r.channel] || r.channel;
+  return !!STATUS?.providers?.[k]?.ready;
+}
 function keyCovers(tab, kind) {
   if (tab !== "custom") return KEY_TABS[tab].covers;
   return [[CUSTOM_KINDS[kind].read, "读片子、出复刻方案", CUSTOM_KINDS[kind].read ? "按你的渠道计价" : "看不了图，需另配"],
     [CUSTOM_KINDS[kind].image, "画新分镜图", CUSTOM_KINDS[kind].image ? "按张计费" : "需另配渠道"],
-    [false, "生成分段视频", "需另配三方渠道"]];
+    [false, "生成分段视频", "需在设置里另配一家"]];
 }
 function renderKeyGate() {
   const st = keyTabState.get(P.id) || { tab: "viraltok", kind: "openai" };
@@ -324,13 +331,14 @@ function renderKeyGate() {
         <p class="keygate-desc">${esc(t.desc)}</p>
         ${customFields}
         <div class="key-field"><label for="keyValue">${esc(st.tab === "custom" ? (CUSTOM_KINDS[st.kind]?.label || "") + " API Key" : t.keyLabel)}</label>
-          <input id="keyValue" data-key-input type="password" placeholder="粘贴到这里" autocomplete="off" value="${esc(st.values?.keyValue || "")}"><span class="hint">${esc(hint)}</span></div>
+          <input id="keyValue" data-key-input type="password" placeholder="粘贴到这里" autocomplete="off" value="${esc(st.values?.keyValue || "")}"><span class="hint">${esc(hint)}</span>
+          ${typeof keyHelpHtml === "function" ? keyHelpHtml(st.tab === "custom" ? st.kind : st.tab) : ""}</div>
         <div class="covers"><div class="covers-head">这个 Key 能管到哪几步</div><ul>${covers}</ul></div>
-        <p class="hint">缺的那几步可以在设置里单独指另一个渠道，比如读片子用通义千问、写脚本用 DeepSeek、生图和视频用三方渠道。</p>
+        <p class="hint">每一步以后都能在设置里单独换，比如写脚本用 DeepSeek、生视频换可灵。</p>
       </div>
     </div>
     <div class="keygate-safe"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 1.9l5 2.2v3.5c0 3.1-2 5.3-5 6.2-3-.9-5-3.1-5-6.2V4.1l5-2.2z" stroke="#2f6f55" stroke-width="1.4" stroke-linejoin="round"></path><path d="M5.9 8.1l1.5 1.5 2.8-3.1" stroke="#2f6f55" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"></path></svg>
-      <p>Key 只写进你电脑上的 <code>console.env</code>，不会上传，也不会写进项目文件。换电脑要重新填一次。</p></div>
+      <p>Key 只保存在这台电脑上，不会上传，也不会写进项目文件。换电脑要重新填一次。</p></div>
     ${st.error ? `<div class="keygate-error" role="alert">${esc(st.error)}</div>` : ""}
     <div class="keygate-actions"><button type="button" class="big-cta" data-key-save ${st.busy ? "disabled" : ""}>${st.busy ? "正在检查 Key…" : "保存并开始内容拆解"} ${st.busy ? "" : ICON_ARROW}</button>
       <button type="button" class="link-btn" data-stage-go="free">先不填，回去导出免费结果</button></div>
@@ -340,8 +348,15 @@ function keySettingsBody(st) {
   const key = $("#keyValue")?.value.trim();
   if (!key) throw new Error("先把 Key 粘贴进来");
   if (st.tab === "viraltok") return [{ JIMMY_API_KEY: key, DEFAULT_LLM: "jimmy", ROUTE_ANALYSIS: "jimmy", ROUTE_SCRIPT: "jimmy" }, "jimmy"];
-  if (st.tab === "doubao") return [{ DOUBAO_API_KEY: key, ROUTE_ANALYSIS: "doubao", ROUTE_SCRIPT: "doubao" }, "doubao"];
-  if (st.tab === "qwen") return [{ QWEN_API_KEY: key, ROUTE_ANALYSIS: "qwen", ROUTE_SCRIPT: "qwen" }, "qwen"];
+  // 一家全包：生图、生视频原来没配好 Key 的，顺手换成这一家；已经能用的不动
+  const fill = (image, video) => ({
+    ...(stepKeyReady("storyboard_image") ? {} : { ROUTE_STORYBOARD_IMAGE: image, ROUTE_CAMERA_IMAGE: image }),
+    ...(stepKeyReady("video") ? {} : { ROUTE_VIDEO: video }),
+  });
+  if (st.tab === "doubao") return [{ DOUBAO_API_KEY: key, DEFAULT_LLM: "doubao", ROUTE_ANALYSIS: "doubao", ROUTE_SCRIPT: "doubao",
+    ...fill("ark:doubao-seedream-4-5-251128", "ark:doubao-seedance-2-0-260128") }, "doubao"];
+  if (st.tab === "qwen") return [{ QWEN_API_KEY: key, DEFAULT_LLM: "qwen", ROUTE_ANALYSIS: "qwen", ROUTE_SCRIPT: "qwen",
+    ...fill("bailian:qwen-image-edit-plus", "bailian:wan2.7-r2v") }, "qwen"];
   if (st.kind === "zhipu") return [{ ZHIPU_API_KEY: key, ROUTE_ANALYSIS: "zhipu", ROUTE_SCRIPT: "zhipu" }, "zhipu"];
   if (st.kind === "kimi") return [{ KIMI_API_KEY: key, ROUTE_ANALYSIS: "kimi", ROUTE_SCRIPT: "kimi" }, "kimi"];
   if (st.kind === "openai") return [{ OPENAI_API_KEY: key, ROUTE_ANALYSIS: "openai", ROUTE_SCRIPT: "openai" }, "openai"];

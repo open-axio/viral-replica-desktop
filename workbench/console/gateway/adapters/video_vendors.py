@@ -15,6 +15,7 @@ from __future__ import annotations
 import base64
 import json
 import mimetypes
+import re
 import time
 import urllib.error
 import urllib.parse
@@ -39,6 +40,13 @@ VENDORS = {
         "max_images": 5, "reference_video": True, "voice": True,
         "models": [
             {"id": "wan2.7-r2v", "name": "万相 2.7 参考生视频", "note": "能参考原片动作；参考图和参考视频合计最多 5 个"},
+        ],
+    },
+    "kling": {
+        "name": "可灵（经阿里云百炼）", "account": "阿里云百炼", "key": "QWEN_API_KEY", "key_channel": "qwen",
+        "max_images": 4, "reference_video": False, "voice": False,
+        "models": [
+            {"id": "kling/kling-v3-omni-video-generation", "name": "可灵 3.0 Omni", "note": "多张参考图锁定人物和商品，动作自然"},
         ],
     },
     "minimax": {
@@ -130,7 +138,7 @@ def _settings(channel: str) -> dict:
         raise VendorError(f"还没填{meta['account']}的 Key：在「设置 → 生视频模型」里填好再试", kind="auth")
     if channel == "ark":
         base = (values.get("DOUBAO_BASE_URL") or config.DEFAULTS["DOUBAO_BASE_URL"]).rstrip("/")
-    elif channel == "bailian":
+    elif channel in {"bailian", "kling"}:
         compat = (values.get("QWEN_BASE_URL") or config.DEFAULTS["QWEN_BASE_URL"]).rstrip("/")
         base = compat.replace("/compatible-mode/v1", "/api/v1") if "/compatible-mode/" in compat else "https://dashscope.aliyuncs.com/api/v1"
     else:
@@ -259,6 +267,15 @@ def build_request(channel: str, model: str, task: dict, s: dict, info: dict):
                 "parameters": {"resolution": "720P", "ratio": ratio, "duration": duration, "watermark": False, "prompt_extend": False}}
         return _json_req("POST", s["base"] + "/services/aigc/video-generation/video-synthesis", s["key"], body,
                          {"X-DashScope-Async": "enable", "X-DashScope-OssResourceResolve": "enable"})
+    if channel == "kling":
+        media = [{"type": "refer", "url": _bailian_upload(s, model, i)} for i in images]
+        # 可灵用 <<<image_1>>> 指代参考图；我们的提示词写的是「图1」
+        text = re.sub(r"图\s*(\d+)", lambda m: f"<<<image_{m.group(1)}>>>", prompt)[:2500]
+        body = {"model": model, "input": {"prompt": text, "media": media},
+                "parameters": {"mode": "std", "aspect_ratio": ratio if ratio in {"16:9", "9:16", "1:1"} else "9:16",
+                               "duration": duration, "audio": True, "watermark": False}}
+        return _json_req("POST", s["base"] + "/services/aigc/video-generation/video-synthesis", s["key"], body,
+                         {"X-DashScope-Async": "enable", "X-DashScope-OssResourceResolve": "enable"})
     if len(prompt) > 2000:
         prompt = prompt[:2000]
     body = {"model": model, "prompt": prompt, "first_frame_image": _data_uri(images[0]),
@@ -269,7 +286,7 @@ def build_request(channel: str, model: str, task: dict, s: dict, info: dict):
 def _task_id(channel: str, data: dict) -> str:
     if channel == "ark":
         tid = data.get("id")
-    elif channel == "bailian":
+    elif channel in {"bailian", "kling"}:
         tid = (data.get("output") or {}).get("task_id")
     else:
         base = data.get("base_resp") or {}
@@ -294,7 +311,7 @@ def query(channel: str, remote: str, s: dict) -> dict:
             err = data.get("error") or {}
             return {"status": "failed", "message": err.get("message") or f"任务{status}", "raw": status}
         return {"status": "running", "raw": status}
-    if channel == "bailian":
+    if channel in {"bailian", "kling"}:
         data = _request(_json_req("GET", f"{s['base']}/tasks/{urllib.parse.quote(remote)}", s["key"]))
         out = data.get("output") or {}
         status = str(out.get("task_status") or "")

@@ -132,6 +132,20 @@ class GenerateTests(Base):
         self.assertTrue(all(m["url"].startswith("oss://dashscope-instant/abc/") for m in body["input"]["media"]))
         self.assertEqual(child["phase"], "completed")
 
+    def test_kling_via_bailian_uses_refer_media_and_image_tags(self):
+        config.save({"QWEN_API_KEY": "bl-key"})
+        policy = {"data": {"upload_host": "https://dashscope-file.example", "upload_dir": "dashscope-instant/k",
+                           "policy": "p", "signature": "s", "oss_access_key_id": "ak", "x_oss_object_acl": "private",
+                           "x_oss_forbid_overwrite": "true"}}
+        child, _ = self.run_generate("kling", self.task(), policy, b"", policy, b"", {"output": {"task_id": "k-1"}},
+                                     {"output": {"task_status": "SUCCEEDED", "video_url": "https://k.example/v.mp4"}}, MP4)
+        body = json.loads(self.sent[4].data)
+        self.assertEqual(body["model"], "kling/kling-v3-omni-video-generation")
+        self.assertEqual([m["type"] for m in body["input"]["media"]], ["refer", "refer"])
+        self.assertIn("<<<image_1>>>的人在<<<image_2>>>的店里", body["input"]["prompt"])
+        self.assertEqual((body["parameters"]["aspect_ratio"], body["parameters"]["duration"]), ("9:16", 8))
+        self.assertEqual(child["phase"], "completed")
+
     def test_minimax_resolves_file_id(self):
         config.save({"MINIMAX_API_KEY": "mm-key"})
         child, _ = self.run_generate("minimax", self.task(duration=5),

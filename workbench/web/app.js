@@ -4709,11 +4709,21 @@ function usageHtml() {
   const preview=r=>r.kind==='preview' || (r.kind==='image' && !r.network_request && !r.request_sent && !r.remote_task_id
     && !Object.values(r.tokens || {}).some(n=>Number(n)>0) && !(Number(r.billing?.amount)>0));
   const rows=(P?.usage || []).filter(r=>!preview(r)), billed=r=>Number(r.billing?.amount || 0);
-  const official=rows.filter(r=>['official','openai'].includes(r.channel) && (r.kind==='reason' || r.kind==='image' || r.billing?.amount!=null));
-  const tokens=official.filter(r=>r.billing?.unit==='tokens').reduce((n,r)=>n+billed(r),0);
-  const points=rows.filter(r=>r.billing?.unit==='点').reduce((n,r)=>n+billed(r),0);
-  const seconds=rows.filter(r=>r.billing?.unit==='秒').reduce((n,r)=>n+billed(r),0);
-  return `<details data-detail-key="project-usage"><summary>本项目用量：官方 ${official.length} 次 / 约 ${tokens} 个 token；三方渠道 ${Number(points.toFixed(6))} 点；视频 ${fmt(seconds)} 秒</summary><p class="hint">仅列出响应提供的用量，不估算金额；未知用量显示“未提供”。</p><table><tr><th>时间</th><th>步骤 / 渠道 / 模型</th><th>结果</th><th>用量</th></tr>${rows.map(r=>`<tr><td>${esc(r.at || '')}</td><td>${esc(r.step || '')} / ${esc(providerLabel(r.channel,STATUS?.providers?.[r.channel]))} / ${esc(publicText(r.model || ''))}</td><td>${r.ok ? '成功' : '失败：'+esc(r.error_kind || 'unknown')}</td><td>${r.billing?.unit==='tokens' ? tokenUsageText({...r.tokens,total_tokens:r.billing.amount ?? r.tokens?.total_tokens}) : r.billing?.amount==null ? '未提供' : esc(r.billing.amount)+' '+esc(r.billing.unit)}</td></tr>`).join('')}</table></details>`;
+  // 按厂商分开算：每家各自的次数、token、点数、视频秒数，账单去对应那家的后台看
+  const groups=new Map();
+  for(const r of rows){
+    const name=VENDOR_LABELS[r.channel] || STATUS?.providers?.[r.channel]?.label?.split(' · ')[0] || r.channel || '其他';
+    const g=groups.get(name) || {calls:0,tokens:0,points:0,seconds:0,images:0};
+    g.calls++;
+    if(r.billing?.unit==='tokens')g.tokens+=billed(r);
+    if(r.billing?.unit==='点')g.points+=billed(r);
+    if(r.billing?.unit==='秒')g.seconds+=billed(r);
+    if(r.kind==='image')g.images++;
+    groups.set(name,g);
+  }
+  const part=([name,g])=>[`${name} ${g.calls} 次`,g.tokens?`约 ${g.tokens} 个 token`:'',g.images?`生图 ${g.images} 张`:'',g.points?`${Number(g.points.toFixed(6))} 点`:'',g.seconds?`视频 ${Number(g.seconds.toFixed(1))} 秒`:''].filter(Boolean).join(' · ');
+  const summary=groups.size?[...groups].map(part).join('；'):'还没有用过要花钱的模型';
+  return `<details data-detail-key="project-usage"><summary>本项目用量：${esc(summary)}</summary><p class="hint">仅列出响应提供的用量，不估算金额；未知用量显示“未提供”。</p><table><tr><th>时间</th><th>步骤 / 渠道 / 模型</th><th>结果</th><th>用量</th></tr>${rows.map(r=>`<tr><td>${esc(r.at || '')}</td><td>${esc(r.step || '')} / ${esc(providerLabel(r.channel,STATUS?.providers?.[r.channel]))} / ${esc(publicText(r.model || ''))}</td><td>${r.ok ? '成功' : '失败：'+esc(r.error_kind || 'unknown')}</td><td>${r.billing?.unit==='tokens' ? tokenUsageText({...r.tokens,total_tokens:r.billing.amount ?? r.tokens?.total_tokens}) : r.billing?.amount==null ? '未提供' : esc(r.billing.amount)+' '+esc(r.billing.unit)}</td></tr>`).join('')}</table></details>`;
 }
 const assemblySaving=new Set(),assemblyErrors=new Map();
 async function saveAssemblyOption(input) {

@@ -2454,7 +2454,9 @@ function renderFinalPreview(){
   const segments=P.segments_plan?.segments || [],selected=segments.filter(s=>v5ChosenRun(s.id)).length;
   updateHtml(box,`<p class="final-selected-count">已选定 ${selected}/${segments.length} 段</p>${directorNotices(status.warnings)}${directorNotices(status.review_warnings)}<button data-final-preview ${busy || !status.ready || selected!==segments.length?'disabled':''}>${busy?'正在拼接…':'拼成整片预览'}</button>
     ${finalPreviewErrors.has(P.id)?directorNotices([finalPreviewErrors.get(P.id)]):''}
-    ${status.file?`${status.stale?'<p class="caption-warning">选用版本改过，请重新拼接预览。</p>':''}<div class="final-check-layout"><div><video controls preload="metadata" src="${fileUrl(status.file)}"></video><p>时长 ${fmt(status.duration)} 秒</p></div>${finalCheckHtml()}</div>`:''}
+    ${status.file?`${status.stale?'<p class="caption-warning">选用版本改过，请重新拼接预览。</p>':''}<div class="final-check-layout"><div><video controls preload="metadata" src="${fileUrl(status.file)}"></video><p>时长 ${fmt(status.duration)} 秒</p>
+      <div class="final-save"><a class="button" href="${fileUrl(status.file)}" download="${esc((P.name || '成片').replace(/[\\/:*?"<>|]/g,' ').trim() || '成片')}-成片.mp4">保存成片到电脑</a>
+      <p class="hint">想加字幕、音乐和贴纸：把保存的视频拖进剪映接着剪，剪映的「识别字幕」能自动配上字幕。</p></div></div>${finalCheckHtml()}</div>`:''}
     <div class="fission-entry"><button data-fission-open ${status.ready?'':'disabled'}>批量裂变</button><button class="ghost" data-batch-board="${esc(P.id)}">查看批量看板</button><span class="hint">${status.ready?'用这条片子当母版，换一组人物或商品，批量出新片。':esc((status.warnings || []).join('；'))}</span></div>`);
 }
 async function generateFinalPreview(){

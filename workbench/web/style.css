@@ -1315,3 +1315,7 @@ button.pill.bad:hover { filter: brightness(0.96); }
 .settings-local[open] > summary::before { content: "▾"; }
 .settings-local > summary span { color: var(--muted); font-size: 13px; }
 .settings-local[open] { padding-bottom: 12px; }
+
+.final-save { margin-top: 8px; }
+.final-save a.button { display: inline-flex; align-items: center; padding: 9px 16px; border-radius: 8px; background: var(--accent); color: #fff; text-decoration: none; font-weight: 600; }
+.final-save .hint { margin: 6px 0 0; max-width: 360px; }

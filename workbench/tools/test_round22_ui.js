@@ -33,7 +33,7 @@ async function main(){
   {channel:'official',kind:'image',ok:true,tokens:{prompt:5,completion:8},billing:{unit:'tokens',amount:13}},
   {channel:'third_party',kind:'image',ok:true,billing:{unit:'点',amount:.02}}]`);
  const before=run('JSON.stringify(P.usage)'),html=run('usageHtml()');
- assert.match(html,/官方 2 次 \/ 约 13 个 token/);assert.match(html,/三方渠道 0.02 点/);
+ assert.match(html,/官方 2 次 · 约 13 个 token/);assert.match(html,/三方渠道 1 次 · 生图 1 张 · 0.02 点/);
  assert.equal(run('JSON.stringify(P.usage)'),before,'历史文件/数据不被改写');
  run('cameraDrafts.clear();P.images={};P.assets=P.assets.filter(a=>a.id!=="clean");renderReplacements(true)');
  assert.equal($('.scene-camera'),null);

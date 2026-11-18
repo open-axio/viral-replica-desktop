@@ -24,7 +24,7 @@ async function main(){
  assert.equal(document.querySelectorAll('[data-test-channel]').length,2);assert.match($('#settingsFields').textContent,/会产生极少量费用/);
  await click($('[data-test-channel="openai"]'));assert.equal(requests.at(-1).url,'settings/test-connection');assert.equal(requests.at(-1).body.channel,'openai');
  run('P.usage=[{channel:"openai",kind:"reason",ok:true,tokens:{prompt:7,completion:4},billing:{unit:"tokens",amount:11}},{channel:"third_party",kind:"image",ok:true,billing:{unit:"点",amount:.02}},{channel:"third_party",kind:"video",ok:true,billing:{unit:"秒",amount:8}}]');
- const usage=run('usageHtml()');assert.match(usage,/官方 1 次/);assert.match(usage,/约 11 个 token/);assert.match(usage,/0.02 点/);assert.match(usage,/8.00 秒/);
+ const usage=run('usageHtml()');assert.match(usage,/官方 1 次/);assert.match(usage,/约 11 个 token/);assert.match(usage,/0.02 点/);assert.match(usage,/视频 8 秒/);
  run('P.breakdown_versions={old:{provider:"jimmy",model:"吉米 · GPT-5.6 Sol（共用 Jimmy Key） · 外部计费"}};renderAnalysis()');assert.doesNotMatch($('#breakdownVersions').textContent,/吉米|Jimmy/);
  assert.doesNotMatch(run('imageRecordCard({id:"old-image",state:"completed",preview:{model:"吉米 · Jimmy"}})'),/吉米|Jimmy/);
  assert.match(source,/完整任务单（三方渠道请求）/);assert.doesNotMatch(source,/完整任务单 jimmy-job/);

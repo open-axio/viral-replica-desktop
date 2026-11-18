@@ -365,6 +365,25 @@ async function api(method, p, body) {
   return data;
 }
 
+// 只在用户正在看的这一页里点开 / 滚到评论区，不额外请求任何接口
+const REVEAL_COMMENTS = `(() => {
+  const host = location.hostname;
+  const click = (sel) => { const el = document.querySelector(sel); if (el) { el.click(); return true; } return false; };
+  const into = (el) => { if (el) { el.scrollIntoView({ block: 'center' }); return true; } return false; };
+  if (/douyin\.com$/.test(host)) {
+    if (!document.querySelector('[data-e2e="comment-list"], [data-e2e="comment-item"]')) click('[data-e2e="feed-comment-icon"]') || click('[data-e2e="video-player-comment"]');
+    into(document.querySelector('[data-e2e="comment-list"]'));
+  } else if (/xiaohongshu\.com$/.test(host)) {
+    const box = document.querySelector('.note-scroller, .note-container');
+    if (box) box.scrollTop = Math.min(box.scrollHeight, (box.scrollTop || 0) + 600);
+    into(document.querySelector('.comments-container, .comment-item'));
+  } else if (/bilibili\.com$/.test(host)) {
+    into(document.querySelector('bili-comments, #commentapp, .comment-container'));
+  }
+  return true;
+})()`;
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
 async function capture() {
   if (!view || busy) return;
   busy = true;
@@ -380,6 +399,16 @@ async function capture() {
     ]);
     if (!info.hasVideo && !(info.sources || []).length) {
       throw new Error('这一页没找到视频。先点开一条视频，看到它在播放了，再点「同款复刻」');
+    }
+    if (!(info.comments || []).length) {
+      // 评论区多半要滚到或点开才加载：自动帮他打开一次，再读一遍（读不到也不影响导入）
+      try {
+        setStatus('working', '正在读评论…');
+        await Promise.race([wc.executeJavaScript(REVEAL_COMMENTS, true), sleep(3000)]);
+        await sleep(2500);
+        const again = await Promise.race([wc.executeJavaScript(EXTRACT, true), sleep(5000).then(() => null)]);
+        if (again && (again.comments || []).length) info.comments = again.comments;
+      } catch (_) { /* 评论只是参考信息 */ }
     }
     const media = chooseMedia(platform, info, wc.id);
     if (!media) {

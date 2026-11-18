@@ -83,17 +83,18 @@ class ImageVendorTests(Base):
         self.assertEqual(req.full_url, "https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation")
         parts = body["input"]["messages"][0]["content"]
         self.assertEqual([list(p) for p in parts], [["image"], ["image"], ["text"]])
-        self.assertEqual((body["model"], body["parameters"]["size"]), ("qwen-image-edit-plus", "1080*1920"))
+        self.assertEqual((body["model"], body["parameters"]["size"]), ("wan2.7-image-pro", "1080*1920"))
         self.assertNotIn("Authorization", download.headers, "下载图片不能带上 Key")
         self.assertEqual(out.read_bytes(), PNG)
 
-    def test_bailian_reference_limit_is_three(self):
+    def test_reference_limit_depends_on_model(self):
         config.save({"QWEN_API_KEY": "bl-key"})
-        prev = self.preview("bailian", images=self.refs * 2)
+        prev = self.preview("bailian", images=self.refs * 2, model="qwen-image-edit-plus")
         with self.fake(), self.assertRaisesRegex(ImageError, "最多支持 3 张"):
             image_vendors.generate("bailian", prev, self.tmp / "o.png")
         self.assertEqual(self.sent, [], "超过张数不能发请求")
-        self.assertEqual(jimmy_bridge.max_image_references("bailian"), 3)
+        self.assertEqual(jimmy_bridge.max_image_references("bailian", "qwen-image-edit-plus"), 3)
+        self.assertEqual(jimmy_bridge.max_image_references("bailian"), 9, "默认的万相 2.7 图像收 9 张")
         self.assertEqual(jimmy_bridge.max_image_references("ark"), 10)
 
     def test_missing_key_and_auth_error_are_plain_language(self):

@@ -31,10 +31,12 @@ VENDORS = {
         ],
     },
     "bailian": {
-        "name": "阿里云百炼 千问图像编辑", "account": "阿里云百炼", "key": "QWEN_API_KEY", "key_channel": "qwen", "max_refs": 3,
+        "name": "阿里云百炼 图像编辑", "account": "阿里云百炼", "key": "QWEN_API_KEY", "key_channel": "qwen", "max_refs": 9,
         "models": [
-            {"id": "qwen-image-edit-plus", "name": "千问图像编辑 Plus", "note": "推荐：最多 3 张参考图"},
-            {"id": "qwen-image-2.0-pro", "name": "千问图像 2.0 Pro", "note": "文字和质感更好"},
+            {"id": "wan2.7-image-pro", "name": "万相 2.7 图像 Pro", "note": "推荐：最多 9 张参考图，人物和商品更稳", "max_refs": 9},
+            {"id": "wan2.7-image", "name": "万相 2.7 图像", "note": "更快更便宜，最多 9 张参考图", "max_refs": 9},
+            {"id": "qwen-image-edit-plus", "name": "千问图像编辑 Plus", "note": "最多 3 张参考图", "max_refs": 3},
+            {"id": "qwen-image-2.0-pro", "name": "千问图像 2.0 Pro", "note": "文字和质感更好，最多 3 张参考图", "max_refs": 3},
         ],
     },
     "imgcompat": {
@@ -58,8 +60,10 @@ def default_model(channel: str) -> str:
     return VENDORS[channel]["models"][0]["id"]
 
 
-def max_refs(channel: str) -> int:
-    return VENDORS[channel]["max_refs"]
+def max_refs(channel: str, model: str | None = None) -> int:
+    """每个模型能收的参考图不一样（千问图像编辑只收 3 张）。"""
+    found = next((m for m in VENDORS[channel]["models"] if m["id"] == (model or default_model(channel))), None)
+    return (found or {}).get("max_refs") or VENDORS[channel]["max_refs"]
 
 
 def size_for(channel: str, ratio: str) -> str:
@@ -156,8 +160,8 @@ def generate(channel: str, preview: dict, output: Path, *, before_send=None) -> 
     if before_send:
         before_send()
     refs = preview.get("images") or []
-    if len(refs) > max_refs(channel):
-        raise ImageError(f"{VENDORS[channel]['name']}最多支持 {max_refs(channel)} 张参考图，这次有 {len(refs)} 张：减少参考图或换一个生图模型",
+    if len(refs) > max_refs(channel, model):
+        raise ImageError(f"{VENDORS[channel]['name']}的这个模型最多支持 {max_refs(channel, model)} 张参考图，这次有 {len(refs)} 张：减少参考图或换一个生图模型",
                          kind="invalid_request", channel=channel, model=model)
     size = preview.get("size") or size_for(channel, preview.get("ratio") or "9:16")
     if channel == "ark":

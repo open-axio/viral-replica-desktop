@@ -5086,7 +5086,7 @@ function renderSettingsKeys() {
 // 不想挑模型的人：选一家，推理、生图、生视频一起配好，只填这一家的 Key
 const SETTINGS_PRESETS = [
   {id:'doubao',name:'火山方舟（豆包）',note:'国内直连，推理、生图、生视频一家全包',reason:'doubao',image:'ark:doubao-seedream-4-5-251128|auto',video:'ark:doubao-seedance-2-0-260128'},
-  {id:'qwen',name:'阿里云百炼（千问）',note:'国内直连，生视频能参考原片动作（10 秒内）',reason:'qwen',image:'bailian:qwen-image-edit-plus|auto',video:'bailian:wan2.7-r2v'},
+  {id:'qwen',name:'阿里云百炼（千问）',note:'国内直连，生视频能参考原片动作（10 秒内）',reason:'qwen',image:'bailian:wan2.7-image-pro|auto',video:'bailian:wan2.7-r2v'},
   {id:'jimmy',name:'三方渠道（ViralTok）',note:'生视频最贴原片动作，按点数计费',reason:'jimmy',image:'third_party:gpt-image-2|auto',video:'third_party'},
 ];
 function currentSettingsPreset() {

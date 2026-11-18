@@ -5051,7 +5051,36 @@ function renderSettingsKeys() {
     select.innerHTML=optionList(select.dataset.modelCard==='reason'?vendorOptions():settingsOptions(settingsDraft,select.dataset.modelCard),selected,channel=>settingsKeyFilled(settingsDraft,keyChannel(channel)) ? '' : '（未填 Key）');
     select.value=selected;
   }
-  renderModelPick();
+  renderModelPick();markSettingsPreset();
+}
+// 不想挑模型的人：选一家，推理、生图、生视频一起配好，只填这一家的 Key
+const SETTINGS_PRESETS = [
+  {id:'doubao',name:'火山方舟（豆包）',note:'国内直连，推理、生图、生视频一家全包',reason:'doubao',image:'ark:doubao-seedream-4-5-251128|auto',video:'ark:doubao-seedance-2-0-260128'},
+  {id:'qwen',name:'阿里云百炼（千问）',note:'国内直连，生视频能参考原片动作（10 秒内）',reason:'qwen',image:'bailian:qwen-image-edit-plus|auto',video:'bailian:wan2.7-r2v'},
+  {id:'jimmy',name:'三方渠道（ViralTok）',note:'生视频最贴原片动作，按点数计费',reason:'jimmy',image:'third_party:gpt-image-2|auto',video:'third_party'},
+];
+function currentSettingsPreset() {
+  const v=k=>$(`[data-model-card="${k}"]`)?.value;
+  return SETTINGS_PRESETS.find(p=>v('reason')===p.reason && v('image')===p.image && v('video')===p.video)?.id || '';
+}
+function settingsPresetsHtml() {
+  return `<section class="settings-presets"><h3>不想挑？选一家，一个 Key 全部搞定</h3><p class="hint">选好后下面推理、生图、生视频会自动配好，只要填这一家的 Key；之后也可以在下面单独换。</p>
+    <div class="preset-row" role="radiogroup" aria-label="一家全包">${SETTINGS_PRESETS.map(p=>`<button type="button" class="preset" role="radio" aria-checked="false" data-settings-preset="${p.id}"><b>${esc(p.name)}</b><small>${esc(p.note)}</small></button>`).join('')}</div></section>`;
+}
+function markSettingsPreset() {
+  const cur=currentSettingsPreset();
+  for(const b of $$('[data-settings-preset]'))b.setAttribute('aria-checked',String(b.dataset.settingsPreset===cur));
+}
+function applySettingsPreset(id) {
+  const preset=SETTINGS_PRESETS.find(p=>p.id===id);if(!preset)return;
+  for(const kind of ['reason','image','video']){
+    const select=$(`[data-model-card="${kind}"]`);
+    if(!select || ![...select.options].some(o=>o.value===preset[kind]))continue;
+    select.value=preset[kind];changeSettingsCard(select);
+  }
+  markSettingsPreset();
+  const key=$(`[name="${keyField(preset.reason)}"]`);
+  if(key){key.scrollIntoView({block:'center',behavior:'smooth'});key.focus({preventScroll:true});}
 }
 function changeSettingsCard(select) {
   const channel=select.value,kind=select.dataset.modelCard,form=$('#settingsForm');
@@ -5063,6 +5092,7 @@ function changeSettingsCard(select) {
     for(const step of ['storyboard_image','camera_image']){const field=$(`[data-image-route="${step}"]`,form);field.value=channel;changeSettingsImageRoute(field);}
   } else set('ROUTE_VIDEO',channel);
   renderSettingsKeys();
+  markSettingsPreset();
 }
 function localModelsHtml(models) {
   return models.map(model=>`<div class="local-model-row" data-local-model-state="${esc(model.status)}"><p><span class="model-light ${model.status==='ok' ? 'ok' : model.status==='optional' ? 'optional' : 'bad'}" aria-label="${model.status==='ok' ? '已安装' : model.status==='optional' ? '可选，未安装' : '不可用'}">●</span> ${esc(model.name)}　${esc(model.status==='ok' ? '已安装' : model.status==='optional' ? '未安装（可选，不影响使用）' : model.status==='missing' ? '缺失' : '不可用：'+(model.detail || '模型文件不完整或损坏'))}</p>
@@ -5086,7 +5116,7 @@ async function openSettings() {
     const pick=kind==='reason'?`<label class="field" for="model-pick-reason"><span>用这家的哪个模型</span><select id="model-pick-reason" data-model-pick="reason"></select></label><div class="field" data-model-custom="reason" hidden><input type="text" data-model-custom-input="reason" aria-label="手动填写模型名"></div><p class="hint" data-model-note="reason"></p>`:'';
     return `<section class="settings-model-card"><h3>${title}</h3><p class="hint">${hint}</p><label class="field" for="model-card-${kind}"><span>${kind==='reason'?'用哪家（一个 Key 管这家所有模型）':'用哪个'}</span><select id="model-card-${kind}" data-model-card="${kind}">${optionList(options,selected)}</select></label>${pick}${kind==='video' ? '<p class="hint">只有三方渠道能直接把原片片段当动作参考；其它几家主要靠参考图，阿里云百炼万相 10 秒以内也能参考原片。生成前的预览里会写清楚这一段会用到哪些素材。</p>' : ''}<div data-card-key="${kind}"></div></section>`;
   };
-  $('#settingsFields').innerHTML=`${card('reason','推理模型','拆解、写脚本、改写台词、安全检查都用它','ROUTE_ANALYSIS')}
+  $('#settingsFields').innerHTML=`${settingsPresetsHtml()}${card('reason','推理模型','拆解、写脚本、改写台词、安全检查都用它','ROUTE_ANALYSIS')}
     ${card('image','生图模型','生成新分镜图，包括按格改图和批量裂变。费用按实测估算，参考图越多越贵。','ROUTE_STORYBOARD_IMAGE')}${card('video','生视频模型','生成分段视频','ROUTE_VIDEO')}`;
   $('#settingsMore').innerHTML=`<details id="settingsAdvanced"><summary>高级设置（一般不用动）</summary>
       <div id="settingsStepRoutes">${settingsRoutes(s)}</div>
@@ -5291,6 +5321,7 @@ document.addEventListener("click", async (e) => {
   if ('motionClose' in d) { closeMotionCheck(); return; }
   if (d.motionCheck) { openMotionCheck(d.motionCheck, d.rev, el); return; }
   if(d.testChannel)return guard(()=>testChannel(d.testChannel,el));
+  if(d.settingsPreset)return applySettingsPreset(d.settingsPreset);
   if (d.thirdRetry) {
     if(d.retryProject !== P?.id)return;
     if(d.thirdRetry === 'scene-camera') {const key=cameraDraftKey('scene',d.scene);cameraChannels.set(key,'third_party');cameraRouteSelected.add(key);$('#analyzeProvider').value='jimmy';$('#analyzeProvider').dataset.userSelected='1';return guard(()=>draftPlannedScene(d.scene));}

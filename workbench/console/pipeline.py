@@ -57,9 +57,18 @@ def save_source(pid: str, filename: str, body_path: Path) -> dict:
         target.unlink()
         raise ValueError("文件里没有视频流")
 
+    # 首页卡片的封面：还没拆解时也能认出是哪条视频。取不到就算了，不影响上传。
+    poster = d / "source" / "poster.jpg"
+    try:
+        media.extract_frame(target, min(1.0, float(info.get("duration") or 0) * 0.2), poster, width=360)
+    except Exception:
+        poster.unlink(missing_ok=True)
+
     def fn(data: dict) -> None:
         data["source"] = {"file": store.rel(pid, target), "name": filename, "probe": info,
                           "sha256": store.sha256_file(target)}
+        if poster.is_file():
+            data["source"]["poster"] = store.rel(pid, poster)
         data["analysis"] = {"status": "idle", "steps": {}}
         data["breakdown"] = None
         data["breakdown_versions"] = {}

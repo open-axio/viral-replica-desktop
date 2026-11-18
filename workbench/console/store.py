@@ -159,7 +159,7 @@ def list_projects() -> list[dict]:
                 out.append({"id": data["id"], "name": data["name"], "created_at": data.get("created_at"),
                             "has_source": bool(data.get("source")), "analysis": data.get("analysis", {}).get("status"),
                             # 首页卡片用：第一个镜头的截图、镜头数、是否已进入复刻
-                            "thumb": shots[0].get("frame") if shots else None, "shots": len(shots),
+                            "thumb": shots[0].get("frame") if shots else (data.get("source") or {}).get("poster"), "shots": len(shots),
                             "has_breakdown": bool(data.get("breakdown")), "has_final": bool(data.get("final") or data.get("final_preview")),
                             "origin": (data.get("origin") or {}).get("platform_name")})
                 if data.get('derived_from'):

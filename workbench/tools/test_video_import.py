@@ -89,6 +89,9 @@ class VideoImportTests(unittest.TestCase):
         self.assertFalse(clip.exists(), "导入后临时文件要清掉")
         listed = {p["id"]: p for p in store.list_projects()}
         self.assertEqual(listed[out["id"]]["origin"], "抖音")
+        # 还没拆解时，首页卡片用视频里取的一帧当封面
+        self.assertEqual(listed[out["id"]]["thumb"], "source/poster.jpg")
+        self.assertTrue((store.project_dir(out["id"]) / "source" / "poster.jpg").stat().st_size > 500)
 
     @unittest.skipUnless(HAS_FFMPEG, "需要 ffmpeg")
     def test_import_merges_separate_audio(self):

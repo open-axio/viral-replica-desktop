@@ -1267,3 +1267,15 @@ button.paid:not(.ghost):not(.danger)::before { background: rgba(255,255,255,.8);
 .local-actions a.button { display: inline-flex; align-items: center; padding: 8px 14px; border-radius: 8px; background: var(--accent); color: #fff; text-decoration: none; font-weight: 600; }
 .local-scope { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 12px; font-size: 13px; }
 .hint.warn { color: var(--warn); }
+
+/* 设置：一家全包 */
+.settings-presets { margin: 4px 0 14px; padding: 16px; border-radius: 10px; background: var(--accent-soft); }
+.settings-presets h3 { margin: 0 0 4px; }
+.preset-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 10px; }
+.preset { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding: 10px 12px; text-align: left;
+  border: 1px solid var(--line); border-radius: 8px; background: var(--panel); color: var(--ink); white-space: normal; cursor: pointer; }
+.preset small { color: var(--muted); font-size: 12px; line-height: 1.4; }
+.preset:hover { border-color: var(--accent); }
+.preset[aria-checked="true"] { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.preset[aria-checked="true"] b::after { content: " ✓"; color: var(--accent); }
+@media (max-width: 640px) { .preset-row { grid-template-columns: 1fr; } }

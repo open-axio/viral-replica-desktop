@@ -113,6 +113,9 @@ DEFAULTS = {
     "KIMI_BASE_URL": "https://api.moonshot.cn/v1",
     "KIMI_API_KEY": "",
     "KIMI_MODEL": "kimi-k2.5",
+    "IMGCOMPAT_BASE_URL": "",
+    "IMGCOMPAT_API_KEY": "",
+    "IMGCOMPAT_MODEL": "",
     "OLLAMA_BASE_URL": "http://127.0.0.1:11434",
     "OLLAMA_MODEL": "",
     "DEEPSEEK_BASE_URL": "https://api.deepseek.com",
@@ -141,7 +144,7 @@ from .gateway.routes import DEFAULT_ROUTES
 DEFAULTS.update({'ROUTE_' + step.upper(): route for step, route in DEFAULT_ROUTES.items()})
 
 SECRET_KEYS = {"OPENAI_API_KEY", "JIMMY_API_KEY", "DOUBAO_API_KEY", "DEEPSEEK_API_KEY", "CUSTOM_API_KEY",
-               "QWEN_API_KEY", "ZHIPU_API_KEY", "KIMI_API_KEY"}
+               "QWEN_API_KEY", "ZHIPU_API_KEY", "KIMI_API_KEY", "IMGCOMPAT_API_KEY"}
 
 _lock = threading.Lock()
 
@@ -211,6 +214,9 @@ def public_view() -> dict:
     from . import gateway
     view["_providers"] = gateway.channels()
     view["_catalog"] = MODEL_CATALOG
+    from .gateway.adapters import image_vendors
+    view["_image_vendors"] = {k: {f: v[f] for f in ("name", "account", "key_channel", "max_refs", "models")}
+                              for k, v in image_vendors.VENDORS.items()}
     view["_routes"] = gateway.routes.public_routes()
     view["_route_fallback_reason"] = '' if values.get('OPENAI_API_KEY') else '官方 Key 未配置，官方默认路由暂时使用现有三方渠道 / DeepSeek 配置。'
     return view

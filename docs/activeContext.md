@@ -4,9 +4,11 @@
 
 ## 当前
 
-T1、T2、T7 已验收；T3 尚未正式验收，按意见收紧已登录判定后待复验，尚未推送。分支 `feat/home-redesign`。T3：在隐藏的 `WebContentsView`（分区仍是 `persist:find-viral`）打开平台页，按三家各自的页面结果判定登录态，不准就当未登录；未确认已登录前不露出原生视图，只出空态和「去登录」，不自动开窗。抖音已登录必须有可见的 `/user/self`，右上角小图单独出现视为 uncertain。小红书已登录必须有个人主页入口，或头像明确在侧栏/顶栏个人区，且当时没有登录按钮或弹层；通用头像单独出现视为 uncertain。T4 未开始。T5、T6 未做。推送和开 PR 等点头。
+T1、T2、T7 已验收；T3 实现验收通过，任务清单暂不勾，正式收口等真机三家，与 T4 一并过。T4 已实现、尚未推送。分支 `feat/home-redesign`。T4：点「去登录」才新开登录小窗（只承担登录，不带搜索和同款），复用 `persist:find-viral`；登录成功后关窗，回到首页对应 Tab 加载该平台首页内容，并 toast「已登录抖音，下面是你的内容」（小红书 / B 站同句式）。未登录成功不关窗、不提示。T5、T6 未做。推送和开 PR 等点头。
 
-验证：`node build/test_login_state.js` 通过（含「只有头像、没有个人入口 → 未登录」）；`node build/test_browse.js`、`test_home_login_ui.js` 6 条，以及 T1/T2/回归仍通过。真机三家登录态、高缩放对齐、未挂 hide 的浮层：not run — 本环境无桌面真机会话，可与 T4 一并过。
+验证：`node build/test_browse.js` 通过（含去登录开一扇窗、复用、成功后关窗并发短确认、搜索仍不新建窗口；三家登录入口 URL 各不相同）；`node workbench/tools/test_home_login_ui.js` 8 条通过；`test_login_state.js`、`test_home_embed_ui.js` 6、`test_home_about_ui.js` 5、`test_round24_16_ui.js` 13 回归通过。
+
+真机：T3 三家登录态（清掉会话必出「去登录」，保持登录则切 Tab 能直接出内容）、T4 至少完整走通抖音，以及高缩放对位和浮层遮挡：not run — 本环境无桌面真机会话。小红书、B 站 T4 真机：not run — 同上。
 
 ---
 

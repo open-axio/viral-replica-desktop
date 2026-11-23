@@ -846,6 +846,12 @@ document.addEventListener("submit", (e) => {
   }
 });
 if (window.__browse && window.__browse.onState) window.__browse.onState(applyFvState);
+if (window.__browse && window.__browse.onLoggedIn) {
+  window.__browse.onLoggedIn((s) => {
+    const text = (s && s.text) || "已登录，下面是你的内容";
+    if (typeof toast === "function") toast(text);
+  });
+}
 if (window.__browse && window.__browse.onImported) {
   window.__browse.onImported(async (project) => {
     try { await refreshProjectList(); } catch (_) { /* 打开项目时会再读 */ }
@@ -881,8 +887,10 @@ document.addEventListener("click", (e) => {
     if (e.target.closest("[data-fv-reload]")) { window.__browse.act("reload"); return; }
     if (e.target.closest("[data-fv-capture]")) { window.__browse.act("capture"); return; }
     if (e.target.closest("[data-fv-login]")) {
-      // T3：只出示「去登录」，不自动弹窗。开登录小窗归 T4；若已接上 startLogin 再调用。
-      if (typeof window.__browse.startLogin === "function") window.__browse.startLogin();
+      // T4：点「去登录」才开登录小窗；没有桥接时不自己 window.open。
+      if (typeof window.__browse.startLogin === "function") {
+        window.__browse.startLogin({ platform: fvCurrentPlatform() });
+      }
       return;
     }
   }

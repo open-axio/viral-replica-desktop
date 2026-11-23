@@ -17,8 +17,10 @@ contextBridge.exposeInMainWorld('__browse', {
   hide: () => ipcRenderer.invoke('browse:hide'),
   debug: () => ipcRenderer.invoke('browse:debug'),
   act: (action, arg) => ipcRenderer.invoke('browse:toolbar', action, arg),
+  startLogin: (opts) => ipcRenderer.invoke('browse:startLogin', opts),
   onState: (cb) => ipcRenderer.on('browse:state', (_e, s) => cb(s)),
   onImported: (cb) => ipcRenderer.on('browse:imported', (_e, project) => cb(project)),
+  onLoggedIn: (cb) => ipcRenderer.on('browse:logged-in', (_e, s) => cb(s)),
 });
 
 // contextIsolation 下 preload 的 window 与页面主世界隔离，需注入脚本到主世界覆盖原生方法。

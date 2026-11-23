@@ -52,6 +52,7 @@ async function setup({desktop = true, seen = true} = {}) {
   document.addEventListener = (name, fn) => (events[name] ||= []).push(fn);
   const opens = [], layouts = [], windowOpens = [];
   let hidden = 0, startLogin = 0;
+  const startLoginOpts = [];
   const browseMock = desktop ? {
     available: true,
     open(opts) {
@@ -64,8 +65,9 @@ async function setup({desktop = true, seen = true} = {}) {
     layout(b) { layouts.push(b); return Promise.resolve(true); },
     hide() { hidden += 1; return Promise.resolve(true); },
     act() { return Promise.resolve(true); },
-    startLogin() { startLogin += 1; },
+    startLogin(opts) { startLogin += 1; startLoginOpts.push(opts || {}); },
     onState(cb) { this._onState = cb; },
+    onLoggedIn(cb) { this._onLoggedIn = cb; },
     onImported() {},
   } : undefined;
   const windowObj = {
@@ -105,7 +107,7 @@ async function setup({desktop = true, seen = true} = {}) {
     await Promise.resolve();
   };
   const emitState = (s) => { if (browseMock && browseMock._onState) browseMock._onState(s); };
-  return {run, $, document, click, opens, layouts, windowOpens, hidden: () => hidden, startLogin: () => startLogin, emitState, browse: browseMock};
+  return {run, $, document, click, opens, layouts, windowOpens, hidden: () => hidden, startLogin: () => startLogin, startLoginOpts, emitLoggedIn: (s) => { if (browseMock && browseMock._onLoggedIn) browseMock._onLoggedIn(s); }, emitState, browse: browseMock};
 }
 
 const tests = [], test = (name, fn) => tests.push([name, fn]);
@@ -162,6 +164,22 @@ test('浏览器打开工作台没有去登录空态，也不承诺内嵌登录',
   const t = await setup({desktop: false});
   assert.equal(t.$('#fvLoginEmpty'), null);
   assert.equal(t.$('#fvLoginBtn'), null);
+});
+
+test('点「去登录」会请主进程开登录页，不自己 window.open', async () => {
+  const t = await setup();
+  t.emitState({url: 'https://www.douyin.com/', loggedIn: false, loginChecking: false, canBack: false, canForward: false});
+  await t.click(t.$('#fvLoginBtn'));
+  assert.equal(t.startLogin(), 1);
+  assert.equal(t.startLoginOpts[0].platform, 'douyin');
+  assert.equal(t.windowOpens.length, 0);
+});
+
+test('登录成功后出现一句短确认', async () => {
+  const t = await setup();
+  t.emitLoggedIn({platform: 'douyin', text: '已登录抖音，下面是你的内容'});
+  assert.match(t.$('#toast').textContent, /已登录抖音，下面是你的内容/);
+  assert.ok(!/\berr\b/.test(t.$('#toast').className));
 });
 
 (async () => {

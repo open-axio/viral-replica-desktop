@@ -6,11 +6,14 @@ const realLoad = Module._load;
 let windowsCreated = 0;
 let lastPartition = '';
 const childViews = [];
+const createdWindows = [];
 let currentUrl = '';
 const loadedUrls = [];
 const boundsHistory = [];
 let viewVisible = true;
 let inspectSignals = { headerLogin: true };
+let loginInspect = { headerLogin: true };
+const loggedInEvents = [];
 
 function makeWebContents() {
   return {
@@ -41,7 +44,10 @@ const viewInstance = {
   setBounds(b) { boundsHistory.push({ ...b }); this._bounds = { ...b }; },
 };
 
-const mainWebContents = { send() {}, isDestroyed: () => false };
+const mainWebContents = {
+  send(ch, payload) { if (ch === 'browse:logged-in') loggedInEvents.push(payload); },
+  isDestroyed: () => false,
+};
 const contentView = {
   addChildView(v) { if (!childViews.includes(v)) childViews.push(v); },
   getChildViews() { return childViews.slice(); },
@@ -62,7 +68,37 @@ Module._load = function (request, ...rest) {
     app: { userAgentFallback: 'Mozilla/5.0 Electron/32.3.3 Safari/537.36' },
     ipcMain: { handle() {} },
     session: { fromPartition(name) { lastPartition = name; return siteSes; } },
-    BrowserWindow: function BrowserWindow() { windowsCreated += 1; },
+    BrowserWindow: function BrowserWindow(opts) {
+      windowsCreated += 1;
+      const winListeners = {};
+      const rec = {
+        opts: opts || {},
+        url: '',
+        destroyed: false,
+        focused: false,
+        isDestroyed() { return this.destroyed; },
+        close() {
+          this.destroyed = true;
+          (winListeners.closed || []).forEach((fn) => fn());
+        },
+        focus() { this.focused = true; },
+        setTitle(t) { this.title = t; },
+        show() {},
+        on(ev, fn) { (winListeners[ev] ||= []).push(fn); },
+        webContents: {
+          isDestroyed: () => rec.destroyed,
+          send() {},
+          getURL: () => rec.url,
+          isLoading: () => false,
+          loadURL(url) { rec.url = url; loadedUrls.push(url); },
+          setWindowOpenHandler() {},
+          on() {},
+          executeJavaScript: async () => ({ ...loginInspect, href: rec.url }),
+        },
+      };
+      createdWindows.push(rec);
+      return rec;
+    },
     WebContentsView: function WebContentsView() { return viewInstance; },
   };
   return realLoad.call(this, request, ...rest);
@@ -165,7 +201,77 @@ assert.strictEqual(windowsCreated, 0);
   assert.strictEqual(viewVisible, false, 'B 站未登录不能把推荐流当成已登录内容');
   assert.strictEqual(windowsCreated, 0);
 
+  // T4：「去登录」才新开登录小窗；成功后关闭，回首页对应 Tab，并发短确认
+  inspectSignals = { headerLogin: true };
+  currentUrl = 'https://www.douyin.com/';
+  await browse.refreshLoginState();
+  const createdBefore = windowsCreated;
+  assert.strictEqual(browse.loginStartUrl('douyin'), 'https://www.douyin.com/');
+  assert.strictEqual(browse.loginStartUrl('xiaohongshu'), 'https://www.xiaohongshu.com/login?redirectPath=%2Fexplore');
+  assert.strictEqual(browse.loginStartUrl('bilibili'), 'https://passport.bilibili.com/login');
+
+  loginInspect = { headerLogin: true };
+  const started = browse.startLogin({ platform: 'douyin' });
+  assert.strictEqual(started.ok, true);
+  assert.strictEqual(started.newWindow, true);
+  assert.strictEqual(started.partition, 'persist:find-viral');
+  assert.strictEqual(started.url, 'https://www.douyin.com/');
+  assert.strictEqual(windowsCreated, createdBefore + 1, '去登录应只新开一扇登录窗');
+  assert.strictEqual(browse.debugInfo().windowsCreated, createdBefore + 1);
+  assert.ok(!String(started.url).includes('browse.html'), '登录窗不承担搜索和同款界面');
+  assert.strictEqual(createdWindows.length, 1);
+  assert.strictEqual(createdWindows[0].opts.webPreferences.session, siteSes);
+  assert.strictEqual(createdWindows[0].opts.title, '登录抖音');
+  assert.ok(!createdWindows[0].opts.webPreferences.preload, '登录窗不要挂浏览工具栏 preload');
+
+  const reused = browse.startLogin({ platform: 'douyin' });
+  assert.strictEqual(reused.reused, true);
+  assert.strictEqual(reused.newWindow, false);
+  assert.strictEqual(windowsCreated, createdBefore + 1, '重复点去登录应复用同一扇窗');
+
+  const stillOut = await browse.checkLoginWindow('douyin');
+  assert.strictEqual(stillOut.loggedIn, false);
+  assert.strictEqual(createdWindows[0].destroyed, false, '未登录成功不得关窗');
+  assert.strictEqual(loggedInEvents.length, 0, '未登录成功不得发短确认');
+
+  loginInspect = { userSelfLink: true };
+  inspectSignals = { userSelfLink: true };
+  browse.layoutEmbed({ x: 20, y: 80, width: 900, height: 500 });
+  const afterIn = await browse.checkLoginWindow('douyin');
+  assert.strictEqual(afterIn.loggedIn, true);
+  assert.strictEqual(createdWindows[0].destroyed, true, '登录成功后要关掉登录窗');
+  assert.strictEqual(currentUrl, 'https://www.douyin.com/', '应回到该平台首页内容');
+  assert.strictEqual(viewVisible, true, '登录成功后露出内嵌内容');
+  assert.deepStrictEqual(loggedInEvents, [{ platform: 'douyin', text: '已登录抖音，下面是你的内容' }]);
+
+  const searchAgain = browse.open({ platform: 'douyin', keyword: '美甲' });
+  assert.strictEqual(searchAgain.newWindow, false);
+  assert.strictEqual(windowsCreated, createdBefore + 1, '搜索仍不得再新建窗口');
+
+  // 小红书 / B 站登录入口各不相同，且仍复用同一分区
+  browse.closeLoginWindow();
+  const xhsLogin = browse.startLogin({ platform: 'xiaohongshu' });
+  assert.strictEqual(xhsLogin.url, 'https://www.xiaohongshu.com/login?redirectPath=%2Fexplore');
+  assert.strictEqual(xhsLogin.partition, 'persist:find-viral');
+  loginInspect = { userSideEntry: true };
+  inspectSignals = { userSideEntry: true };
+  createdWindows[createdWindows.length - 1].url = 'https://www.xiaohongshu.com/explore';
+  const xhsIn = await browse.checkLoginWindow('xiaohongshu');
+  assert.strictEqual(xhsIn.loggedIn, true);
+  assert.deepStrictEqual(loggedInEvents[loggedInEvents.length - 1], { platform: 'xiaohongshu', text: '已登录小红书，下面是你的内容' });
+
+  const biliLogin = browse.startLogin({ platform: 'bilibili' });
+  assert.strictEqual(biliLogin.url, 'https://passport.bilibili.com/login');
+  loginInspect = { headerAvatar: true };
+  inspectSignals = { headerAvatar: true };
+  // 扫码后会跳到 www，这里直接模拟已到首页
+  createdWindows[createdWindows.length - 1].url = 'https://www.bilibili.com/';
+  const biliIn = await browse.checkLoginWindow('bilibili');
+  assert.strictEqual(biliIn.loggedIn, true);
+  assert.deepStrictEqual(loggedInEvents[loggedInEvents.length - 1], { platform: 'bilibili', text: '已登录B站，下面是你的内容' });
+
   browse.hideEmbed();
+  browse.closeLoginWindow();
   assert.strictEqual(viewVisible, false);
   console.log('browse tests ok');
 })().catch((error) => { console.error(error); process.exitCode = 1; });

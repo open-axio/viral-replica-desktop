@@ -392,6 +392,30 @@ assert.strictEqual(windowsCreated, 0);
   assert.match(done.status.text, /已建好项目「长沙烤鱼」/);
   fs.rmSync(importDir, { recursive: true, force: true });
 
+  // T6：未登录打开分享链接时先去登录，登完在内嵌区打开该链接，不回平台首页
+  browse.closeLoginWindow();
+  const shareUrl = 'https://www.douyin.com/video/999';
+  const createdBeforeShare = windowsCreated;
+  loginInspect = { headerLogin: true };
+  const shareLogin = browse.startLogin({ platform: 'douyin', afterUrl: shareUrl });
+  assert.strictEqual(shareLogin.ok, true);
+  loginInspect = { userSelfLink: true };
+  inspectSignals = { headerLogin: true };
+  const afterShare = await browse.checkLoginWindow('douyin');
+  assert.strictEqual(afterShare.loggedIn, true);
+  assert.strictEqual(currentUrl, shareUrl, '登完应打开刚才的分享链接，而不是只回平台首页');
+  assert.strictEqual(viewVisible, true, '登完打开分享链接时应在内容区露出，不能只在隐藏视图里加载');
+  assert.ok(createdWindows[createdWindows.length - 1].destroyed, '登完仍要关掉登录窗');
+  assert.strictEqual(windowsCreated, createdBeforeShare + (shareLogin.reused ? 0 : 1));
+  inspectSignals = { headerAvatar: true };
+  const afterUncertain = await browse.refreshLoginState();
+  assert.strictEqual(afterUncertain.loggedIn, true, '分享页常常没有个人入口，暂以小窗判定保持露出');
+  assert.strictEqual(viewVisible, true);
+  inspectSignals = { headerLogin: true };
+  const afterWall = await browse.refreshLoginState();
+  assert.strictEqual(afterWall.loggedIn, false);
+  assert.strictEqual(viewVisible, false, '分享页实际是登录墙则收回');
+
   browse.hideEmbed();
   browse.closeLoginWindow();
   assert.strictEqual(viewVisible, false);

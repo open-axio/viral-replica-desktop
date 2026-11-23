@@ -160,6 +160,16 @@ test('清掉已看过标记后会再自动出现一次', async () => {
   assert.equal(t.storage.get('vrc.aboutAutoSeen'), '1');
 });
 
+test('介绍关闭后可见「自己放一条视频进来」和「最近的项目」', async () => {
+  const t = await setup({ids: ['A']});
+  assert.equal(aboutOpen(t.$), true);
+  await t.click(t.$('#aboutSkipBtn'));
+  assert.equal(aboutOpen(t.$), false);
+  assert.match(t.$('[data-flow-new]').textContent, /自己放一条视频进来/);
+  assert.match(t.document.body.textContent, /最近的项目/);
+  assert.ok(t.$('[data-open-recent="A"]'));
+});
+
 (async () => {
   let failed = 0;
   for (const [name, fn] of tests) {

@@ -63,6 +63,8 @@ let loginResult = { loggedIn: false, checking: true, reason: 'pending', platform
 let loginCheckTimer = null;
 let loginCheckGen = 0;
 let loginWin = null;       // T4：只承担登录的小窗，和搜索窗不是同一个
+let pendingAfterLogin = ''; // T6：未登录时先记下分享链接，登完再在内嵌区打开
+let holdVisibleAfterLogin = false; // 登完打开分享页时先露出，避免只在隐藏视图里加载
 let loginWatchTimer = null;
 let loginWatchGen = 0;
 const mediaSeen = new Map();   // webContents id -> [{ url, type, at }]
@@ -197,8 +199,12 @@ function wireSiteView(v) {
     wc.on(ev, () => {
       if (ev === 'did-navigate' && status.kind !== 'working') status = { kind: 'idle', text: '' };
       if (ev === 'did-start-loading') {
-        loginResult = { loggedIn: false, checking: true, reason: 'pending', platform: platformOf(wc.getURL && wc.getURL() || '') };
-        applyLoginVisibility();
+        if (holdVisibleAfterLogin) {
+          loginResult = { ...(loginResult || {}), loggedIn: true, checking: true, platform: platformOf(wc.getURL && wc.getURL() || '') };
+        } else {
+          loginResult = { loggedIn: false, checking: true, reason: 'pending', platform: platformOf(wc.getURL && wc.getURL() || '') };
+          applyLoginVisibility();
+        }
       }
       if (ev === 'did-stop-loading' || ev === 'did-navigate') scheduleLoginCheck();
       sendState();
@@ -213,8 +219,13 @@ function wireSiteView(v) {
   });
 }
 
+function isClearLoginWall(reason) {
+  return /^(login-host|login-path|login-wall|header-login|login-modal|sidebar-login|header-login-entry)$/.test(reason || '');
+}
+
 function applyLoginVisibility() {
-  if (loginResult && loginResult.loggedIn && !loginResult.checking) setEmbedVisible(true, lastEmbedBounds);
+  if (holdVisibleAfterLogin) setEmbedVisible(true, lastEmbedBounds);
+  else if (loginResult && loginResult.loggedIn && !loginResult.checking) setEmbedVisible(true, lastEmbedBounds);
   else setEmbedVisible(false);
 }
 
@@ -240,6 +251,11 @@ async function refreshLoginState() {
     }
   }
   loginResult = detectLogin(platform, page);
+  if (holdVisibleAfterLogin) {
+    if (loginResult.loggedIn) holdVisibleAfterLogin = false;
+    else if (isClearLoginWall(loginResult.reason)) holdVisibleAfterLogin = false;
+    else loginResult = { loggedIn: true, checking: false, reason: 'login-window', platform };
+  }
   applyLoginVisibility();
   sendState();
   console.log('[browse] login-state', JSON.stringify({
@@ -249,7 +265,11 @@ async function refreshLoginState() {
 }
 
 function scheduleLoginCheck() {
-  loginResult = { loggedIn: false, checking: true, reason: 'pending', platform: loginResult && loginResult.platform || '' };
+  if (holdVisibleAfterLogin) {
+    loginResult = { ...(loginResult || {}), loggedIn: true, checking: true, reason: (loginResult && loginResult.reason) || 'login-window', platform: loginResult && loginResult.platform || '' };
+  } else {
+    loginResult = { loggedIn: false, checking: true, reason: 'pending', platform: loginResult && loginResult.platform || '' };
+  }
   applyLoginVisibility();
   sendState();
   const gen = ++loginCheckGen;
@@ -682,13 +702,23 @@ async function onLoginSuccess(platform) {
   setStatus('done', text);
   notifyLoggedIn({ platform, text });
   closeLoginWindow();
-  const home = (PLATFORMS[platform] || PLATFORMS.douyin).home;
-  if (view && view.webContents && typeof view.webContents.loadURL === 'function') {
-    view.webContents.loadURL(home);
+  const next = pendingAfterLogin || (PLATFORMS[platform] || PLATFORMS.douyin).home;
+  const hold = !!pendingAfterLogin;
+  pendingAfterLogin = '';
+  if (hold) {
+    holdVisibleAfterLogin = true;
+    loginResult = { loggedIn: true, checking: false, reason: 'login-window', platform };
+    applyLoginVisibility();
+    sendState();
   }
-  loginResult = { loggedIn: false, checking: true, reason: 'pending', platform };
-  applyLoginVisibility();
-  sendState();
+  if (view && view.webContents && typeof view.webContents.loadURL === 'function') {
+    view.webContents.loadURL(next);
+  }
+  if (!hold) {
+    loginResult = { loggedIn: false, checking: true, reason: 'pending', platform };
+    applyLoginVisibility();
+    sendState();
+  }
   scheduleLoginCheck();
   return { loggedIn: true, checking: true, platform, reason: 'login-window' };
 }
@@ -733,8 +763,17 @@ function scheduleLoginWinCheck(platform) {
   if (loginWatchTimer && typeof loginWatchTimer.unref === 'function') loginWatchTimer.unref();
 }
 
+function rememberAfterLoginUrl(opts) {
+  const raw = opts && opts.afterUrl;
+  if (!raw) return;
+  const url = urlFromShareText(String(raw)) || (/^https?:/.test(String(raw)) ? String(raw) : '');
+  if (url) pendingAfterLogin = url;
+}
+
 function startLogin(opts) {
   // T4：点「去登录」才新开小窗，只承担登录，不带搜索和同款。分区与内嵌区相同，登完 cookie 才能带到首页。
+  // T6：未登录打开分享链接时带 afterUrl，登完在内嵌区打开该链接，而不是只回平台首页。
+  rememberAfterLoginUrl(opts);
   const id = resolveLoginPlatform(opts);
   const url = loginStartUrl(id);
   if (loginWin && (typeof loginWin.isDestroyed !== 'function' || !loginWin.isDestroyed())) {

@@ -594,6 +594,7 @@ function renderHome() {
   const city = $("#fvCity"); if (city && !city.value) city.value = storeGet("vrc.fvCity") || "";
   maybeOpenAbout();
   syncFindViralEmbed();
+  syncCaptureHint(fvLastLoggedIn);
 }
 
 const ABOUT_SEEN_KEY = "vrc.aboutAutoSeen";
@@ -667,6 +668,10 @@ function renderFindViral() {
         <div class="fv-status" id="fvStatus">打开一条视频，看到它在播放了，点「同款复刻」</div>
         <button type="button" class="fv-capture" data-fv-capture>同款复刻</button>
       </div>
+      <div class="fv-capture-hint" id="fvCaptureHint" hidden>
+        <p>看中了就点同款，会自动拆给你看</p>
+        <button type="button" data-fv-hint-close>关闭</button>
+      </div>
       <div class="fv-embed-wrap">
         <div class="fv-embed" id="fvEmbed" data-fv-url="" aria-label="平台内容"></div>
         <div class="fv-login-empty" id="fvLoginEmpty">
@@ -696,6 +701,55 @@ function renderFindViral() {
   </section>`;
 }
 function fvLinkFrom(text) { const m = String(text || "").match(/https?:\/\/[^\s，。,；;"'<>【】]+/); return m ? m[0] : ""; }
+const FV_HINT_DISMISSED = "vrc.fvCaptureHintDismissed";
+const FV_CAPTURE_DONE = "vrc.fvCaptureDone";
+let fvLastLoggedIn = false;
+let fvPendingShareUrl = "";
+function fvPlatformOf(url) {
+  try {
+    const host = new URL(url).hostname;
+    if (/(^|\.)(douyin\.com|iesdouyin\.com)$/.test(host)) return "douyin";
+    if (/(^|\.)(xiaohongshu\.com|xhslink\.com|rednote\.com)$/.test(host)) return "xiaohongshu";
+    if (/(^|\.)(bilibili\.com|b23\.tv)$/.test(host)) return "bilibili";
+  } catch (_) { /* 认不出就用当前 Tab */ }
+  return fvCurrentPlatform();
+}
+function fvSelectPlatform(id) {
+  if (!FV_PLATFORMS.some((p) => p.id === id)) return;
+  fvPlatform = id;
+  store("vrc.fvPlatform", id);
+  const btns = document.querySelectorAll("[data-fv-platform]");
+  for (let i = 0; i < (btns && btns.length || 0); i++) {
+    const btn = btns[i];
+    if (btn && btn.setAttribute) btn.setAttribute("aria-pressed", String(btn.dataset.fvPlatform === id));
+  }
+}
+function fvCaptureHintAllowed() {
+  return !storeGet(FV_HINT_DISMISSED) && !storeGet(FV_CAPTURE_DONE);
+}
+function syncCaptureHint(loggedIn) {
+  const el = $("#fvCaptureHint");
+  if (!el) return;
+  el.hidden = !(loggedIn && fvCaptureHintAllowed());
+}
+function fvOpenShare(url) {
+  if (!inDesktop()) {
+    window.open(url, "_blank", "noopener");
+    return;
+  }
+  const platform = fvPlatformOf(url);
+  fvSelectPlatform(platform);
+  if (fvLastLoggedIn) {
+    fvPendingShareUrl = "";
+    fvOpen({ url });
+    return;
+  }
+  // 未登录：先走「去登录」，不要只在隐藏视图里默默加载。登完由主进程用 afterUrl 打开。
+  fvPendingShareUrl = url;
+  if (window.__browse && typeof window.__browse.startLogin === "function") {
+    window.__browse.startLogin({ platform, afterUrl: url });
+  }
+}
 let fvAttached = false, fvEmbedObs = null, fvEmbedWired = false;
 function hideFindViralEmbed() {
   if (inDesktop() && window.__browse && window.__browse.hide) window.__browse.hide();
@@ -770,6 +824,8 @@ function applyFvState(s) {
       hideFindViralEmbed();
     }
   }
+  fvLastLoggedIn = !!s.loggedIn;
+  syncCaptureHint(fvLastLoggedIn);
 }
 function setFlagClass(el, name, on) {
   if (!el) return;
@@ -841,7 +897,7 @@ document.addEventListener("submit", (e) => {
     e.preventDefault();
     const url = fvLinkFrom($("#fvLink")?.value);
     if (!url) { toast("没认出链接。复制平台「分享」里的链接或整段分享文字，粘贴进来就行", true); return; }
-    fvOpen({ url });
+    fvOpenShare(url);
     $("#fvLink").value = "";
   }
 });
@@ -854,6 +910,10 @@ if (window.__browse && window.__browse.onLoggedIn) {
 }
 if (window.__browse && window.__browse.onImported) {
   window.__browse.onImported(async (project) => {
+    if (project && project.id && !project.focus) {
+      store(FV_CAPTURE_DONE, "1");
+      syncCaptureHint(fvLastLoggedIn);
+    }
     try { await refreshProjectList(); } catch (_) { /* 打开项目时会再读 */ }
     if (project && project.id) {
       if (!project.focus) toast(`已建好项目「${project.name || ""}」，视频已经放好了`);
@@ -886,10 +946,15 @@ document.addEventListener("click", (e) => {
     if (e.target.closest("[data-fv-forward]")) { window.__browse.act("forward"); return; }
     if (e.target.closest("[data-fv-reload]")) { window.__browse.act("reload"); return; }
     if (e.target.closest("[data-fv-capture]")) { window.__browse.act("capture"); return; }
+    if (e.target.closest("[data-fv-hint-close]")) {
+      store(FV_HINT_DISMISSED, "1");
+      syncCaptureHint(fvLastLoggedIn);
+      return;
+    }
     if (e.target.closest("[data-fv-login]")) {
       // T4：点「去登录」才开登录小窗；没有桥接时不自己 window.open。
       if (typeof window.__browse.startLogin === "function") {
-        window.__browse.startLogin({ platform: fvCurrentPlatform() });
+        window.__browse.startLogin({ platform: fvCurrentPlatform(), afterUrl: fvPendingShareUrl || undefined });
       }
       return;
     }

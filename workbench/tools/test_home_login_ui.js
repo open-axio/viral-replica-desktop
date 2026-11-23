@@ -68,7 +68,7 @@ async function setup({desktop = true, seen = true} = {}) {
     startLogin(opts) { startLogin += 1; startLoginOpts.push(opts || {}); },
     onState(cb) { this._onState = cb; },
     onLoggedIn(cb) { this._onLoggedIn = cb; },
-    onImported() {},
+    onImported(cb) { this._onImported = cb; },
   } : undefined;
   const windowObj = {
     scrollTo() {}, addEventListener() {}, innerWidth: 1280, innerHeight: 800,
@@ -106,8 +106,12 @@ async function setup({desktop = true, seen = true} = {}) {
     for (const fn of events.click || []) await fn({target: el, preventDefault() {}, stopPropagation() {}});
     await Promise.resolve();
   };
+  const submit = async (el) => {
+    for (const fn of events.submit || []) await fn({target: el, preventDefault() {}, stopPropagation() {}});
+    await Promise.resolve();
+  };
   const emitState = (s) => { if (browseMock && browseMock._onState) browseMock._onState(s); };
-  return {run, $, document, click, opens, layouts, windowOpens, hidden: () => hidden, startLogin: () => startLogin, startLoginOpts, emitLoggedIn: (s) => { if (browseMock && browseMock._onLoggedIn) browseMock._onLoggedIn(s); }, emitState, browse: browseMock};
+  return {run, $, document, storage, click, submit, opens, layouts, windowOpens, hidden: () => hidden, startLogin: () => startLogin, startLoginOpts, emitLoggedIn: (s) => { if (browseMock && browseMock._onLoggedIn) browseMock._onLoggedIn(s); }, emitState, browse: browseMock};
 }
 
 const tests = [], test = (name, fn) => tests.push([name, fn]);
@@ -180,6 +184,60 @@ test('登录成功后出现一句短确认', async () => {
   t.emitLoggedIn({platform: 'douyin', text: '已登录抖音，下面是你的内容'});
   assert.match(t.$('#toast').textContent, /已登录抖音，下面是你的内容/);
   assert.ok(!/\berr\b/.test(t.$('#toast').className));
+});
+
+test('已登录且还没做过同款时出现可关闭的轻提示，关掉后不再出现', async () => {
+  const t = await setup();
+  assert.equal(t.$('#fvCaptureHint').hidden, true, '未确认登录时先不出现轻提示');
+  t.emitState({url: 'https://www.douyin.com/', loggedIn: false, loginChecking: false, canBack: false, canForward: false});
+  assert.equal(t.$('#fvCaptureHint').hidden, true, '未登录不出现轻提示');
+  t.emitState({url: 'https://www.douyin.com/', loggedIn: true, loginChecking: false, loginReason: 'user-self', canBack: false, canForward: false});
+  assert.equal(t.$('#fvCaptureHint').hidden, false);
+  assert.match(t.$('#fvCaptureHint').textContent, /看中了就点同款，会自动拆给你看/);
+  await t.click(t.$('[data-fv-hint-close]'));
+  assert.equal(t.$('#fvCaptureHint').hidden, true);
+  assert.equal(t.storage.get('vrc.fvCaptureHintDismissed'), '1');
+  t.emitState({url: 'https://www.douyin.com/', loggedIn: true, loginChecking: false, canBack: false, canForward: false});
+  assert.equal(t.$('#fvCaptureHint').hidden, true, '关掉后不再出现');
+});
+
+test('成功做过同款后不再出现轻提示', async () => {
+  const t = await setup();
+  t.emitState({url: 'https://www.douyin.com/', loggedIn: true, loginChecking: false, canBack: false, canForward: false});
+  assert.equal(t.$('#fvCaptureHint').hidden, false);
+  try { await t.browse._onImported({ id: 'p-new', name: '长沙烤鱼' }); } catch (_) { /* 本用例只验提示，不接打开项目接口 */ }
+  await Promise.resolve();
+  assert.equal(t.storage.get('vrc.fvCaptureDone'), '1');
+  assert.equal(t.$('#fvCaptureHint').hidden, true);
+  t.emitState({url: 'https://www.douyin.com/', loggedIn: true, loginChecking: false, canBack: false, canForward: false});
+  assert.equal(t.$('#fvCaptureHint').hidden, true, '成功做过同款后不再出现');
+});
+
+test('已登录时分享链接在首页内容区打开，不新开浏览窗口', async () => {
+  const t = await setup();
+  t.emitState({url: 'https://www.douyin.com/', loggedIn: true, loginChecking: false, canBack: false, canForward: false});
+  const opensBefore = t.opens.length;
+  t.$('#fvLink').value = '看这条 https://www.douyin.com/video/123 复制';
+  await t.submit(t.$('[data-fv-link]'));
+  assert.equal(t.opens.length, opensBefore + 1);
+  assert.equal(t.opens.at(-1).url, 'https://www.douyin.com/video/123');
+  assert.equal(t.startLogin(), 0, '已登录不应再去登录');
+  assert.equal(t.windowOpens.length, 0);
+  assert.equal(t.$('#fvLink').value, '');
+});
+
+test('未登录打开分享链接时先去登录，不在隐藏视图里加载', async () => {
+  const t = await setup();
+  t.emitState({url: 'https://www.douyin.com/', loggedIn: false, loginChecking: false, canBack: false, canForward: false});
+  const opensBefore = t.opens.length;
+  t.$('#fvLink').value = 'https://www.xiaohongshu.com/explore/66aa';
+  await t.submit(t.$('[data-fv-link]'));
+  assert.equal(t.opens.length, opensBefore, '未登录不得在隐藏视图里打开链接');
+  assert.equal(t.startLogin(), 1);
+  assert.equal(t.startLoginOpts[0].platform, 'xiaohongshu');
+  assert.equal(t.startLoginOpts[0].afterUrl, 'https://www.xiaohongshu.com/explore/66aa');
+  assert.equal(t.windowOpens.length, 0);
+  assert.equal(t.$('#fvLink').value, '');
 });
 
 (async () => {

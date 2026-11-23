@@ -1236,6 +1236,11 @@ button.paid:not(.ghost):not(.danger)::before { background: rgba(255,255,255,.8);
 .fv-login-copy { margin: 0; max-width: 28em; font-size: 15px; color: var(--ink); line-height: 1.6; }
 .fv-login-btn { height: 40px; padding: 0 22px; border-radius: 10px; font-size: 15px; font-weight: 600; background: var(--accent); color: #fff; border: 0; }
 .fv-pane.is-logged-out .fv-capture { visibility: hidden; }
+.fv-capture-hint { display: flex; align-items: flex-start; gap: 10px; margin: 8px 0 0; padding: 8px 10px 8px 12px; border-radius: 8px; background: var(--accent-soft); color: var(--ink); font-size: 13px; line-height: 1.45; }
+.fv-capture-hint[hidden] { display: none; }
+.fv-capture-hint p { margin: 0; flex: 1; }
+.fv-capture-hint button { flex-shrink: 0; border: 0; background: transparent; color: var(--muted); cursor: pointer; font-size: 13px; padding: 0 2px; }
+.fv-pane.is-logged-out .fv-capture-hint { display: none; }
 @media (max-width: 700px) { .fv { padding: 18px; } .fv-search { flex-wrap: wrap; } .fv-search .fv-city { flex: 1 1 100%; width: auto; } .fv-group > span { width: 100%; } .fv-embed { min-height: 280px; height: 55vh; } .fv-link { flex-wrap: wrap; } }
 
 /* ---- 项目：来源卡片 ---- */

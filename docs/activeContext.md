@@ -4,9 +4,9 @@
 
 ## 当前
 
-T1、T2、T7 已验收；T3 已实现、尚未推送。分支 `feat/home-redesign`。T3：在隐藏的 `WebContentsView`（分区仍是 `persist:find-viral`）打开平台页，按三家各自的页面结果判定登录态，不准就当未登录；未确认已登录前不露出原生视图，只出空态「登录后能直接刷到你平时看的内容，不用再复制链接」和「去登录」。点「去登录」本轮不自动开窗（开登录小窗归 T4）。浏览器打开工作台仍无嵌入区。T4、T5、T6 未做。推送和开 PR 等点头。
+T1、T2、T7 已验收；T3 尚未正式验收，按意见收紧已登录判定后待复验，尚未推送。分支 `feat/home-redesign`。T3：在隐藏的 `WebContentsView`（分区仍是 `persist:find-viral`）打开平台页，按三家各自的页面结果判定登录态，不准就当未登录；未确认已登录前不露出原生视图，只出空态和「去登录」，不自动开窗。抖音已登录必须有可见的 `/user/self`，右上角小图单独出现视为 uncertain。小红书已登录必须有个人主页入口，或头像明确在侧栏/顶栏个人区，且当时没有登录按钮或弹层；通用头像单独出现视为 uncertain。T4 未开始。T5、T6 未做。推送和开 PR 等点头。
 
-验证：`node build/test_login_state.js` 通过（三家规则分开测，含「有信息流但仍是登录墙 → 未登录」、跨平台信号不串用）；`node build/test_browse.js` 通过（未登录 / 判定中视图保持隐藏且不新建窗口，已登录才 layout）；`node workbench/tools/test_home_login_ui.js` 6 条通过；`test_home_embed_ui.js` 6 条、`test_home_about_ui.js` 5 条、`test_round24_16_ui.js` 13 条回归通过。真机三家登录态、高缩放对齐、未挂 hide 的浮层：not run — 本环境无桌面真机会话。
+验证：`node build/test_login_state.js` 通过（含「只有头像、没有个人入口 → 未登录」）；`node build/test_browse.js`、`test_home_login_ui.js` 6 条，以及 T1/T2/回归仍通过。真机三家登录态、高缩放对齐、未挂 hide 的浮层：not run — 本环境无桌面真机会话，可与 T4 一并过。
 
 ---
 

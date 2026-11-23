@@ -32,7 +32,9 @@ assertOut(detectDouyin({ url: 'https://www.douyin.com/?recommend=1', qrHint: tru
 assertOut(detectLogin('douyin', { url: 'https://passport.douyin.com/login' }), 'douyin', 'login-host');
 assertOut(detectDouyin({ url: 'https://www.douyin.com/login' }), 'douyin', 'login-path');
 assertIn(detectDouyin({ url: 'https://www.douyin.com/', userSelfLink: true }), 'douyin', 'user-self');
-assertIn(detectDouyin({ url: 'https://www.douyin.com/', headerAvatar: true }), 'douyin', 'header-avatar');
+assertIn(detectDouyin({ url: 'https://www.douyin.com/', userSelfLink: true, headerAvatar: true }), 'douyin', 'user-self');
+// 只有右上角小图、没有 /user/self：不能当成已登录
+assertOut(detectDouyin({ url: 'https://www.douyin.com/', headerAvatar: true }), 'douyin', 'uncertain');
 assertOut(detectDouyin({ url: 'https://www.douyin.com/' }), 'douyin', 'uncertain');
 // 首页推荐流在、但只有登录按钮：不能当成已登录
 assertOut(detectDouyin({ url: 'https://www.douyin.com/?recommend=1', headerLogin: true, hasFeed: true }), 'douyin', 'header-login');
@@ -42,8 +44,15 @@ assertOut(detectXiaohongshu({ url: 'https://www.xiaohongshu.com/login?redirectPa
 assertOut(detectXiaohongshu({ url: 'https://www.xiaohongshu.com/website-login/captcha?redirectPath=/' }), 'xiaohongshu', 'login-path');
 assertOut(detectXiaohongshu({ url: 'https://www.xiaohongshu.com/explore', loginModal: true }), 'xiaohongshu', 'login-modal');
 assertOut(detectXiaohongshu({ url: 'https://www.xiaohongshu.com/explore', sidebarLogin: true }), 'xiaohongshu', 'sidebar-login');
-assertIn(detectXiaohongshu({ url: 'https://www.xiaohongshu.com/explore', userAvatar: true }), 'xiaohongshu', 'user-avatar');
+assertIn(detectXiaohongshu({ url: 'https://www.xiaohongshu.com/explore', userSideEntry: true }), 'xiaohongshu', 'user-side');
+assertIn(detectXiaohongshu({ url: 'https://www.xiaohongshu.com/explore', chromeAvatar: true }), 'xiaohongshu', 'chrome-avatar');
+// 只有通用头像、没有个人主页入口：不能当成已登录（可能是信息流作者头像）
+assertOut(detectXiaohongshu({ url: 'https://www.xiaohongshu.com/explore', userAvatar: true }), 'xiaohongshu', 'uncertain');
+assertOut(detectXiaohongshu({ url: 'https://www.xiaohongshu.com/explore', userAvatar: true, hasCards: true }), 'xiaohongshu', 'uncertain');
 assertOut(detectXiaohongshu({ url: 'https://www.xiaohongshu.com/explore' }), 'xiaohongshu', 'uncertain');
+// 侧栏/顶栏头像在、但当时还有登录按钮或弹层：仍当未登录
+assertOut(detectXiaohongshu({ url: 'https://www.xiaohongshu.com/explore', chromeAvatar: true, sidebarLogin: true }), 'xiaohongshu', 'sidebar-login');
+assertOut(detectXiaohongshu({ url: 'https://www.xiaohongshu.com/explore', userSideEntry: true, loginModal: true }), 'xiaohongshu', 'login-modal');
 // 探索页已有卡片但弹出登录窗：不能当成已登录
 assertOut(detectXiaohongshu({ url: 'https://www.xiaohongshu.com/explore', loginModal: true, hasCards: true }), 'xiaohongshu', 'login-modal');
 // 不能拿抖音的信号套到小红书

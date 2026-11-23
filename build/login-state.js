@@ -15,7 +15,8 @@ function inn(platform, reason) {
 }
 
 // 抖音网页版没有稳定的独立 /login 入口：未登录常停在 www.douyin.com，右上角是「登录」，
-// 或弹出 #login-pannel（官方历史拼写）/ 扫码文案。已登录时顶栏出现个人入口（/user/self）。
+// 或弹出 #login-pannel（官方历史拼写）/ 扫码文案。已登录必须看到可见的个人入口 /user/self。
+// 右上角 24–72px 图片单独出现视为 uncertain，不能当成已登录。
 // 不能因为已经落在首页就把推荐流当成已登录。
 function detectDouyin(page) {
   const u = parseUrl(page.url || page.href || '');
@@ -24,13 +25,14 @@ function detectDouyin(page) {
   if (/(^|\.)(passport|sso)\.douyin\.com$/.test(host)) return out('douyin', 'login-host');
   if (/^\/login(\/|$)/.test(pathname) || pathname.startsWith('/passport')) return out('douyin', 'login-path');
   if (page.loginPanel || page.qrHint) return out('douyin', 'login-wall');
-  if (page.headerLogin && !page.userSelfLink && !page.headerAvatar) return out('douyin', 'header-login');
-  if (page.userSelfLink || page.headerAvatar) return inn('douyin', page.userSelfLink ? 'user-self' : 'header-avatar');
+  if (page.headerLogin && !page.userSelfLink) return out('douyin', 'header-login');
+  if (page.userSelfLink) return inn('douyin', 'user-self');
   return out('douyin', 'uncertain');
 }
 
 // 小红书未登录会进 /login、/website-login（含滑块验证），或在探索页弹出 .login-modal。
-// 已登录看侧栏/顶栏用户头像。探索页本身未登录也可能先露出一批卡片，不能单凭卡片判定。
+// 已登录要有个人主页入口，或头像明确落在侧栏/顶栏个人区，且当时没有登录按钮或登录弹层。
+// 通用 .user-avatar / .reds-avatar 可能命中信息流作者头像，单独出现视为 uncertain。
 function detectXiaohongshu(page) {
   const u = parseUrl(page.url || page.href || '');
   const host = String(page.host || (u && u.hostname) || '').toLowerCase();
@@ -39,8 +41,9 @@ function detectXiaohongshu(page) {
     return out('xiaohongshu', 'login-path');
   }
   if (page.loginModal) return out('xiaohongshu', 'login-modal');
-  if (page.sidebarLogin && !page.userAvatar) return out('xiaohongshu', 'sidebar-login');
-  if (page.userAvatar || page.userSideEntry) return inn('xiaohongshu', page.userAvatar ? 'user-avatar' : 'user-side');
+  if (page.sidebarLogin) return out('xiaohongshu', 'sidebar-login');
+  if (page.userSideEntry) return inn('xiaohongshu', 'user-side');
+  if (page.chromeAvatar) return inn('xiaohongshu', 'chrome-avatar');
   return out('xiaohongshu', 'uncertain');
 }
 
@@ -91,6 +94,7 @@ const INSPECT = {
     }
     const self = document.querySelector('a[href*="/user/self"]');
     if (self && visible(self)) userSelfLink = true;
+    // headerAvatar 只作观测，判定已登录必须有 /user/self，不能单靠右上角小图。
     const imgs = document.querySelectorAll('header img, #root img, body img');
     for (let i = 0; i < imgs.length && i < 80; i++) {
       const el = imgs[i];
@@ -124,8 +128,17 @@ const INSPECT = {
       const el = sideBtns[i];
       if (visible(el) && String(el.textContent || '').trim() === '登录') sidebarLogin = true;
     }
-    const userAvatar = visible(document.querySelector('.user-avatar, .reds-avatar, .side-bar-component img.avatar'));
+    const userAvatar = visible(document.querySelector('.user-avatar, .reds-avatar'));
     const userSideEntry = visible(document.querySelector('a[href*="/user/profile"], a[href*="/user/profile/"]'));
+    let chromeAvatar = false;
+    const chromeRoots = document.querySelectorAll('.side-bar-component, .reds-sidebar, header, [class*="side-bar"]');
+    for (let i = 0; i < chromeRoots.length && i < 40; i++) {
+      const root = chromeRoots[i];
+      const av = root.querySelector('img.avatar, .user-avatar, .reds-avatar');
+      if (!visible(av)) continue;
+      const r = av.getBoundingClientRect();
+      if (r.top < 120 || r.left < 200) chromeAvatar = true;
+    }
     return {
       host: location.hostname,
       pathname: location.pathname,
@@ -134,6 +147,7 @@ const INSPECT = {
       sidebarLogin,
       userAvatar,
       userSideEntry,
+      chromeAvatar,
     };
   })()`,
   bilibili: `(() => {

@@ -4,9 +4,9 @@
 
 ## 当前
 
-T1、T2 已完成、尚未推送。T2：桌面版把平台浏览嵌进首页当前 Tab 下方（`#fvEmbed` + 工具栏），复用 `persist:find-viral`；搜索、切 Tab、行业词走 `__browse.open`，不再新建 `BrowserWindow`。浏览器打开工作台仍走新标签页。登录空态（T3）、「去登录」窗口（T4）、同款复刻真机（T5）未做；未登录时内嵌区可能会短暂出现平台自己的登录页。推送和开 PR 等点头。
+T1、T2、T7 已验收；T3 已实现、尚未推送。分支 `feat/home-redesign`。T3：在隐藏的 `WebContentsView`（分区仍是 `persist:find-viral`）打开平台页，按三家各自的页面结果判定登录态，不准就当未登录；未确认已登录前不露出原生视图，只出空态「登录后能直接刷到你平时看的内容，不用再复制链接」和「去登录」。点「去登录」本轮不自动开窗（开登录小窗归 T4）。浏览器打开工作台仍无嵌入区。T4、T5、T6 未做。推送和开 PR 等点头。
 
-验证：`node build/test_browse.js` 通过（含「搜索 / 切 Tab 不新建窗口、分区与搜索 URL」）；`node workbench/tools/test_home_embed_ui.js` 6 条通过；`test_home_about_ui.js` 5 条、`test_round24_16_ui.js` 13 条回归通过。未在真机 Electron 用系统窗口列表点验。
+验证：`node build/test_login_state.js` 通过（三家规则分开测，含「有信息流但仍是登录墙 → 未登录」、跨平台信号不串用）；`node build/test_browse.js` 通过（未登录 / 判定中视图保持隐藏且不新建窗口，已登录才 layout）；`node workbench/tools/test_home_login_ui.js` 6 条通过；`test_home_embed_ui.js` 6 条、`test_home_about_ui.js` 5 条、`test_round24_16_ui.js` 13 条回归通过。真机三家登录态、高缩放对齐、未挂 hide 的浮层：not run — 本环境无桌面真机会话。
 
 ---
 

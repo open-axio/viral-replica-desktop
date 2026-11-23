@@ -667,7 +667,13 @@ function renderFindViral() {
         <div class="fv-status" id="fvStatus">打开一条视频，看到它在播放了，点「同款复刻」</div>
         <button type="button" class="fv-capture" data-fv-capture>同款复刻</button>
       </div>
-      <div class="fv-embed" id="fvEmbed" data-fv-url="" aria-label="平台内容"></div>
+      <div class="fv-embed-wrap">
+        <div class="fv-embed" id="fvEmbed" data-fv-url="" aria-label="平台内容"></div>
+        <div class="fv-login-empty" id="fvLoginEmpty">
+          <p class="fv-login-copy" id="fvLoginCopy">正在确认登录状态…</p>
+          <button type="button" class="fv-login-btn" data-fv-login id="fvLoginBtn" hidden>去登录</button>
+        </div>
+      </div>
     </div>` : "";
   return `<section class="fv" aria-labelledby="fvTitle">
     <div class="fv-head">
@@ -726,8 +732,54 @@ function applyFvState(s) {
   if (embed && s.url) embed.setAttribute("data-fv-url", s.url);
   if (status) {
     status.className = "fv-status" + (s.status && s.status.kind ? " " + s.status.kind : "");
-    status.textContent = (s.status && s.status.text) || (s.loading ? "加载中…" : "打开一条视频，看到它在播放了，点「同款复刻」");
+    if (s.loggedIn) {
+      status.textContent = (s.status && s.status.text) || (s.loading ? "加载中…" : "打开一条视频，看到它在播放了，点「同款复刻」");
+    } else if (s.loginChecking) {
+      status.textContent = "正在确认登录状态…";
+    } else {
+      status.textContent = "登录后就能在这里刷到内容";
+    }
   }
+  const empty = $("#fvLoginEmpty");
+  const copy = $("#fvLoginCopy");
+  const loginBtn = $("#fvLoginBtn");
+  const pane = document.querySelector(".fv-pane");
+  if (empty) {
+    if (s.loggedIn) {
+      empty.hidden = true;
+      if (loginBtn) loginBtn.hidden = true;
+      setFlagClass(pane, "is-logged-out", false);
+      setFlagClass(pane, "is-checking", false);
+      if (!anyOverlayOpen()) {
+        const bounds = fvEmbedVisibleBounds();
+        if (bounds && window.__browse && window.__browse.layout) window.__browse.layout(bounds);
+      }
+    } else {
+      empty.hidden = false;
+      if (s.loginChecking) {
+        if (copy) copy.textContent = "正在确认登录状态…";
+        if (loginBtn) loginBtn.hidden = true;
+        setFlagClass(pane, "is-checking", true);
+        setFlagClass(pane, "is-logged-out", false);
+      } else {
+        if (copy) copy.textContent = "登录后能直接刷到你平时看的内容，不用再复制链接。";
+        if (loginBtn) loginBtn.hidden = false;
+        setFlagClass(pane, "is-logged-out", true);
+        setFlagClass(pane, "is-checking", false);
+      }
+      hideFindViralEmbed();
+    }
+  }
+}
+function setFlagClass(el, name, on) {
+  if (!el) return;
+  if (el.classList && typeof el.classList.add === "function" && typeof el.classList.remove === "function") {
+    on ? el.classList.add(name) : el.classList.remove(name);
+    return;
+  }
+  const cur = ((el.getAttribute && el.getAttribute("class")) || "").trim().split(/\s+/).filter(Boolean);
+  const next = on ? (cur.includes(name) ? cur : cur.concat(name)) : cur.filter((x) => x !== name);
+  if (el.setAttribute) el.setAttribute("class", next.join(" "));
 }
 function wireFindViralEmbed() {
   const relayout = () => { if (!P) syncFindViralEmbed(); };
@@ -828,6 +880,11 @@ document.addEventListener("click", (e) => {
     if (e.target.closest("[data-fv-forward]")) { window.__browse.act("forward"); return; }
     if (e.target.closest("[data-fv-reload]")) { window.__browse.act("reload"); return; }
     if (e.target.closest("[data-fv-capture]")) { window.__browse.act("capture"); return; }
+    if (e.target.closest("[data-fv-login]")) {
+      // T3：只出示「去登录」，不自动弹窗。开登录小窗归 T4；若已接上 startLogin 再调用。
+      if (typeof window.__browse.startLogin === "function") window.__browse.startLogin();
+      return;
+    }
   }
   const tab = e.target.closest("[data-fv-platform]");
   if (tab) {

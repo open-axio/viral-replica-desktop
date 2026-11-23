@@ -10,6 +10,7 @@ let currentUrl = '';
 const loadedUrls = [];
 const boundsHistory = [];
 let viewVisible = true;
+let inspectSignals = { headerLogin: true };
 
 function makeWebContents() {
   return {
@@ -30,6 +31,7 @@ function makeWebContents() {
     reload() {},
     setWindowOpenHandler() {},
     on() {},
+    executeJavaScript: async () => ({ ...inspectSignals, href: currentUrl }),
   };
 }
 
@@ -134,11 +136,36 @@ assert.strictEqual(childViews.length, 1);
 assert.strictEqual(loadedUrls[1], tab.url);
 
 browse.layoutEmbed({ x: 20, y: 80, width: 900, height: 500 });
-assert.deepStrictEqual(viewInstance._bounds, { x: 20, y: 80, width: 900, height: 500 });
-assert.strictEqual(viewVisible, true);
-browse.hideEmbed();
-assert.strictEqual(viewVisible, false);
+assert.strictEqual(viewVisible, false, '未确认已登录前不能露出平台页');
 assert.deepStrictEqual(viewInstance._bounds, { x: 0, y: 0, width: 0, height: 0 });
 assert.strictEqual(windowsCreated, 0);
 
-console.log('browse tests ok');
+(async () => {
+  inspectSignals = { headerLogin: true };
+  const loggedOut = await browse.refreshLoginState();
+  assert.strictEqual(loggedOut.loggedIn, false);
+  assert.strictEqual(viewVisible, false, '未登录要把内嵌页藏起来');
+  assert.strictEqual(windowsCreated, 0, '未登录不得自动弹出登录窗');
+
+  inspectSignals = { userSelfLink: true };
+  currentUrl = 'https://www.douyin.com/';
+  const loggedIn = await browse.refreshLoginState();
+  assert.strictEqual(loggedIn.loggedIn, true);
+  assert.strictEqual(loggedIn.platform, 'douyin');
+  browse.layoutEmbed({ x: 20, y: 80, width: 900, height: 500 });
+  assert.strictEqual(viewVisible, true);
+  assert.deepStrictEqual(viewInstance._bounds, { x: 20, y: 80, width: 900, height: 500 });
+  assert.strictEqual(windowsCreated, 0);
+
+  inspectSignals = { headerLoginEntry: true };
+  currentUrl = 'https://www.bilibili.com/';
+  const biliOut = await browse.refreshLoginState();
+  assert.strictEqual(biliOut.loggedIn, false);
+  assert.strictEqual(biliOut.reason, 'header-login-entry');
+  assert.strictEqual(viewVisible, false, 'B 站未登录不能把推荐流当成已登录内容');
+  assert.strictEqual(windowsCreated, 0);
+
+  browse.hideEmbed();
+  assert.strictEqual(viewVisible, false);
+  console.log('browse tests ok');
+})().catch((error) => { console.error(error); process.exitCode = 1; });

@@ -10,6 +10,7 @@
 const { BrowserWindow, WebContentsView, session, ipcMain, app } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const { detectLogin, INSPECT } = require('./login-state');
 const { Readable } = require('stream');
 const { pipeline } = require('stream/promises');
 
@@ -58,6 +59,9 @@ let lastKeyword = '';
 let status = { kind: 'idle', text: '' };
 let lastEmbedBounds = null;
 let windowsCreated = 0;
+let loginResult = { loggedIn: false, checking: true, reason: 'pending', platform: '' };
+let loginCheckTimer = null;
+let loginCheckGen = 0;
 const mediaSeen = new Map();   // webContents id -> [{ url, type, at }]
 
 function init(options) { ctx = { ...ctx, ...options }; }
@@ -117,6 +121,9 @@ function statePayload() {
     status,
     embedded: true,
     newWindow: false,
+    loggedIn: !!(loginResult && loginResult.loggedIn),
+    loginChecking: !!(loginResult && loginResult.checking),
+    loginReason: loginResult && loginResult.reason || '',
   };
 }
 
@@ -143,6 +150,9 @@ function debugInfo() {
     windowsCreated,
     embedded: !!view,
     bounds: lastEmbedBounds,
+    loggedIn: !!(loginResult && loginResult.loggedIn),
+    loginChecking: !!(loginResult && loginResult.checking),
+    loginReason: loginResult && loginResult.reason || '',
   };
 }
 
@@ -183,12 +193,73 @@ function wireSiteView(v) {
   for (const ev of ['did-start-loading', 'did-stop-loading', 'did-navigate', 'did-navigate-in-page', 'page-title-updated']) {
     wc.on(ev, () => {
       if (ev === 'did-navigate' && status.kind !== 'working') status = { kind: 'idle', text: '' };
+      if (ev === 'did-start-loading') {
+        loginResult = { loggedIn: false, checking: true, reason: 'pending', platform: platformOf(wc.getURL && wc.getURL() || '') };
+        applyLoginVisibility();
+      }
+      if (ev === 'did-stop-loading' || ev === 'did-navigate') scheduleLoginCheck();
       sendState();
     });
   }
   wc.on('did-fail-load', (_e, code, desc, url, isMain) => {
-    if (isMain && code !== -3) setStatus('error', `页面没打开（${desc}）。检查一下网络，点刷新再试`);
+    if (isMain && code !== -3) {
+      loginResult = { loggedIn: false, checking: false, reason: 'load-failed', platform: platformOf(url || '') };
+      applyLoginVisibility();
+      setStatus('error', `页面没打开（${desc}）。检查一下网络，点刷新再试`);
+    }
   });
+}
+
+function applyLoginVisibility() {
+  if (loginResult && loginResult.loggedIn && !loginResult.checking) setEmbedVisible(true, lastEmbedBounds);
+  else setEmbedVisible(false);
+}
+
+async function refreshLoginState() {
+  if (!view || !view.webContents) {
+    loginResult = { loggedIn: false, checking: false, reason: 'no-view', platform: '' };
+    return loginResult;
+  }
+  const wc = view.webContents;
+  const url = typeof wc.getURL === 'function' ? wc.getURL() : '';
+  const platform = platformOf(url);
+  const src = INSPECT[platform];
+  let page = { url };
+  if (src && typeof wc.executeJavaScript === 'function') {
+    try {
+      const collected = await Promise.race([
+        wc.executeJavaScript(src, true),
+        sleep(3000).then(() => null),
+      ]);
+      if (collected && typeof collected === 'object') page = { url, ...collected };
+    } catch (e) {
+      page = { url };
+    }
+  }
+  loginResult = detectLogin(platform, page);
+  applyLoginVisibility();
+  sendState();
+  console.log('[browse] login-state', JSON.stringify({
+    platform: loginResult.platform, loggedIn: loginResult.loggedIn, reason: loginResult.reason, url, newWindow: false, windowsCreated,
+  }));
+  return loginResult;
+}
+
+function scheduleLoginCheck() {
+  loginResult = { loggedIn: false, checking: true, reason: 'pending', platform: loginResult && loginResult.platform || '' };
+  applyLoginVisibility();
+  sendState();
+  const gen = ++loginCheckGen;
+  clearTimeout(loginCheckTimer);
+  loginCheckTimer = setTimeout(() => {
+    if (gen !== loginCheckGen) return;
+    refreshLoginState().catch(() => {
+      loginResult = { loggedIn: false, checking: false, reason: 'check-failed', platform: '' };
+      applyLoginVisibility();
+      sendState();
+    });
+  }, 700);
+  if (loginCheckTimer && typeof loginCheckTimer.unref === 'function') loginCheckTimer.unref();
 }
 
 function ensureEmbeddedView() {
@@ -242,16 +313,19 @@ function open(opts) {
   if (!ensureEmbeddedView()) return { ok: false, error: '没能挂上平台视图', newWindow: false, url: '' };
   const url = resolveOpenUrl(opts);
   status = { kind: 'idle', text: '' };
+  loginResult = { loggedIn: false, checking: true, reason: 'pending', platform: platformOf(url) };
+  setEmbedVisible(false);
   view.webContents.loadURL(url);
-  if (lastEmbedBounds) setEmbedVisible(true, lastEmbedBounds);
+  scheduleLoginCheck();
   sendState();
-  console.log('[browse] embed-load', JSON.stringify({ url, newWindow: false, partition: 'persist:find-viral', windowsCreated }));
-  return { ok: true, url, newWindow: false, partition: 'persist:find-viral' };
+  console.log('[browse] embed-load', JSON.stringify({ url, newWindow: false, partition: 'persist:find-viral', windowsCreated, loginChecking: true }));
+  return { ok: true, url, newWindow: false, partition: 'persist:find-viral', loginChecking: true };
 }
 
 function layoutEmbed(bounds) {
   ensureEmbeddedView();
-  setEmbedVisible(true, bounds || lastEmbedBounds);
+  if (bounds) setEmbedVisible(false, bounds); // 先记下位置；未登录时保持隐藏，避免露出登录页
+  applyLoginVisibility();
   return debugInfo();
 }
 
@@ -570,4 +644,5 @@ function register() {
 module.exports = {
   mediaSeen, init, register, open, capture, platformOf, urlFromShareText, chooseMedia,
   PLATFORMS, EXTRACT, debugInfo, layoutEmbed, hideEmbed, runToolbar, resolveOpenUrl,
+  refreshLoginState, detectLogin,
 };

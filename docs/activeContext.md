@@ -1,5 +1,17 @@
 # activeContext · 交接
 
+更新：2026-11-23 ｜ 进行中：首页改版（规格 `docs/specs/首页改版.md`）｜ 分支 `feat/home-redesign`
+
+## 当前
+
+T1 已完成、尚未推送：去掉首页常驻 `.home-hero`，主舞台改为「找同行的爆款」；顶栏「这是什么」打开同一份介绍；首次打开或未看过自动介绍时弹出一次，可跳过；标记键 `vrc.aboutAutoSeen`。T2 及之后未开始。推送和开 PR 等点头。
+
+验证：`node workbench/tools/test_home_about_ui.js` 5 条通过；`test_round24_16_ui.js` 13 条通过。本切片未做桌面真机内嵌浏览（属 T2）。
+
+---
+
+# 此前交接（至 2026-11-17）
+
 更新：2026-11-17 15:35 ｜ main = `c8da595` ｜ 进行中：`feat/free-steps-without-key` @ `8d51651`（PR #7）
 
 ## 一句话现状

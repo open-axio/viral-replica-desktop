@@ -5679,7 +5679,7 @@ $("#deleteProjectBtn").onclick = async () => {
     button.disabled = false; button.textContent = label;
   }
 };
-$("#heroNew").onclick = newProject;
+const heroNew = $("#heroNew"); if (heroNew) heroNew.onclick = newProject;
 $("#projectSelect").onchange = (e) => !e.target.value ? showHome() : e.target.value.startsWith("batch:") ? openBatchBoard(e.target.value.slice(6)) : openProject(e.target.value);
 $("#settingsBtn").onclick = openSettings;
 $("#saveSettings").onclick = saveSettings;

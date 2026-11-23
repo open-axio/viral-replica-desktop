@@ -580,7 +580,7 @@ function renderHome() {
   if (!box) return;
   const list = (projectList || []).filter((p) => !p.derived_from);
   const day = (v) => { const d = v ? new Date(String(v).replace(" ", "T")) : null; return d && !isNaN(d) ? `${d.getMonth() + 1} 月 ${d.getDate()} 日` : ""; };
-  updateHtml(box, renderFindViral() + (list.length ? `<div class="home-recent-head"><h2>最近的项目</h2><span class="hint">共 ${list.length} 个</span></div>
+  const recent = list.length ? `<div class="home-recent-head"><h2>最近的项目</h2><span class="hint">共 ${list.length} 个</span></div>
     <ul class="home-recent">${list.slice(0, 12).map((p) => {
       const [label, tone, action] = homeStatus(p);
       const thumb = p.thumb ? `<img src="/files/${esc(p.id)}/${esc(p.thumb)}" alt="" loading="lazy">` : '<span class="home-thumb-empty" aria-hidden="true"></span>';
@@ -589,9 +589,46 @@ function renderHome() {
         <span class="home-card-text"><b>${esc(p.name || "未命名项目")}</b><span class="badge ${tone}">${label}</span>
         <small>${p.origin ? `来自${esc(p.origin)} · ` : ""}${day(p.created_at)}${p.shots ? ` · ${p.shots} 个镜头` : ""}</small></span>
         <span class="home-card-go">${action} ${ICON_ARROW}</span></button></li>`;
-    }).join("")}</ul>` : `<p class="home-empty">还没有项目。从上面找一条同行的爆款，或者直接放一条你想复刻的视频进来就能开始。</p>`));
+    }).join("")}</ul>` : `<p class="home-empty">还没有项目。可以从上面找一条同行的爆款开始。</p>`;
+  updateHtml(box, renderFindViral() + `<p class="home-upload-entry"><button type="button" class="ghost" data-flow-new>自己放一条视频进来</button></p>` + recent);
   const city = $("#fvCity"); if (city && !city.value) city.value = storeGet("vrc.fvCity") || "";
+  maybeOpenAbout();
 }
+
+const ABOUT_SEEN_KEY = "vrc.aboutAutoSeen";
+function aboutDialogEl() { return $("#aboutDialog"); }
+function aboutIsOpen(d) { return !!(d && (d.open || d.hasAttribute("open"))); }
+function openAbout(opts = {}) {
+  const d = aboutDialogEl();
+  if (!d) return;
+  const skip = $("#aboutSkipBtn");
+  if (skip) skip.hidden = !opts.auto;
+  if (typeof d.showModal === "function") {
+    if (!d.open) d.showModal();
+  } else {
+    d.setAttribute("open", "");
+    d.open = true;
+  }
+}
+function closeAbout() {
+  store(ABOUT_SEEN_KEY, "1");
+  const d = aboutDialogEl();
+  if (!d) return;
+  if (typeof d.close === "function") {
+    if (d.open) d.close();
+  } else {
+    d.removeAttribute("open");
+    d.open = false;
+  }
+}
+function maybeOpenAbout() {
+  if (P || $("#emptyState")?.hidden) return;
+  if (storeGet(ABOUT_SEEN_KEY)) return;
+  const d = aboutDialogEl();
+  if (aboutIsOpen(d)) return;
+  openAbout({ auto: true });
+}
+$("#aboutDialog")?.addEventListener("close", () => store(ABOUT_SEEN_KEY, "1"));
 // ---------- 首页：找同行的爆款 ----------
 // 桌面版：在内置浏览窗口里打开平台搜索，用户自己看，看中了点「同款复刻」直接建项目（build/browse.js）。
 // 浏览器里打开的工作台没有内置窗口：在新标签页打开平台搜索，下载视频后拖进来。
@@ -854,6 +891,8 @@ document.addEventListener("click", async (e) => {
     return;
   }
   if (e.target.closest("[data-go-home]")) { if (P) showHome(); return; }
+  if (e.target.closest("[data-about-open]")) { openAbout({ auto: false }); return; }
+  if (e.target.closest("[data-about-close]")) { closeAbout(); return; }
   const recent = e.target.closest("[data-open-recent]");
   if (recent) { if (recent.dataset.openRecent !== P?.id) openProject(recent.dataset.openRecent); return; }
   if (e.target.closest("[data-flow-new]")) { newProject(); return; }

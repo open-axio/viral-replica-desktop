@@ -416,6 +416,22 @@ assert.strictEqual(windowsCreated, 0);
   assert.strictEqual(afterWall.loggedIn, false);
   assert.strictEqual(viewVisible, false, '分享页实际是登录墙则收回');
 
+  // T6：带 afterUrl 打开登录窗后未登录就关掉，再一次不带 afterUrl 的「去登录」成功，应回平台首页
+  browse.closeLoginWindow();
+  const staleShare = 'https://www.douyin.com/video/888';
+  loginInspect = { headerLogin: true };
+  const abandoned = browse.startLogin({ platform: 'douyin', afterUrl: staleShare });
+  assert.strictEqual(abandoned.ok, true);
+  createdWindows[createdWindows.length - 1].close();
+  loginInspect = { userSelfLink: true };
+  inspectSignals = { headerLogin: true };
+  const plainLogin = browse.startLogin({ platform: 'douyin' });
+  assert.strictEqual(plainLogin.ok, true);
+  assert.strictEqual(plainLogin.reused, false, '关窗后再去登录应新开登录窗');
+  const afterPlain = await browse.checkLoginWindow('douyin');
+  assert.strictEqual(afterPlain.loggedIn, true);
+  assert.strictEqual(currentUrl, 'https://www.douyin.com/', '未成功登录就关掉后，不得打开旧分享链接');
+
   browse.hideEmbed();
   browse.closeLoginWindow();
   assert.strictEqual(viewVisible, false);

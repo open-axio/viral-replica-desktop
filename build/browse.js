@@ -678,6 +678,12 @@ function resolveLoginPlatform(opts) {
   return 'douyin';
 }
 
+function abandonPendingAfterLogin() {
+  pendingAfterLogin = '';
+  const main = mainHost();
+  if (main && !main.isDestroyed()) sendTo(main.webContents, 'browse:login-closed', {});
+}
+
 function closeLoginWindow() {
   loginWatchGen += 1;
   clearTimeout(loginWatchTimer);
@@ -685,7 +691,9 @@ function closeLoginWindow() {
   const w = loginWin;
   loginWin = null;
   if (w && (typeof w.isDestroyed !== 'function' || !w.isDestroyed()) && typeof w.close === 'function') {
-    try { w.close(); } catch (e) { /* 窗口已关 */ }
+    try { w.close(); } catch (e) { abandonPendingAfterLogin(); }
+  } else {
+    abandonPendingAfterLogin();
   }
 }
 
@@ -701,10 +709,10 @@ async function onLoginSuccess(platform) {
   const text = `已登录${name}，下面是你的内容`;
   setStatus('done', text);
   notifyLoggedIn({ platform, text });
-  closeLoginWindow();
   const next = pendingAfterLogin || (PLATFORMS[platform] || PLATFORMS.douyin).home;
   const hold = !!pendingAfterLogin;
   pendingAfterLogin = '';
+  closeLoginWindow();
   if (hold) {
     holdVisibleAfterLogin = true;
     loginResult = { loggedIn: true, checking: false, reason: 'login-window', platform };
@@ -765,9 +773,12 @@ function scheduleLoginWinCheck(platform) {
 
 function rememberAfterLoginUrl(opts) {
   const raw = opts && opts.afterUrl;
-  if (!raw) return;
+  if (!raw) {
+    pendingAfterLogin = '';
+    return;
+  }
   const url = urlFromShareText(String(raw)) || (/^https?:/.test(String(raw)) ? String(raw) : '');
-  if (url) pendingAfterLogin = url;
+  pendingAfterLogin = url || '';
 }
 
 function startLogin(opts) {
@@ -809,6 +820,8 @@ function startLogin(opts) {
         clearTimeout(loginWatchTimer);
         loginWatchTimer = null;
       }
+      // 未登录成功就关掉：清掉待打开链接，避免下次「去登录」仍打开旧分享页
+      abandonPendingAfterLogin();
     });
   }
   const wc = opened.webContents;

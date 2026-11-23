@@ -908,6 +908,9 @@ if (window.__browse && window.__browse.onLoggedIn) {
     if (typeof toast === "function") toast(text);
   });
 }
+if (window.__browse && window.__browse.onLoginClosed) {
+  window.__browse.onLoginClosed(() => { fvPendingShareUrl = ""; });
+}
 if (window.__browse && window.__browse.onImported) {
   window.__browse.onImported(async (project) => {
     if (project && project.id && !project.focus) {

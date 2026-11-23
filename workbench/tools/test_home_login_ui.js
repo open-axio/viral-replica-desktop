@@ -68,6 +68,7 @@ async function setup({desktop = true, seen = true} = {}) {
     startLogin(opts) { startLogin += 1; startLoginOpts.push(opts || {}); },
     onState(cb) { this._onState = cb; },
     onLoggedIn(cb) { this._onLoggedIn = cb; },
+    onLoginClosed(cb) { this._onLoginClosed = cb; },
     onImported(cb) { this._onImported = cb; },
   } : undefined;
   const windowObj = {
@@ -111,7 +112,7 @@ async function setup({desktop = true, seen = true} = {}) {
     await Promise.resolve();
   };
   const emitState = (s) => { if (browseMock && browseMock._onState) browseMock._onState(s); };
-  return {run, $, document, storage, click, submit, opens, layouts, windowOpens, hidden: () => hidden, startLogin: () => startLogin, startLoginOpts, emitLoggedIn: (s) => { if (browseMock && browseMock._onLoggedIn) browseMock._onLoggedIn(s); }, emitState, browse: browseMock};
+  return {run, $, document, storage, click, submit, opens, layouts, windowOpens, hidden: () => hidden, startLogin: () => startLogin, startLoginOpts, emitLoggedIn: (s) => { if (browseMock && browseMock._onLoggedIn) browseMock._onLoggedIn(s); }, emitLoginClosed: () => { if (browseMock && browseMock._onLoginClosed) browseMock._onLoginClosed(); }, emitState, browse: browseMock};
 }
 
 const tests = [], test = (name, fn) => tests.push([name, fn]);
@@ -238,6 +239,18 @@ test('未登录打开分享链接时先去登录，不在隐藏视图里加载',
   assert.equal(t.startLoginOpts[0].afterUrl, 'https://www.xiaohongshu.com/explore/66aa');
   assert.equal(t.windowOpens.length, 0);
   assert.equal(t.$('#fvLink').value, '');
+});
+
+test('未成功登录就关掉后，再点「去登录」不再带上旧分享链接', async () => {
+  const t = await setup();
+  t.emitState({url: 'https://www.douyin.com/', loggedIn: false, loginChecking: false, canBack: false, canForward: false});
+  t.$('#fvLink').value = 'https://www.douyin.com/video/888';
+  await t.submit(t.$('[data-fv-link]'));
+  assert.equal(t.startLoginOpts[0].afterUrl, 'https://www.douyin.com/video/888');
+  t.emitLoginClosed();
+  await t.click(t.$('[data-fv-login]'));
+  assert.equal(t.startLogin(), 2);
+  assert.ok(!t.startLoginOpts[1].afterUrl, '关窗后不应再带上旧分享链接');
 });
 
 (async () => {

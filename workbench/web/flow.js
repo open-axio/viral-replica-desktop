@@ -593,6 +593,7 @@ function renderHome() {
   updateHtml(box, renderFindViral() + `<p class="home-upload-entry"><button type="button" class="ghost" data-flow-new>自己放一条视频进来</button></p>` + recent);
   const city = $("#fvCity"); if (city && !city.value) city.value = storeGet("vrc.fvCity") || "";
   maybeOpenAbout();
+  syncFindViralEmbed();
 }
 
 const ABOUT_SEEN_KEY = "vrc.aboutAutoSeen";
@@ -609,6 +610,7 @@ function openAbout(opts = {}) {
     d.setAttribute("open", "");
     d.open = true;
   }
+  syncFindViralEmbed();
 }
 function closeAbout() {
   store(ABOUT_SEEN_KEY, "1");
@@ -620,6 +622,7 @@ function closeAbout() {
     d.removeAttribute("open");
     d.open = false;
   }
+  syncFindViralEmbed();
 }
 function maybeOpenAbout() {
   if (P || $("#emptyState")?.hidden) return;
@@ -628,10 +631,10 @@ function maybeOpenAbout() {
   if (aboutIsOpen(d)) return;
   openAbout({ auto: true });
 }
-$("#aboutDialog")?.addEventListener("close", () => store(ABOUT_SEEN_KEY, "1"));
+$("#aboutDialog")?.addEventListener("close", () => { store(ABOUT_SEEN_KEY, "1"); syncFindViralEmbed(); });
 // ---------- 首页：找同行的爆款 ----------
-// 桌面版：在内置浏览窗口里打开平台搜索，用户自己看，看中了点「同款复刻」直接建项目（build/browse.js）。
-// 浏览器里打开的工作台没有内置窗口：在新标签页打开平台搜索，下载视频后拖进来。
+// 桌面版：把平台页嵌进首页当前 Tab 下方，复用 persist:find-viral；搜索、切 Tab、行业词都在这片区域更新，不再新开浏览窗口（build/browse.js）。
+// 浏览器里打开的工作台没有内置会话：在新标签页打开平台搜索，下载视频后拖进来。
 const FV_PLATFORMS = [
   { id: "douyin", name: "抖音", search: (k) => `https://www.douyin.com/search/${encodeURIComponent(k)}?type=video` },
   { id: "xiaohongshu", name: "小红书", search: (k) => `https://www.xiaohongshu.com/search_result?keyword=${encodeURIComponent(k)}&source=web_search_result_notes` },
@@ -648,12 +651,28 @@ function fvCurrentPlatform() {
   return fvPlatform;
 }
 function inDesktop() { return !!(window.__browse && window.__browse.available); }
+const ICON_FV_BACK = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M10 3L5 8l5 5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"></path></svg>';
+const ICON_FV_FORWARD = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M6 3l5 5-5 5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"></path></svg>';
+const ICON_FV_RELOAD = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M13 8a5 5 0 1 1-1.5-3.6M13 2.5v2.8h-2.8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"></path></svg>';
 function renderFindViral() {
   const cur = fvCurrentPlatform();
+  const desktop = inDesktop();
+  const pane = desktop ? `<div class="fv-pane">
+      <div class="fv-toolbar">
+        <div class="fv-nav">
+          <button type="button" class="icon-btn" data-fv-back title="后退" aria-label="后退" disabled>${ICON_FV_BACK}</button>
+          <button type="button" class="icon-btn" data-fv-forward title="前进" aria-label="前进" disabled>${ICON_FV_FORWARD}</button>
+          <button type="button" class="icon-btn" data-fv-reload title="刷新" aria-label="刷新">${ICON_FV_RELOAD}</button>
+        </div>
+        <div class="fv-status" id="fvStatus">打开一条视频，看到它在播放了，点「同款复刻」</div>
+        <button type="button" class="fv-capture" data-fv-capture>同款复刻</button>
+      </div>
+      <div class="fv-embed" id="fvEmbed" data-fv-url="" aria-label="平台内容"></div>
+    </div>` : "";
   return `<section class="fv" aria-labelledby="fvTitle">
     <div class="fv-head">
       <div><h2 id="fvTitle">找同行的爆款</h2>
-        <p class="hint">${inDesktop() ? "在工作台里打开平台的搜索结果，你自己刷、看评论。看中哪条，点窗口右上角「同款复刻」就直接建好项目。" : "会在新标签页打开平台搜索。看中的视频下载下来，拖进新项目就行（桌面版可以一键同款复刻）。"}</p></div>
+        <p class="hint">${desktop ? "在下面刷同行怎么拍。搜索、切平台、点行业词都留在这一页，不会新开窗口。看中了点「同款复刻」就直接建好项目。" : "会在新标签页打开平台搜索。看中的视频下载下来，拖进新项目就行（桌面版可以一键同款复刻）。"}</p></div>
       <div class="fv-tabs" role="group" aria-label="平台">${FV_PLATFORMS.map((p) => `<button type="button" data-fv-platform="${p.id}" aria-pressed="${p.id === cur}">${p.name}</button>`).join("")}</div>
     </div>
     <form class="fv-search" data-fv-form>
@@ -667,12 +686,90 @@ function renderFindViral() {
       <input id="fvLink" placeholder="在抖音 / 小红书 / B站点「分享 → 复制链接」，粘贴到这里" aria-label="分享链接" autocomplete="off">
       <button type="submit" class="ghost">打开</button>
     </form>
+    ${pane}
   </section>`;
 }
 function fvLinkFrom(text) { const m = String(text || "").match(/https?:\/\/[^\s，。,；;"'<>【】]+/); return m ? m[0] : ""; }
+let fvAttached = false, fvEmbedObs = null, fvEmbedWired = false;
+function hideFindViralEmbed() {
+  if (inDesktop() && window.__browse && window.__browse.hide) window.__browse.hide();
+}
+function anyOverlayOpen() {
+  if (aboutIsOpen(aboutDialogEl())) return true;
+  if (typeof document.querySelector === "function" && document.querySelector("dialog[open]")) return true;
+  const lib = $("#libraryPanel"); if (lib && !lib.hidden) return true;
+  const fis = $("#fissionPanel"); if (fis && !fis.hidden) return true;
+  const conf = $("#pageConfirmation"); if (conf && !conf.hidden) return true;
+  return false;
+}
+function fvEmbedVisibleBounds() {
+  const el = $("#fvEmbed");
+  if (!el || typeof el.getBoundingClientRect !== "function") return null;
+  const r = el.getBoundingClientRect();
+  const vw = (typeof window !== "undefined" && window.innerWidth) || r.right || r.width || 0;
+  const vh = (typeof window !== "undefined" && window.innerHeight) || r.bottom || r.height || 0;
+  const x = Math.max(0, r.left);
+  const y = Math.max(0, r.top);
+  const width = Math.min(vw, r.right) - x;
+  const height = Math.min(vh, r.bottom) - y;
+  if (width < 8 || height < 8) return null;
+  return { x, y, width, height };
+}
+function applyFvState(s) {
+  if (!s) return;
+  const back = $("[data-fv-back]");
+  const forward = $("[data-fv-forward]");
+  const embed = $("#fvEmbed");
+  const status = $("#fvStatus");
+  if (back) back.disabled = !s.canBack;
+  if (forward) forward.disabled = !s.canForward;
+  if (embed && s.url) embed.setAttribute("data-fv-url", s.url);
+  if (status) {
+    status.className = "fv-status" + (s.status && s.status.kind ? " " + s.status.kind : "");
+    status.textContent = (s.status && s.status.text) || (s.loading ? "加载中…" : "打开一条视频，看到它在播放了，点「同款复刻」");
+  }
+}
+function wireFindViralEmbed() {
+  const relayout = () => { if (!P) syncFindViralEmbed(); };
+  const el = $("#fvEmbed");
+  if (typeof ResizeObserver !== "undefined") {
+    if (!fvEmbedObs) fvEmbedObs = new ResizeObserver(relayout);
+    try { fvEmbedObs.disconnect(); if (el) fvEmbedObs.observe(el); } catch (_) { /* 测试 DOM 可能没有完整观察器 */ }
+  }
+  if (fvEmbedWired) return;
+  fvEmbedWired = true;
+  window.addEventListener("resize", relayout);
+  window.addEventListener("scroll", relayout, true);
+  for (const id of ["settingsDialog", "updateDialog", "aboutDialog"]) {
+    const d = $("#" + id);
+    if (d && !d.__fvWired) { d.__fvWired = true; d.addEventListener("close", relayout); }
+  }
+}
+function syncFindViralEmbed() {
+  if (!inDesktop() || !window.__browse) return;
+  const onHome = !P && $("#emptyState") && !$("#emptyState").hidden && $("#fvEmbed");
+  if (!onHome || anyOverlayOpen()) { hideFindViralEmbed(); return; }
+  wireFindViralEmbed();
+  const bounds = fvEmbedVisibleBounds();
+  if (bounds && window.__browse.layout) window.__browse.layout(bounds);
+  if (!fvAttached) {
+    fvAttached = true;
+    const city = ($("#fvCity")?.value || "").trim();
+    const kw = ($("#fvKeyword")?.value || "").trim();
+    fvOpen({ platform: fvCurrentPlatform(), keyword: kw ? [city, kw].filter(Boolean).join(" ") : undefined });
+  }
+}
 async function fvOpen(opts) {
   if (inDesktop()) {
-    try { await window.__browse.open(opts); } catch (err) { toast(`没打开：${err.message || err}`, true); }
+    try {
+      const result = await window.__browse.open(opts);
+      if (result && result.url) {
+        const embed = $("#fvEmbed");
+        if (embed) embed.setAttribute("data-fv-url", result.url);
+      }
+      const bounds = fvEmbedVisibleBounds();
+      if (bounds && window.__browse.layout) await window.__browse.layout(bounds);
+    } catch (err) { toast(`没打开：${err.message || err}`, true); }
     return;
   }
   const p = FV_PLATFORMS.find((x) => x.id === opts.platform) || FV_PLATFORMS[0];
@@ -696,6 +793,7 @@ document.addEventListener("submit", (e) => {
     $("#fvLink").value = "";
   }
 });
+if (window.__browse && window.__browse.onState) window.__browse.onState(applyFvState);
 if (window.__browse && window.__browse.onImported) {
   window.__browse.onImported(async (project) => {
     try { await refreshProjectList(); } catch (_) { /* 打开项目时会再读 */ }
@@ -725,8 +823,24 @@ function originCard(o) {
   </section>`;
 }
 document.addEventListener("click", (e) => {
+  if (inDesktop() && window.__browse && window.__browse.act) {
+    if (e.target.closest("[data-fv-back]")) { window.__browse.act("back"); return; }
+    if (e.target.closest("[data-fv-forward]")) { window.__browse.act("forward"); return; }
+    if (e.target.closest("[data-fv-reload]")) { window.__browse.act("reload"); return; }
+    if (e.target.closest("[data-fv-capture]")) { window.__browse.act("capture"); return; }
+  }
   const tab = e.target.closest("[data-fv-platform]");
-  if (tab) { fvPlatform = tab.dataset.fvPlatform; store("vrc.fvPlatform", fvPlatform); document.querySelectorAll("[data-fv-platform]").forEach((b) => b.setAttribute("aria-pressed", String(b === tab))); return; }
+  if (tab) {
+    fvPlatform = tab.dataset.fvPlatform;
+    store("vrc.fvPlatform", fvPlatform);
+    document.querySelectorAll("[data-fv-platform]").forEach((b) => b.setAttribute("aria-pressed", String(b === tab)));
+    if (inDesktop()) {
+      const city = ($("#fvCity")?.value || "").trim();
+      const kw = ($("#fvKeyword")?.value || "").trim();
+      fvOpen({ platform: fvPlatform, keyword: kw ? [city, kw].filter(Boolean).join(" ") : undefined });
+    }
+    return;
+  }
   const word = e.target.closest("[data-fv-word]");
   if (word) { fvSearch(word.dataset.fvWord); return; }
   const orig = e.target.closest("[data-origin-open]");
@@ -852,6 +966,7 @@ document.addEventListener("click", async (e) => {
 function renderFlow() {
   document.body.classList.toggle("at-home", !P);
   if (!P) { updateHtml($("#stageNav"), ""); renderHome(); return; }
+  hideFindViralEmbed();
   const stage = currentStage();
   $("#workspace").dataset.stage = stage;
   renderStageNav(stage);
@@ -905,7 +1020,7 @@ document.addEventListener("click", async (e) => {
     });
     loadAsrModels(); loadLocalLlm(); return;
   }
-  if (e.target.closest("#settingsBtn")) { loadAsrModels(); loadLocalLlm(); return; }
+  if (e.target.closest("#settingsBtn")) { hideFindViralEmbed(); loadAsrModels(); loadLocalLlm(); return; }
   const asr = e.target.closest("[data-asr]");
   if (asr) {
     e.preventDefault();

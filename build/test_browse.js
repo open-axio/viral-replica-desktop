@@ -2,8 +2,67 @@
 const assert = require('assert');
 const Module = require('module');
 const realLoad = Module._load;
+
+let windowsCreated = 0;
+let lastPartition = '';
+const childViews = [];
+let currentUrl = '';
+const loadedUrls = [];
+const boundsHistory = [];
+let viewVisible = true;
+
+function makeWebContents() {
+  return {
+    id: 1,
+    isDestroyed: () => false,
+    send() {},
+    getURL: () => currentUrl,
+    isLoading: () => false,
+    canGoBack: () => false,
+    canGoForward: () => false,
+    navigationHistory: {
+      canGoBack: () => false,
+      canGoForward: () => false,
+      goBack() {},
+      goForward() {},
+    },
+    loadURL(url) { currentUrl = url; loadedUrls.push(url); },
+    reload() {},
+    setWindowOpenHandler() {},
+    on() {},
+  };
+}
+
+const viewInstance = {
+  webContents: makeWebContents(),
+  setVisible(v) { viewVisible = !!v; },
+  setBounds(b) { boundsHistory.push({ ...b }); this._bounds = { ...b }; },
+};
+
+const mainWebContents = { send() {}, isDestroyed: () => false };
+const contentView = {
+  addChildView(v) { if (!childViews.includes(v)) childViews.push(v); },
+  getChildViews() { return childViews.slice(); },
+  removeChildView(v) { const i = childViews.indexOf(v); if (i >= 0) childViews.splice(i, 1); },
+};
+const mainWindow = {
+  isDestroyed: () => false,
+  webContents: mainWebContents,
+  contentView,
+};
+const siteSes = {
+  setUserAgent() {},
+  webRequest: { onBeforeSendHeaders() {}, onCompleted() {} },
+};
+
 Module._load = function (request, ...rest) {
-  if (request === 'electron') return { app: { userAgentFallback: '' }, ipcMain: { handle() {} }, session: {}, BrowserWindow: function () {}, WebContentsView: function () {} };
+  if (request === 'electron') return {
+    app: { userAgentFallback: 'Mozilla/5.0 Electron/32.3.3 Safari/537.36' },
+    ipcMain: { handle() {} },
+    session: { fromPartition(name) { lastPartition = name; return siteSes; } },
+    BrowserWindow: function BrowserWindow() { windowsCreated += 1; },
+    WebContentsView: function WebContentsView() { return viewInstance; },
+  };
   return realLoad.call(this, request, ...rest);
 };
 const browse = require('./browse');
@@ -46,5 +105,40 @@ assert.deepStrictEqual(m, { videos: ['https://v26-web.douyinvod.com/abc/?a=1'], 
 m = browse.chooseMedia('xiaohongshu', { sources: ['https://sns-video-bd.xhscdn.com/x.mp4'] }, 3);
 assert.strictEqual(m.videos[0], 'https://sns-video-bd.xhscdn.com/x.mp4');
 assert.strictEqual(browse.chooseMedia('douyin', { sources: [] }, 99), null);
+
+// T2：open() 把平台页挂到主窗口，不新建 BrowserWindow，搜索 URL 走对应平台
+const noHost = browse.open({ platform: 'douyin', keyword: '烤鱼' });
+assert.strictEqual(noHost.ok, false, '主窗口未就绪时应拒绝打开');
+assert.strictEqual(noHost.newWindow, false);
+assert.strictEqual(windowsCreated, 0, '没有主窗口时也不能新建浏览窗');
+
+browse.init({ port: () => 8765, mainWindow: () => mainWindow });
+const search = browse.open({ platform: 'douyin', keyword: '烤鱼' });
+assert.strictEqual(search.ok, true);
+assert.strictEqual(search.newWindow, false);
+assert.strictEqual(search.partition, 'persist:find-viral');
+assert.strictEqual(lastPartition, 'persist:find-viral');
+assert.ok(search.url.includes('https://www.douyin.com/search/') && search.url.includes(encodeURIComponent('烤鱼')) && search.url.includes('type=video'), search.url);
+assert.strictEqual(loadedUrls[0], search.url);
+assert.strictEqual(windowsCreated, 0, '搜索不得新建 BrowserWindow');
+assert.strictEqual(childViews.length, 1, '只往主窗口挂一个 WebContentsView');
+assert.strictEqual(browse.debugInfo().windowsCreated, 0);
+assert.strictEqual(browse.debugInfo().url, search.url);
+
+const tab = browse.open({ platform: 'xiaohongshu' });
+assert.strictEqual(tab.ok, true);
+assert.strictEqual(tab.newWindow, false);
+assert.strictEqual(tab.url, 'https://www.xiaohongshu.com/explore');
+assert.strictEqual(windowsCreated, 0, '切 Tab 不得新建浏览窗');
+assert.strictEqual(childViews.length, 1);
+assert.strictEqual(loadedUrls[1], tab.url);
+
+browse.layoutEmbed({ x: 20, y: 80, width: 900, height: 500 });
+assert.deepStrictEqual(viewInstance._bounds, { x: 20, y: 80, width: 900, height: 500 });
+assert.strictEqual(viewVisible, true);
+browse.hideEmbed();
+assert.strictEqual(viewVisible, false);
+assert.deepStrictEqual(viewInstance._bounds, { x: 0, y: 0, width: 0, height: 0 });
+assert.strictEqual(windowsCreated, 0);
 
 console.log('browse tests ok');

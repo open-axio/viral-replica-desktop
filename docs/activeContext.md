@@ -4,9 +4,9 @@
 
 ## 当前
 
-T1 已完成、尚未推送：去掉首页常驻 `.home-hero`，主舞台改为「找同行的爆款」；顶栏「这是什么」打开同一份介绍；首次打开或未看过自动介绍时弹出一次，可跳过；标记键 `vrc.aboutAutoSeen`。T2 及之后未开始。推送和开 PR 等点头。
+T1、T2 已完成、尚未推送。T2：桌面版把平台浏览嵌进首页当前 Tab 下方（`#fvEmbed` + 工具栏），复用 `persist:find-viral`；搜索、切 Tab、行业词走 `__browse.open`，不再新建 `BrowserWindow`。浏览器打开工作台仍走新标签页。登录空态（T3）、「去登录」窗口（T4）、同款复刻真机（T5）未做；未登录时内嵌区可能会短暂出现平台自己的登录页。推送和开 PR 等点头。
 
-验证：`node workbench/tools/test_home_about_ui.js` 5 条通过；`test_round24_16_ui.js` 13 条通过。本切片未做桌面真机内嵌浏览（属 T2）。
+验证：`node build/test_browse.js` 通过（含「搜索 / 切 Tab 不新建窗口、分区与搜索 URL」）；`node workbench/tools/test_home_embed_ui.js` 6 条通过；`test_home_about_ui.js` 5 条、`test_round24_16_ui.js` 13 条回归通过。未在真机 Electron 用系统窗口列表点验。
 
 ---
 

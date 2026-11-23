@@ -9,10 +9,15 @@ contextBridge.exposeInMainWorld('__dlg', {
   alert: (message) => ipcRenderer.sendSync('dlg-alert', { message })
 });
 
-// 「找爆款」：打开内置浏览窗口；在那边点了「同款复刻」建好项目后通知页面打开它
+// 「找爆款」：把平台页嵌进首页；点「同款复刻」建好项目后通知页面打开它。搜索不再新开窗口。
 contextBridge.exposeInMainWorld('__browse', {
   available: true,
   open: (opts) => ipcRenderer.invoke('browse:open', opts),
+  layout: (bounds) => ipcRenderer.invoke('browse:layout', bounds),
+  hide: () => ipcRenderer.invoke('browse:hide'),
+  debug: () => ipcRenderer.invoke('browse:debug'),
+  act: (action, arg) => ipcRenderer.invoke('browse:toolbar', action, arg),
+  onState: (cb) => ipcRenderer.on('browse:state', (_e, s) => cb(s)),
   onImported: (cb) => ipcRenderer.on('browse:imported', (_e, project) => cb(project)),
 });
 

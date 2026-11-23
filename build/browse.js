@@ -50,11 +50,14 @@ function urlFromShareText(text) {
 }
 
 let ctx = { port: () => 8765, mainWindow: () => null };
-let win = null;
+let win = null;            // 旧的独立浏览窗；T2 起搜索/切 Tab 不再创建
+let hostWindow = null;     // 承载内嵌视图的主窗口
 let view = null;
 let busy = false;
 let lastKeyword = '';
 let status = { kind: 'idle', text: '' };
+let lastEmbedBounds = null;
+let windowsCreated = 0;
 const mediaSeen = new Map();   // webContents id -> [{ url, type, at }]
 
 function init(options) { ctx = { ...ctx, ...options }; }
@@ -98,56 +101,85 @@ function siteSession() {
   return ses;
 }
 
-function sendState() {
-  if (!win || win.isDestroyed() || !view) return;
+function statePayload() {
+  if (!view || !view.webContents) return null;
   const wc = view.webContents;
-  const url = wc.getURL();
-  win.webContents.send('browse:state', {
+  const url = typeof wc.getURL === 'function' ? wc.getURL() : '';
+  const nav = wc.navigationHistory || wc;
+  return {
     url,
     platform: platformOf(url),
-    canBack: wc.navigationHistory ? wc.navigationHistory.canGoBack() : wc.canGoBack(),
-    canForward: wc.navigationHistory ? wc.navigationHistory.canGoForward() : wc.canGoForward(),
-    loading: wc.isLoading(),
+    canBack: nav.canGoBack ? !!nav.canGoBack() : false,
+    canForward: nav.canGoForward ? !!nav.canGoForward() : false,
+    loading: typeof wc.isLoading === 'function' ? wc.isLoading() : false,
     keyword: lastKeyword,
     busy,
     status,
-  });
+    embedded: true,
+    newWindow: false,
+  };
 }
 
-function setStatus(kind, text, extra) {
-  status = { kind, text, ...(extra || {}) };
-  sendState();
+function sendTo(wc, channel, payload) {
+  if (!wc || (typeof wc.isDestroyed === 'function' && wc.isDestroyed())) return;
+  if (typeof wc.send === 'function') wc.send(channel, payload);
 }
 
-function layout() {
-  if (!win || !view) return;
-  const [w, h] = win.getContentSize();
-  view.setBounds({ x: 0, y: TOOLBAR_H, width: w, height: Math.max(0, h - TOOLBAR_H) });
+function sendState() {
+  if (!view) return;
+  const payload = statePayload();
+  if (!payload) return;
+  const main = ctx.mainWindow && ctx.mainWindow();
+  if (main && !main.isDestroyed()) sendTo(main.webContents, 'browse:state', payload);
+  if (win && !win.isDestroyed()) sendTo(win.webContents, 'browse:state', payload);
 }
 
-function ensureWindow() {
-  if (win && !win.isDestroyed()) return win;
-  const parent = ctx.mainWindow();
-  const b = parent && !parent.isDestroyed() ? parent.getBounds() : { x: undefined, y: undefined };
-  win = new BrowserWindow({
-    width: 1280, height: 860, minWidth: 900, minHeight: 600,
-    x: b.x !== undefined ? b.x + 40 : undefined, y: b.y !== undefined ? b.y + 30 : undefined,
-    title: '找爆款', backgroundColor: '#ffffff',
-    webPreferences: { preload: path.join(__dirname, 'browse-preload.js'), contextIsolation: true, nodeIntegration: false },
-  });
-  win.loadFile(path.join(__dirname, 'browse.html'));
-  view = new WebContentsView({
-    webPreferences: { session: siteSession(), contextIsolation: true, nodeIntegration: false, sandbox: true },
-  });
-  win.contentView.addChildView(view);
-  layout();
-  win.on('resize', layout);
-  const wc = view.webContents;
-  // 页面里「新窗口打开」的链接（比如搜索结果点进详情）留在这个窗口里打开
-  wc.setWindowOpenHandler(({ url }) => {
-    if (/^https?:/.test(url)) wc.loadURL(url);
-    return { action: 'deny' };
-  });
+function debugInfo() {
+  const wc = view && view.webContents;
+  return {
+    url: wc && typeof wc.getURL === 'function' ? wc.getURL() : '',
+    partition: 'persist:find-viral',
+    newWindow: false,
+    windowsCreated,
+    embedded: !!view,
+    bounds: lastEmbedBounds,
+  };
+}
+
+function mainHost() {
+  const host = ctx.mainWindow && ctx.mainWindow();
+  return host && !host.isDestroyed() ? host : null;
+}
+
+function setEmbedVisible(visible, bounds) {
+  if (!view) return;
+  if (bounds) {
+    lastEmbedBounds = {
+      x: Math.round(bounds.x || 0),
+      y: Math.round(bounds.y || 0),
+      width: Math.round(Math.max(0, bounds.width || 0)),
+      height: Math.round(Math.max(0, bounds.height || 0)),
+    };
+  }
+  if (!visible || !lastEmbedBounds || lastEmbedBounds.width < 8 || lastEmbedBounds.height < 8) {
+    if (typeof view.setVisible === 'function') view.setVisible(false);
+    if (typeof view.setBounds === 'function') view.setBounds({ x: 0, y: 0, width: 0, height: 0 });
+    return;
+  }
+  if (typeof view.setBounds === 'function') view.setBounds(lastEmbedBounds);
+  if (typeof view.setVisible === 'function') view.setVisible(true);
+}
+
+function wireSiteView(v) {
+  const wc = v.webContents;
+  if (wc.__findViralWired) return;
+  wc.__findViralWired = true;
+  if (typeof wc.setWindowOpenHandler === 'function') {
+    wc.setWindowOpenHandler(({ url }) => {
+      if (/^https?:/.test(url)) wc.loadURL(url);
+      return { action: 'deny' };
+    });
+  }
   for (const ev of ['did-start-loading', 'did-stop-loading', 'did-navigate', 'did-navigate-in-page', 'page-title-updated']) {
     wc.on(ev, () => {
       if (ev === 'did-navigate' && status.kind !== 'working') status = { kind: 'idle', text: '' };
@@ -157,16 +189,40 @@ function ensureWindow() {
   wc.on('did-fail-load', (_e, code, desc, url, isMain) => {
     if (isMain && code !== -3) setStatus('error', `页面没打开（${desc}）。检查一下网络，点刷新再试`);
   });
-  win.on('closed', () => {
-    if (view) mediaSeen.delete(view.webContents.id);
-    win = null; view = null; busy = false; status = { kind: 'idle', text: '' };
-  });
-  return win;
 }
 
-function open(opts) {
+function ensureEmbeddedView() {
+  const host = mainHost();
+  if (!host) return null;
+  if (!view) {
+    view = new WebContentsView({
+      webPreferences: { session: siteSession(), contextIsolation: true, nodeIntegration: false, sandbox: true },
+    });
+    wireSiteView(view);
+  }
+  hostWindow = host;
+  const root = host.contentView;
+  if (root && typeof root.addChildView === 'function') {
+    const kids = typeof root.getChildViews === 'function' ? root.getChildViews() : [];
+    if (!kids.includes(view)) root.addChildView(view);
+  }
+  return view;
+}
+
+function setStatus(kind, text, extra) {
+  status = { kind, text, ...(extra || {}) };
+  sendState();
+}
+
+function layout() {
+  // 旧独立窗布局，T2 不再走这条路径；登录小窗（T4）如需再用再接。
+  if (!win || !view || typeof win.getContentSize !== 'function') return;
+  const [w, h] = win.getContentSize();
+  view.setBounds({ x: 0, y: TOOLBAR_H, width: w, height: Math.max(0, h - TOOLBAR_H) });
+}
+
+function resolveOpenUrl(opts) {
   const o = opts || {};
-  ensureWindow();
   let url = '';
   if (o.url) url = urlFromShareText(o.url) || (/^https?:/.test(o.url) ? o.url : '');
   if (!url && o.keyword) {
@@ -175,12 +231,57 @@ function open(opts) {
     url = p.search(lastKeyword);
   }
   if (!url) url = (PLATFORMS[o.platform] || PLATFORMS.douyin).home;
-  if (!o.keyword) lastKeyword = '';
+  if (!o.keyword && !o.url) lastKeyword = '';
+  return url;
+}
+
+function open(opts) {
+  // T2：把平台页嵌进主窗口，复用 persist:find-viral；搜索 / 切 Tab 不再新建 BrowserWindow。
+  const host = mainHost();
+  if (!host) return { ok: false, error: '主窗口还没打开', newWindow: false, url: '' };
+  if (!ensureEmbeddedView()) return { ok: false, error: '没能挂上平台视图', newWindow: false, url: '' };
+  const url = resolveOpenUrl(opts);
   status = { kind: 'idle', text: '' };
   view.webContents.loadURL(url);
-  win.show(); win.focus();
+  if (lastEmbedBounds) setEmbedVisible(true, lastEmbedBounds);
   sendState();
-  return { ok: true, url };
+  console.log('[browse] embed-load', JSON.stringify({ url, newWindow: false, partition: 'persist:find-viral', windowsCreated }));
+  return { ok: true, url, newWindow: false, partition: 'persist:find-viral' };
+}
+
+function layoutEmbed(bounds) {
+  ensureEmbeddedView();
+  setEmbedVisible(true, bounds || lastEmbedBounds);
+  return debugInfo();
+}
+
+function hideEmbed() {
+  setEmbedVisible(false);
+  return debugInfo();
+}
+
+function senderAllowed(e) {
+  const main = mainHost();
+  const fromMain = main && e && e.sender === main.webContents;
+  const fromOldWin = win && e && e.sender === win.webContents;
+  return !!(fromMain || fromOldWin);
+}
+
+function runToolbar(action, arg) {
+  const wc = view && view.webContents;
+  if (!wc) return null;
+  const nav = wc.navigationHistory || wc;
+  if (action === 'back' && nav.canGoBack()) nav.goBack();
+  else if (action === 'forward' && nav.canGoForward()) nav.goForward();
+  else if (action === 'reload') wc.reload();
+  else if (action === 'home') wc.loadURL((PLATFORMS[arg] || PLATFORMS.douyin).home);
+  else if (action === 'search' && arg && arg.keyword) {
+    lastKeyword = String(arg.keyword).trim().slice(0, 60);
+    wc.loadURL((PLATFORMS[arg.platform] || PLATFORMS[platformOf(wc.getURL())] || PLATFORMS.douyin).search(lastKeyword));
+  } else if (action === 'capture') capture();
+  else if (action === 'show-project') showProject();
+  else if (action === 'state') sendState();
+  return statePayload() || true;
 }
 
 // ---------- 读当前页面 ----------
@@ -457,23 +558,16 @@ function showProject() {
 
 function register() {
   ipcMain.handle('browse:open', (_e, opts) => open(opts));
+  ipcMain.handle('browse:layout', (_e, bounds) => layoutEmbed(bounds));
+  ipcMain.handle('browse:hide', () => hideEmbed());
+  ipcMain.handle('browse:debug', () => debugInfo());
   ipcMain.handle('browse:toolbar', (e, action, arg) => {
-    if (!win || e.sender !== win.webContents) return null;
-    const wc = view && view.webContents;
-    if (!wc) return null;
-    const nav = wc.navigationHistory || wc;
-    if (action === 'back' && nav.canGoBack()) nav.goBack();
-    else if (action === 'forward' && nav.canGoForward()) nav.goForward();
-    else if (action === 'reload') wc.reload();
-    else if (action === 'home') wc.loadURL((PLATFORMS[arg] || PLATFORMS.douyin).home);
-    else if (action === 'search' && arg && arg.keyword) {
-      lastKeyword = String(arg.keyword).trim().slice(0, 60);
-      wc.loadURL((PLATFORMS[arg.platform] || PLATFORMS[platformOf(wc.getURL())] || PLATFORMS.douyin).search(lastKeyword));
-    } else if (action === 'capture') capture();
-    else if (action === 'show-project') showProject();
-    else if (action === 'state') sendState();
-    return true;
+    if (!senderAllowed(e)) return null;
+    return runToolbar(action, arg);
   });
 }
 
-module.exports = { mediaSeen, init, register, open, capture, platformOf, urlFromShareText, chooseMedia, PLATFORMS, EXTRACT };
+module.exports = {
+  mediaSeen, init, register, open, capture, platformOf, urlFromShareText, chooseMedia,
+  PLATFORMS, EXTRACT, debugInfo, layoutEmbed, hideEmbed, runToolbar, resolveOpenUrl,
+};

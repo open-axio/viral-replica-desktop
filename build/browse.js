@@ -670,6 +670,12 @@ function notifyLoggedIn(payload) {
 }
 
 async function onLoginSuccess(platform) {
+  // 小窗已经判定成功：立刻发短确认并关窗。不要等内嵌区二次加载后再提示，
+  // 否则个人入口还没出现时窗已关、提示也出不来。
+  const name = (PLATFORMS[platform] || PLATFORMS.douyin).name;
+  const text = `已登录${name}，下面是你的内容`;
+  setStatus('done', text);
+  notifyLoggedIn({ platform, text });
   closeLoginWindow();
   const home = (PLATFORMS[platform] || PLATFORMS.douyin).home;
   if (view && view.webContents && typeof view.webContents.loadURL === 'function') {
@@ -678,14 +684,8 @@ async function onLoginSuccess(platform) {
   loginResult = { loggedIn: false, checking: true, reason: 'pending', platform };
   applyLoginVisibility();
   sendState();
-  const result = await refreshLoginState();
-  if (result && result.loggedIn) {
-    const name = (PLATFORMS[platform] || PLATFORMS.douyin).name;
-    const text = `已登录${name}，下面是你的内容`;
-    setStatus('done', text);
-    notifyLoggedIn({ platform, text });
-  }
-  return result;
+  scheduleLoginCheck();
+  return { loggedIn: true, checking: true, platform, reason: 'login-window' };
 }
 
 async function checkLoginWindow(platform) {

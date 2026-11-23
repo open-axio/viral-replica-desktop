@@ -234,15 +234,22 @@ assert.strictEqual(windowsCreated, 0);
   assert.strictEqual(createdWindows[0].destroyed, false, '未登录成功不得关窗');
   assert.strictEqual(loggedInEvents.length, 0, '未登录成功不得发短确认');
 
+  // 小窗已是已登录信号，内嵌区仍是未登录/还在加载：必须仍发短确认，且窗已关
   loginInspect = { userSelfLink: true };
-  inspectSignals = { userSelfLink: true };
+  inspectSignals = { headerLogin: true };
   browse.layoutEmbed({ x: 20, y: 80, width: 900, height: 500 });
   const afterIn = await browse.checkLoginWindow('douyin');
   assert.strictEqual(afterIn.loggedIn, true);
   assert.strictEqual(createdWindows[0].destroyed, true, '登录成功后要关掉登录窗');
-  assert.strictEqual(currentUrl, 'https://www.douyin.com/', '应回到该平台首页内容');
-  assert.strictEqual(viewVisible, true, '登录成功后露出内嵌内容');
   assert.deepStrictEqual(loggedInEvents, [{ platform: 'douyin', text: '已登录抖音，下面是你的内容' }]);
+  assert.strictEqual(currentUrl, 'https://www.douyin.com/', '应回到该平台首页内容');
+  assert.strictEqual(viewVisible, false, '内嵌区尚未判定已登录时先不露内容');
+
+  inspectSignals = { userSelfLink: true };
+  const embedReady = await browse.refreshLoginState();
+  assert.strictEqual(embedReady.loggedIn, true);
+  assert.strictEqual(viewVisible, true, '内嵌区判定已登录后再露出内容');
+  assert.deepStrictEqual(loggedInEvents, [{ platform: 'douyin', text: '已登录抖音，下面是你的内容' }], '二次检查不得再发一遍短确认');
 
   const searchAgain = browse.open({ platform: 'douyin', keyword: '美甲' });
   assert.strictEqual(searchAgain.newWindow, false);

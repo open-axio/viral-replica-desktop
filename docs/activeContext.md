@@ -4,9 +4,9 @@
 
 ## 当前
 
-T1、T2、T7 已验收；T3 实现验收通过，任务清单暂不勾，正式收口等真机三家，与 T4 一并过。T4 已实现、尚未推送。分支 `feat/home-redesign`。T4：点「去登录」才新开登录小窗（只承担登录，不带搜索和同款），复用 `persist:find-viral`；登录成功后关窗，回到首页对应 Tab 加载该平台首页内容，并 toast「已登录抖音，下面是你的内容」（小红书 / B 站同句式）。未登录成功不关窗、不提示。T5、T6 未做。推送和开 PR 等点头。
+T1、T2、T7 已验收；T3 实现验收通过，任务清单暂不勾，正式收口等真机三家，与 T4 一并过。T4 已实现、尚未推送。分支 `feat/home-redesign`。T4：点「去登录」才新开登录小窗（只承担登录，不带搜索和同款），复用 `persist:find-viral`；登录小窗判定成功后立刻 toast「已登录抖音，下面是你的内容」（小红书 / B 站同句式）并关窗，不等内嵌区二次判定。随后内嵌区加载该平台首页，由既有登录检查露出内容。未登录成功不关窗、不提示。T5、T6 未做。推送和开 PR 等点头。
 
-验证：`node build/test_browse.js` 通过（含去登录开一扇窗、复用、成功后关窗并发短确认、搜索仍不新建窗口；三家登录入口 URL 各不相同）；`node workbench/tools/test_home_login_ui.js` 8 条通过；`test_login_state.js`、`test_home_embed_ui.js` 6、`test_home_about_ui.js` 5、`test_round24_16_ui.js` 13 回归通过。
+验证：`node build/test_browse.js` 通过（含去登录开一扇窗、复用、小窗已登录但内嵌区仍未就绪时仍发短确认并关窗、搜索仍不新建窗口；三家登录入口 URL 各不相同）；`node workbench/tools/test_home_login_ui.js` 8 条通过；`test_login_state.js`、`test_home_embed_ui.js` 6、`test_home_about_ui.js` 5、`test_round24_16_ui.js` 13 回归通过。
 
 真机：T3 三家登录态（清掉会话必出「去登录」，保持登录则切 Tab 能直接出内容）、T4 至少完整走通抖音，以及高缩放对位和浮层遮挡：not run — 本环境无桌面真机会话。小红书、B 站 T4 真机：not run — 同上。
 

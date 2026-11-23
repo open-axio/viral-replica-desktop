@@ -83,7 +83,7 @@ async function setup({desktop = false, seen = true, ids = []} = {}) {
     hide() { hidden += 1; return Promise.resolve(true); },
     act(action, arg) { acts.push([action, arg]); return Promise.resolve(true); },
     onState(cb) { this._onState = cb; },
-    onImported() {},
+    onImported(cb) { this._onImported = cb; },
   } : undefined;
   const windowObj = {
     scrollTo() {},
@@ -110,8 +110,10 @@ async function setup({desktop = false, seen = true, ids = []} = {}) {
       requests.push({method, url: route});
       if (method === 'GET' && route === 'status') return response(status);
       if (method === 'GET' && route === 'projects') {
-        return response([...projects.values()].map((p) => ({id: p.id, name: p.name, created_at: p.created_at})));
+        return response([...projects.values()].map((p) => ({id: p.id, name: p.name, created_at: p.created_at, has_source: p.has_source})));
       }
+      const detail = route.match(/^projects\/([^/]+)$/);
+      if (method === 'GET' && detail && projects.has(detail[1])) return response(projects.get(detail[1]));
       throw Error('Unexpected offline request: ' + method + ' ' + route);
     },
     URL, URLSearchParams, JSON, Error, Date, Math, Number, String, Boolean, Array, Object, Map, Set, Promise,
@@ -138,7 +140,7 @@ async function setup({desktop = false, seen = true, ids = []} = {}) {
     await Promise.resolve();
     await Promise.resolve();
   };
-  return {run, $, document, storage, click, submit, opens, layouts, acts, windowOpens, hidden: () => hidden, browse: browseMock};
+  return {run, $, document, storage, click, submit, opens, layouts, acts, windowOpens, hidden: () => hidden, browse: browseMock, projects};
 }
 
 const tests = [], test = (name, fn) => tests.push([name, fn]);
@@ -208,6 +210,54 @@ test('介绍弹层打开时会把原生视图藏起来，关掉后再布局', as
   await t.click(t.$('#aboutCloseBtn'));
   assert.ok(t.layouts.length >= 2, '关闭介绍后应重新 layout');
   assert.equal(t.$('#fvEmbed').getAttribute('data-fv-url'), 'https://www.douyin.com/');
+});
+
+test('桌面版工具栏后退、前进、刷新和同款复刻都作用在当前内嵌区', async () => {
+  const t = await setup({desktop: true, seen: true});
+  t.browse._onState({
+    url: 'https://www.douyin.com/video/123',
+    loggedIn: true,
+    loginChecking: false,
+    canBack: true,
+    canForward: true,
+  });
+  assert.equal(t.$('[data-fv-back]').disabled, false);
+  assert.equal(t.$('[data-fv-forward]').disabled, false);
+  await t.click(t.$('[data-fv-back]'));
+  await t.click(t.$('[data-fv-forward]'));
+  await t.click(t.$('[data-fv-reload]'));
+  await t.click(t.$('[data-fv-capture]'));
+  assert.deepEqual(t.acts, [['back', undefined], ['forward', undefined], ['reload', undefined], ['capture', undefined]]);
+  assert.equal(t.windowOpens.length, 0);
+  assert.equal(t.opens.length, 1, '工具栏操作不应再调 open 新建浏览');
+});
+
+test('同款导入成功后打开项目，并出现在「最近的项目」里', async () => {
+  const t = await setup({desktop: true, seen: true});
+  assert.equal(typeof t.browse._onImported, 'function');
+  t.projects.set('p-new', {
+    id: 'p-new',
+    name: '长沙烤鱼',
+    created_at: '2026-11-23 12:00:00',
+    has_source: true,
+    source: { file: 'v.mp4', name: 'v.mp4', probe: { duration: 8, width: 1080, height: 1920, ratio_hint: '9:16', fps: 30, audio_stream_count: 1, audio_codec: 'aac', size_bytes: 2048 } },
+    origin: { platform: 'douyin', platform_name: '抖音', url: 'https://www.douyin.com/video/123', title: '烤鱼', desc: '长沙烤鱼', author: '老王' },
+    jobs: {},
+    runs: {},
+    images: {},
+    assets: [],
+  });
+  await t.browse._onImported({ id: 'p-new', name: '长沙烤鱼' });
+  await Promise.resolve();
+  await Promise.resolve();
+  assert.equal(t.run('P && P.id'), 'p-new', '应打开刚建的项目');
+  assert.equal(t.$('#workspace').hidden, false);
+  assert.equal(t.$('#emptyState').hidden, true);
+  const recent = t.$('#recentProjects');
+  assert.ok(recent && /长沙烤鱼/.test(recent.textContent), '项目应出现在最近的项目');
+  assert.ok(recent.querySelector('[data-open-recent="p-new"]'));
+  const toast = t.$('#toast');
+  assert.ok(toast && /已建好项目「长沙烤鱼」/.test(toast.textContent));
 });
 
 test('浏览器打开工作台不出现嵌入区，搜索仍走新标签页', async () => {

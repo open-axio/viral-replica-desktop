@@ -44,8 +44,12 @@ const viewInstance = {
   setBounds(b) { boundsHistory.push({ ...b }); this._bounds = { ...b }; },
 };
 
+const importedEvents = [];
 const mainWebContents = {
-  send(ch, payload) { if (ch === 'browse:logged-in') loggedInEvents.push(payload); },
+  send(ch, payload) {
+    if (ch === 'browse:logged-in') loggedInEvents.push(payload);
+    if (ch === 'browse:imported') importedEvents.push(payload);
+  },
   isDestroyed: () => false,
 };
 const contentView = {
@@ -276,6 +280,117 @@ assert.strictEqual(windowsCreated, 0);
   const biliIn = await browse.checkLoginWindow('bilibili');
   assert.strictEqual(biliIn.loggedIn, true);
   assert.deepStrictEqual(loggedInEvents[loggedInEvents.length - 1], { platform: 'bilibili', text: '已登录B站，下面是你的内容' });
+
+  // T5：内嵌区后退 / 前进 / 刷新作用于 WebContentsView，不新开窗口
+  const createdBeforeNav = windowsCreated;
+  const navActions = [];
+  let canBack = false;
+  let canForward = false;
+  const wc = viewInstance.webContents;
+  wc.canGoBack = () => canBack;
+  wc.canGoForward = () => canForward;
+  wc.navigationHistory = {
+    canGoBack: () => canBack,
+    canGoForward: () => canForward,
+    goBack() { navActions.push('back'); },
+    goForward() { navActions.push('forward'); },
+  };
+  wc.reload = () => { navActions.push('reload'); };
+
+  browse.runToolbar('back');
+  browse.runToolbar('forward');
+  assert.deepStrictEqual(navActions, [], '不能后退/前进时不要改历史');
+  canBack = true;
+  canForward = true;
+  browse.runToolbar('back');
+  browse.runToolbar('forward');
+  browse.runToolbar('reload');
+  assert.deepStrictEqual(navActions, ['back', 'forward', 'reload']);
+  assert.strictEqual(windowsCreated, createdBeforeNav, '后退/前进/刷新不得新开窗口');
+  const navState = browse.runToolbar('state');
+  assert.strictEqual(navState.canBack, true);
+  assert.strictEqual(navState.canForward, true);
+  assert.strictEqual(navState.embedded, true);
+  assert.strictEqual(navState.newWindow, false);
+
+  // T5：同款复刻沿用现有导入路径；页面还没出视频时不得建项目
+  const origExec = wc.executeJavaScript;
+  let pageInfo = { hasVideo: false, sources: [], comments: [] };
+  wc.executeJavaScript = async (code, ...rest) => {
+    const src = String(code);
+    if (src.includes('hasVideo') || src.includes('正在看的那条')) return { ...pageInfo };
+    if (typeof origExec === 'function') return origExec.call(wc, code, ...rest);
+    return { ...inspectSignals, href: currentUrl };
+  };
+  currentUrl = 'https://www.douyin.com/video/123';
+  await browse.capture();
+  assert.strictEqual(importedEvents.length, 0, '没有正在播放的视频不得导入');
+  const miss = browse.runToolbar('state');
+  assert.strictEqual(miss.status.kind, 'error');
+  assert.match(miss.status.text, /没找到视频/);
+
+  // 有正在播放的视频：下载并走 import-video，发出 browse:imported
+  const os = require('os');
+  const fs = require('fs');
+  const path = require('path');
+  const { ReadableStream } = require('stream/web');
+  const importDir = fs.mkdtempSync(path.join(os.tmpdir(), 'vrc-import-'));
+  const apiCalls = [];
+  const realFetch = global.fetch;
+  global.fetch = async (url, opts = {}) => {
+    const u = String(url);
+    if (u.startsWith('http://127.0.0.1:8765/api/')) {
+      const route = u.slice('http://127.0.0.1:8765/api/'.length);
+      apiCalls.push({ route, method: opts.method || 'GET', body: opts.body });
+      const json = (data) => ({ ok: true, status: 200, json: async () => data });
+      if (route === 'status') return json({ build: 'test' });
+      if (route === 'import-video/dir') return json({ dir: importDir });
+      if (route === 'import-video') return json({ id: 'p-new', name: '长沙烤鱼' });
+      return { ok: false, status: 404, json: async () => ({ error: route }) };
+    }
+    if (typeof realFetch === 'function') return realFetch(url, opts);
+    throw new Error('unexpected fetch ' + u);
+  };
+  const videoBytes = Buffer.from('fake-mp4-bytes-for-import');
+  wc.session = {
+    fetch: async () => ({
+      ok: true,
+      status: 200,
+      headers: { get: (k) => String(k).toLowerCase() === 'content-length' ? String(videoBytes.length) : null },
+      body: new ReadableStream({
+        start(controller) {
+          controller.enqueue(new Uint8Array(videoBytes));
+          controller.close();
+        },
+      }),
+    }),
+  };
+  pageInfo = {
+    url: 'https://www.douyin.com/video/123',
+    title: '烤鱼',
+    desc: '长沙烤鱼',
+    author: '老王',
+    stats: { likes: '1万' },
+    comments: [{ user: 'a', text: '好吃', likes: '1' }],
+    sources: ['https://v3-web.douyinvod.com/x.mp4'],
+    hasVideo: true,
+    extra: {},
+  };
+  importedEvents.length = 0;
+  await browse.capture();
+  global.fetch = realFetch;
+  const posted = apiCalls.find((c) => c.route === 'import-video' && c.method === 'POST');
+  assert.ok(posted, '应走现有 import-video 接口');
+  const body = JSON.parse(posted.body);
+  assert.ok(String(body.video).startsWith(importDir), '视频应下到工作台导入目录');
+  assert.strictEqual(body.origin.url, 'https://www.douyin.com/video/123');
+  assert.strictEqual(body.origin.platform, 'douyin');
+  assert.deepStrictEqual(importedEvents, [{ id: 'p-new', name: '长沙烤鱼' }]);
+  assert.strictEqual(windowsCreated, createdBeforeNav, '同款复刻不得新开窗口');
+  const done = browse.runToolbar('state');
+  assert.strictEqual(done.status.kind, 'done');
+  assert.match(done.status.text, /已建好项目「长沙烤鱼」/);
+  fs.rmSync(importDir, { recursive: true, force: true });
 
   browse.hideEmbed();
   browse.closeLoginWindow();

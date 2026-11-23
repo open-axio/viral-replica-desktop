@@ -574,10 +574,15 @@ async function capture() {
     const wc = view.webContents;
     const pageUrl = wc.getURL();
     const platform = platformOf(pageUrl);
+    let extractTimer;
     const info = await Promise.race([
       wc.executeJavaScript(EXTRACT, true),
-      new Promise((_, reject) => setTimeout(() => reject(new Error('页面没有响应，等它加载完再点一次「同款复刻」')), 15000)),
+      new Promise((_, reject) => {
+        extractTimer = setTimeout(() => reject(new Error('页面没有响应，等它加载完再点一次「同款复刻」')), 15000);
+        if (extractTimer && typeof extractTimer.unref === 'function') extractTimer.unref();
+      }),
     ]);
+    clearTimeout(extractTimer);
     if (!info.hasVideo && !(info.sources || []).length) {
       throw new Error('这一页没找到视频。先点开一条视频，看到它在播放了，再点「同款复刻」');
     }

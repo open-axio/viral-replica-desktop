@@ -60,6 +60,7 @@ let status = { kind: 'idle', text: '' };
 let lastEmbedBounds = null;
 let windowsCreated = 0;
 let loginResult = { loggedIn: false, checking: true, reason: 'pending', platform: '' };
+let sessionLogin = Object.create(null);
 let loginCheckTimer = null;
 let loginCheckGen = 0;
 let loginWin = null;       // T4：只承担登录的小窗，和搜索窗不是同一个
@@ -129,6 +130,7 @@ function statePayload() {
     loggedIn: !!(loginResult && loginResult.loggedIn),
     loginChecking: !!(loginResult && loginResult.checking),
     loginReason: loginResult && loginResult.reason || '',
+    sessionLogin: { ...sessionLogin },
   };
 }
 
@@ -199,12 +201,8 @@ function wireSiteView(v) {
     wc.on(ev, () => {
       if (ev === 'did-navigate' && status.kind !== 'working') status = { kind: 'idle', text: '' };
       if (ev === 'did-start-loading') {
-        if (holdVisibleAfterLogin) {
-          loginResult = { ...(loginResult || {}), loggedIn: true, checking: true, platform: platformOf(wc.getURL && wc.getURL() || '') };
-        } else {
-          loginResult = { loggedIn: false, checking: true, reason: 'pending', platform: platformOf(wc.getURL && wc.getURL() || '') };
-          applyLoginVisibility();
-        }
+        beginLoginCheck(platformOf((wc.getURL && wc.getURL()) || ''));
+        applyLoginVisibility();
       }
       if (ev === 'did-stop-loading' || ev === 'did-navigate') scheduleLoginCheck();
       sendState();
@@ -223,9 +221,47 @@ function isClearLoginWall(reason) {
   return /^(login-host|login-path|login-wall|header-login|login-modal|sidebar-login|header-login-entry)$/.test(reason || '');
 }
 
+function sessionOf(platform) {
+  if (!platform || platform === 'other') return undefined;
+  if (!Object.prototype.hasOwnProperty.call(sessionLogin, platform)) return undefined;
+  return sessionLogin[platform];
+}
+
+function rememberSessionLogin(platform, loggedIn) {
+  if (!platform || platform === 'other') return;
+  sessionLogin[platform] = !!loggedIn;
+}
+
+function resetSessionLogin(map) {
+  sessionLogin = Object.create(null);
+  if (map && typeof map === 'object') {
+    for (const key of Object.keys(map)) sessionLogin[key] = !!map[key];
+  }
+}
+
+function beginLoginCheck(platform) {
+  if (holdVisibleAfterLogin) {
+    loginResult = {
+      ...(loginResult || {}),
+      loggedIn: true,
+      checking: true,
+      reason: (loginResult && loginResult.reason) || 'login-window',
+      platform: platform || (loginResult && loginResult.platform) || '',
+    };
+    return;
+  }
+  const confirmed = sessionOf(platform);
+  if (confirmed === true) {
+    loginResult = { loggedIn: true, checking: true, reason: 'session-in', platform };
+  } else if (confirmed === false) {
+    loginResult = { loggedIn: false, checking: false, reason: 'session-out', platform };
+  } else {
+    loginResult = { loggedIn: false, checking: true, reason: 'pending', platform: platform || '' };
+  }
+}
+
 function applyLoginVisibility() {
-  if (holdVisibleAfterLogin) setEmbedVisible(true, lastEmbedBounds);
-  else if (loginResult && loginResult.loggedIn && !loginResult.checking) setEmbedVisible(true, lastEmbedBounds);
+  if (holdVisibleAfterLogin || (loginResult && loginResult.loggedIn)) setEmbedVisible(true, lastEmbedBounds);
   else setEmbedVisible(false);
 }
 
@@ -252,9 +288,25 @@ async function refreshLoginState() {
   }
   loginResult = detectLogin(platform, page);
   if (holdVisibleAfterLogin) {
-    if (loginResult.loggedIn) holdVisibleAfterLogin = false;
-    else if (isClearLoginWall(loginResult.reason)) holdVisibleAfterLogin = false;
-    else loginResult = { loggedIn: true, checking: false, reason: 'login-window', platform };
+    if (loginResult.loggedIn) {
+      holdVisibleAfterLogin = false;
+      rememberSessionLogin(platform, true);
+    } else if (isClearLoginWall(loginResult.reason)) {
+      holdVisibleAfterLogin = false;
+      rememberSessionLogin(platform, false);
+    } else {
+      loginResult = { loggedIn: true, checking: false, reason: 'login-window', platform };
+    }
+  } else if (sessionOf(platform) === true) {
+    if (loginResult.loggedIn) {
+      rememberSessionLogin(platform, true);
+    } else if (isClearLoginWall(loginResult.reason)) {
+      rememberSessionLogin(platform, false);
+    } else {
+      loginResult = { loggedIn: true, checking: false, reason: 'session-in', platform };
+    }
+  } else {
+    rememberSessionLogin(platform, !!loginResult.loggedIn);
   }
   applyLoginVisibility();
   sendState();
@@ -265,11 +317,8 @@ async function refreshLoginState() {
 }
 
 function scheduleLoginCheck() {
-  if (holdVisibleAfterLogin) {
-    loginResult = { ...(loginResult || {}), loggedIn: true, checking: true, reason: (loginResult && loginResult.reason) || 'login-window', platform: loginResult && loginResult.platform || '' };
-  } else {
-    loginResult = { loggedIn: false, checking: true, reason: 'pending', platform: loginResult && loginResult.platform || '' };
-  }
+  const url = view && view.webContents && typeof view.webContents.getURL === 'function' ? view.webContents.getURL() : '';
+  beginLoginCheck(platformOf(url));
   applyLoginVisibility();
   sendState();
   const gen = ++loginCheckGen;
@@ -277,7 +326,12 @@ function scheduleLoginCheck() {
   loginCheckTimer = setTimeout(() => {
     if (gen !== loginCheckGen) return;
     refreshLoginState().catch(() => {
-      loginResult = { loggedIn: false, checking: false, reason: 'check-failed', platform: '' };
+      const platform = (loginResult && loginResult.platform) || '';
+      if (holdVisibleAfterLogin || sessionOf(platform) === true) {
+        loginResult = { loggedIn: true, checking: false, reason: 'session-in', platform };
+      } else {
+        loginResult = { loggedIn: false, checking: false, reason: 'check-failed', platform };
+      }
       applyLoginVisibility();
       sendState();
     });
@@ -336,8 +390,8 @@ function open(opts) {
   if (!ensureEmbeddedView()) return { ok: false, error: '没能挂上平台视图', newWindow: false, url: '' };
   const url = resolveOpenUrl(opts);
   status = { kind: 'idle', text: '' };
-  loginResult = { loggedIn: false, checking: true, reason: 'pending', platform: platformOf(url) };
-  setEmbedVisible(false);
+  beginLoginCheck(platformOf(url));
+  applyLoginVisibility();
   view.webContents.loadURL(url);
   scheduleLoginCheck();
   sendState();
@@ -861,4 +915,5 @@ module.exports = {
   mediaSeen, init, register, open, capture, platformOf, urlFromShareText, chooseMedia,
   PLATFORMS, EXTRACT, debugInfo, layoutEmbed, hideEmbed, runToolbar, resolveOpenUrl,
   refreshLoginState, detectLogin, startLogin, checkLoginWindow, closeLoginWindow, loginStartUrl,
+  resetSessionLogin,
 };

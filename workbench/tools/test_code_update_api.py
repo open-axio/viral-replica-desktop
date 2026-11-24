@@ -26,7 +26,9 @@ class UpdateAPITests(unittest.TestCase):
     def test_status_does_not_check_network(self):
         with patch.object(updater, 'download', side_effect=AssertionError('No implicit check')):
             result = self.handler._api('GET', ['updates'], {})
-        self.assertEqual(result['repository'], 'alyunzhangu/viral-replica-workbench')
+        self.assertEqual(result['repository'], 'open-axio/viral-replica-desktop')
+        self.assertIn('can_update_in_place', result)
+        self.assertIn('has_formal_release', result)
 
     def test_manual_check_after_auto_update_reports_current_without_installing(self):
         manifest = package({'server.py': b'# code'}, version='20261114-0100')[1]

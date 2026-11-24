@@ -590,9 +590,10 @@ function renderHome() {
         <small>${p.origin ? `来自${esc(p.origin)} · ` : ""}${day(p.created_at)}${p.shots ? ` · ${p.shots} 个镜头` : ""}</small></span>
         <span class="home-card-go">${action} ${ICON_ARROW}</span></button></li>`;
     }).join("")}</ul>` : `<p class="home-empty">还没有项目。可以从上面找一条同行的爆款开始。</p>`;
-  updateHtml(box, renderFindViral() + `<p class="home-upload-entry"><button type="button" class="ghost" data-flow-new>自己放一条视频进来</button></p>` + recent);
+  updateHtml(box, renderFindViral() + `<div class="home-dock"><p class="home-upload-entry"><button type="button" class="ghost" data-flow-new>自己放一条视频进来</button></p>` + recent + `</div>`);
   const city = $("#fvCity"); if (city && !city.value) city.value = storeGet("vrc.fvCity") || "";
   maybeOpenAbout();
+  syncDesktopHomeShell();
   syncFindViralEmbed();
   syncCaptureHint(fvLastLoggedIn);
 }
@@ -681,6 +682,7 @@ function renderFindViral() {
       </div>
     </div>` : "";
   return `<section class="fv" aria-labelledby="fvTitle">
+    <div class="fv-chrome">
     <div class="fv-head">
       <div><h2 id="fvTitle">找同行的爆款</h2>
         <p class="hint">${desktop ? "在下面刷同行怎么拍。搜索、切平台、点行业词都留在这一页，不会新开窗口。看中了点「同款复刻」就直接建好项目。" : "会在新标签页打开平台搜索。看中的视频下载下来，拖进新项目就行（桌面版可以一键同款复刻）。"}</p></div>
@@ -697,6 +699,7 @@ function renderFindViral() {
       <input id="fvLink" placeholder="在抖音 / 小红书 / B站点「分享 → 复制链接」，粘贴到这里" aria-label="分享链接" autocomplete="off">
       <button type="submit" class="ghost">打开</button>
     </form>
+    </div>
     ${pane}
   </section>`;
 }
@@ -754,6 +757,25 @@ let fvAttached = false, fvEmbedObs = null, fvEmbedWired = false;
 function hideFindViralEmbed() {
   if (inDesktop() && window.__browse && window.__browse.hide) window.__browse.hide();
 }
+const DESKTOP_HOME_PAD = 12;
+function syncDesktopHomeShell() {
+  const on = inDesktop() && !P && $("#emptyState") && !$("#emptyState").hidden;
+  setFlagClass(document.documentElement, "is-desktop-home", !!on);
+  if (on) fillDesktopEmbedHeight();
+}
+function fillDesktopEmbedHeight() {
+  const embed = $("#fvEmbed");
+  const dock = document.querySelector(".home-dock");
+  if (!embed || typeof embed.getBoundingClientRect !== "function") return;
+  const top = embed.getBoundingClientRect().top;
+  const dockH = dock && typeof dock.getBoundingClientRect === "function" ? (dock.getBoundingClientRect().height || 0) : 0;
+  const vh = (typeof window !== "undefined" && window.innerHeight) || 0;
+  const height = Math.floor(vh - top - dockH - DESKTOP_HOME_PAD);
+  if (height >= 80 && embed.style) {
+    embed.style.height = height + "px";
+    embed.style.minHeight = "0";
+  }
+}
 function anyOverlayOpen() {
   if (aboutIsOpen(aboutDialogEl())) return true;
   if (typeof document.querySelector === "function" && document.querySelector("dialog[open]")) return true;
@@ -787,7 +809,7 @@ function applyFvState(s) {
   if (status) {
     status.className = "fv-status" + (s.status && s.status.kind ? " " + s.status.kind : "");
     if (s.loggedIn) {
-      status.textContent = (s.status && s.status.text) || (s.loading ? "加载中…" : "打开一条视频，看到它在播放了，点「同款复刻」");
+      status.textContent = (s.status && s.status.text) || ((s.loading || s.loginChecking) ? "加载中…" : "打开一条视频，看到它在播放了，点「同款复刻」");
     } else if (s.loginChecking) {
       status.textContent = "正在确认登录状态…";
     } else {
@@ -854,8 +876,12 @@ function wireFindViralEmbed() {
   }
 }
 function syncFindViralEmbed() {
-  if (!inDesktop() || !window.__browse) return;
+  if (!inDesktop() || !window.__browse) {
+    setFlagClass(document.documentElement, "is-desktop-home", false);
+    return;
+  }
   const onHome = !P && $("#emptyState") && !$("#emptyState").hidden && $("#fvEmbed");
+  syncDesktopHomeShell();
   if (!onHome || anyOverlayOpen()) { hideFindViralEmbed(); return; }
   wireFindViralEmbed();
   const bounds = fvEmbedVisibleBounds();

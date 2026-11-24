@@ -432,6 +432,50 @@ assert.strictEqual(windowsCreated, 0);
   assert.strictEqual(afterPlain.loggedIn, true);
   assert.strictEqual(currentUrl, 'https://www.douyin.com/', '未成功登录就关掉后，不得打开旧分享链接');
 
+  // 真机体验 T2：按平台记住本次已确认的登录态
+  browse.hideEmbed();
+  browse.closeLoginWindow();
+  browse.resetSessionLogin();
+  inspectSignals = { userSelfLink: true };
+  currentUrl = 'https://www.douyin.com/';
+  const rememberIn = await browse.refreshLoginState();
+  assert.strictEqual(rememberIn.loggedIn, true);
+  assert.strictEqual(viewVisible, true);
+  inspectSignals = { headerAvatar: true };
+  const reopenIn = browse.open({ platform: 'douyin' });
+  assert.strictEqual(reopenIn.ok, true);
+  assert.strictEqual(viewVisible, true, '已确认登录的平台切回时保持内嵌区可见');
+  const midState = browse.runToolbar('state');
+  assert.strictEqual(midState.loggedIn, true);
+  assert.strictEqual(midState.loginChecking, true);
+  const stillIn = await browse.refreshLoginState();
+  assert.strictEqual(stillIn.loggedIn, true, '已确认登录后，不确定信号不得收回内容');
+  assert.strictEqual(viewVisible, true);
+
+  inspectSignals = { headerLogin: true };
+  const firstVisit = browse.open({ platform: 'xiaohongshu' });
+  assert.strictEqual(firstVisit.ok, true);
+  assert.strictEqual(viewVisible, false, '从未确认过的平台仍要先藏起内容');
+  let firstState = browse.runToolbar('state');
+  assert.strictEqual(firstState.loggedIn, false);
+  assert.strictEqual(firstState.loginChecking, true);
+  const firstOut = await browse.refreshLoginState();
+  assert.strictEqual(firstOut.loggedIn, false);
+  assert.strictEqual(viewVisible, false);
+
+  const knownOut = browse.open({ platform: 'xiaohongshu' });
+  assert.strictEqual(knownOut.ok, true);
+  assert.strictEqual(viewVisible, false);
+  const outState = browse.runToolbar('state');
+  assert.strictEqual(outState.loggedIn, false);
+  assert.strictEqual(outState.loginChecking, false, '已确认未登录不要再进入正在确认');
+
+  inspectSignals = { headerLogin: true };
+  currentUrl = 'https://www.douyin.com/';
+  const wall = await browse.refreshLoginState();
+  assert.strictEqual(wall.loggedIn, false);
+  assert.strictEqual(viewVisible, false, '已确认登录的平台遇到明确登录墙要收回');
+
   browse.hideEmbed();
   browse.closeLoginWindow();
   assert.strictEqual(viewVisible, false);

@@ -1,11 +1,11 @@
 {
   "format": 1,
   "runtime": 1,
-  "version": "20261123-1220",
+  "version": "20261124-1720",
   "files": {
     "LICENSE": "eb110e8e29566fd4de1da50097ff397b38df7ec36183e61249290a6b3164e6d1",
     "README.md": "fb00b1cb5dbf461447368aefb7f9b426a237d16d7e5f7298ac40a9da717f0877",
-    "VERSION": "95232fd61fef8cfc05f3acd0e52a70198c3f3386bb92f47b3dc8f9c48281992c",
+    "VERSION": "586a3105e3ac13c61ef871cb1f40cbe604d5856eaac1880258aacd4a04f66f3c",
     "console/align_models.py": "be4dd845b67a642da38b7d234b4134bbc53047094e6946a20db925a75018ae01",
     "console/asr.py": "062ccb7ca162bce9a017ce85156ffe51b357ed68eff9d0851158143c5d280983",
     "console/asr_models.py": "72ab7da54a32d676f63e839fce0235fbf326e9bc9fa5c26f48f1b29ffe90c8ab",
@@ -97,12 +97,12 @@
     "server.py": "d34158d145b7fba314c5684da23f72194c744a15f42915a144a43cbed73efe0d",
     "start.bat": "2e3620ab636b12fdca3daf31bea89e022e2f48c96a4d2f1a8803947dc162dff5",
     "start.command": "41d0e5923a3c010d26bc81faab7fc3bd6b7145872129ba1726be554f99154979",
-    "updater.py": "a31c9d1b757ec991f8500027e14e081beb516e3da50285027f896cf8b0a30000",
+    "updater.py": "9f6f0c19611239d4e8d6a59914b150a1e3d8112f94d10606562a25be14b6a22c",
     "web/app.js": "04d8708c65da83b12356cee500ef305ebbbd265dc0ca3be9144b63dc4cf2c8c7",
-    "web/changelog.json": "77624c8639593ff510a6e51e5a21255108e8e3a9b77289618af66710696e246f",
-    "web/flow.js": "eeac13510f85c326e973f65b51bb77f3df8d6a735f9beb0a3f08bcd584ef6d47",
+    "web/changelog.json": "c2d606c55df539be80aa51bc8d2e4ecef28129e0249909e547f9061206fd5ab0",
+    "web/flow.js": "7294c9dde17fc41d588abf395579fd5941df24a55d57a6fc3a7a34808c0f803d",
     "web/index.html": "4cd718668856d1d8aff6a5774cdd239152848e96f86238a3032d599361dffc94",
-    "web/style.css": "5b9a9a0cda759d1d561c6d9aeb4d37175bcee1bbd93d3c1f251cac5d89ba26a2",
-    "web/update.js": "b3257ef625c82a6168526c32c3f92ac2db3360df5d0a9fce07094e94198f3aba"
+    "web/style.css": "944eacddbf4c50aa489c0917e4dc0bcedc6f5fe15a748fd9814473feaddbba83",
+    "web/update.js": "7ea9d2c538e6c1e6547b4055019604abd1916cc171b1b36f0d22104e96f81f7c"
   }
 }

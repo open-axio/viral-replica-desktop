@@ -253,6 +253,37 @@ test('未成功登录就关掉后，再点「去登录」不再带上旧分享�
   assert.ok(!t.startLoginOpts[1].afterUrl, '关窗后不应再带上旧分享链接');
 });
 
+test('已确认登录后再检查：保持内嵌区，工具栏可显示加载中，不铺正在确认登录状态', async () => {
+  const t = await setup();
+  t.emitState({url: 'https://www.douyin.com/', loggedIn: true, loginChecking: false, loginReason: 'user-self', canBack: false, canForward: false});
+  const hiddenAfterIn = t.hidden();
+  t.emitState({url: 'https://www.douyin.com/', loggedIn: true, loginChecking: true, loading: true, canBack: false, canForward: false});
+  assert.equal(t.$('#fvLoginEmpty').hidden, true);
+  assert.equal(t.$('#fvLoginBtn').hidden, true);
+  assert.match(t.$('#fvStatus').textContent, /加载中/);
+  assert.doesNotMatch(t.$('#fvStatus').textContent, /正在确认登录状态/);
+  assert.equal(t.hidden(), hiddenAfterIn, '已登录再检查时不得再藏起嵌入区');
+});
+
+test('已确认未登录再切回：直接出去登录，不闪正在确认', async () => {
+  const t = await setup();
+  t.emitState({url: 'https://www.xiaohongshu.com/explore', loggedIn: false, loginChecking: false, loginReason: 'header-login', canBack: false, canForward: false});
+  t.emitState({url: 'https://www.xiaohongshu.com/explore', loggedIn: false, loginChecking: false, loginReason: 'session-out', canBack: false, canForward: false});
+  assert.equal(t.$('#fvLoginEmpty').hidden, false);
+  assert.equal(t.$('#fvLoginBtn').hidden, false);
+  assert.equal(t.$('#fvLoginBtn').textContent, '去登录');
+  assert.match(t.$('#fvLoginCopy').textContent, /登录后能直接刷到你平时看的内容，不用再复制链接/);
+  assert.doesNotMatch(t.$('#fvLoginCopy').textContent, /正在确认登录状态/);
+});
+
+test('从未确认过的平台仍可显示正在确认登录状态', async () => {
+  const t = await setup();
+  t.emitState({url: 'https://www.bilibili.com/', loggedIn: false, loginChecking: true, canBack: false, canForward: false});
+  assert.equal(t.$('#fvLoginEmpty').hidden, false);
+  assert.match(t.$('#fvLoginCopy').textContent, /正在确认登录状态/);
+  assert.equal(t.$('#fvLoginBtn').hidden, true);
+});
+
 (async () => {
   let failed = 0;
   for (const [name, fn] of tests) {

@@ -18,7 +18,9 @@ Node.prototype.close = function () {
 };
 Node.prototype.getBoundingClientRect = function () {
   const id = this.id || (typeof this.getAttribute === 'function' ? this.getAttribute('id') : '');
+  const cls = (this.getAttribute && this.getAttribute('class')) || '';
   if (id === 'fvEmbed') return { left: 24, top: 280, right: 1000, bottom: 700, width: 976, height: 420 };
+  if (/\bhome-dock\b/.test(cls)) return { left: 24, top: 700, right: 1000, bottom: 800, width: 976, height: 100 };
   return { left: 0, top: 0, right: 0, bottom: 0, width: 0, height: 0 };
 };
 const origAdd = Node.prototype.addEventListener;
@@ -270,6 +272,31 @@ test('浏览器打开工作台不出现嵌入区，搜索仍走新标签页', as
   assert.equal(t.windowOpens.length, 1);
   assert.equal(t.windowOpens[0][0], SEARCH.douyin('烤鱼'));
   assert.equal(t.windowOpens[0][1], '_blank');
+});
+
+test('桌面首页操作区固定、内嵌区高度随剩余窗口空间变化', async () => {
+  const t = await setup({desktop: true, seen: true});
+  assert.ok(t.$('.fv-chrome'), '搜索和平台 Tab 应在固定操作区');
+  assert.ok(t.$('.home-dock'), '最近项目应放在操作区附近的固定区域');
+  assert.ok(t.document.documentElement.classList.contains('is-desktop-home'));
+  const css = fs.readFileSync(path.join(root, 'web/style.css'), 'utf8');
+  assert.match(css, /html\.is-desktop-home[^{]+\{[^}]*overflow:\s*hidden/);
+  assert.match(css, /html\.is-desktop-home \.fv-chrome/);
+  assert.match(css, /html\.is-desktop-home \.fv-embed/);
+  // 窗口 800，占位区顶 280，底部码头 100，再留 12 边距 → 408
+  assert.equal(t.$('#fvEmbed').style.height, '408px');
+  const chrome = t.$('.fv-chrome');
+  const pane = t.$('.fv-pane');
+  const dock = t.$('.home-dock');
+  assert.ok(chrome && pane && dock);
+  assert.equal(chrome.nextElementSibling, pane, '内嵌区应紧跟操作区');
+});
+
+test('浏览器打开工作台不启用桌面占满布局', async () => {
+  const t = await setup({desktop: false, seen: true});
+  assert.equal(t.document.documentElement.classList.contains('is-desktop-home'), false);
+  assert.ok(t.$('.fv-chrome'));
+  assert.ok(t.$('.home-dock'));
 });
 
 (async () => {

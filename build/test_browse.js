@@ -193,8 +193,7 @@ assert.strictEqual(windowsCreated, 0);
   assert.strictEqual(loggedIn.loggedIn, true);
   assert.strictEqual(loggedIn.platform, 'douyin');
   browse.layoutEmbed({ x: 20, y: 80, width: 900, height: 500 });
-  assert.strictEqual(viewVisible, true);
-  assert.deepStrictEqual(viewInstance._bounds, { x: 20, y: 80, width: 900, height: 500 });
+  assert.strictEqual(viewVisible, false, '抖音已登录也不露出平台官网，只用后台列表');
   assert.strictEqual(windowsCreated, 0);
 
   inspectSignals = { headerLoginEntry: true };
@@ -252,7 +251,7 @@ assert.strictEqual(windowsCreated, 0);
   inspectSignals = { userSelfLink: true };
   const embedReady = await browse.refreshLoginState();
   assert.strictEqual(embedReady.loggedIn, true);
-  assert.strictEqual(viewVisible, true, '内嵌区判定已登录后再露出内容');
+  assert.strictEqual(viewVisible, false, '列表平台判定已登录后仍不露出官网');
   assert.deepStrictEqual(loggedInEvents, [{ platform: 'douyin', text: '已登录抖音，下面是你的内容' }], '二次检查不得再发一遍短确认');
 
   const searchAgain = browse.open({ platform: 'douyin', keyword: '美甲' });
@@ -440,17 +439,17 @@ assert.strictEqual(windowsCreated, 0);
   currentUrl = 'https://www.douyin.com/';
   const rememberIn = await browse.refreshLoginState();
   assert.strictEqual(rememberIn.loggedIn, true);
-  assert.strictEqual(viewVisible, true);
+  assert.strictEqual(viewVisible, false, '列表平台已登录也不露出官网');
   inspectSignals = { headerAvatar: true };
   const reopenIn = browse.open({ platform: 'douyin' });
   assert.strictEqual(reopenIn.ok, true);
-  assert.strictEqual(viewVisible, true, '已确认登录的平台切回时保持内嵌区可见');
+  assert.strictEqual(viewVisible, false, '已确认登录的列表平台切回时仍不露出官网');
   const midState = browse.runToolbar('state');
   assert.strictEqual(midState.loggedIn, true);
   assert.strictEqual(midState.loginChecking, true);
   const stillIn = await browse.refreshLoginState();
-  assert.strictEqual(stillIn.loggedIn, true, '已确认登录后，不确定信号不得收回内容');
-  assert.strictEqual(viewVisible, true);
+  assert.strictEqual(stillIn.loggedIn, true, '已确认登录后，不确定信号不得改成未登录');
+  assert.strictEqual(viewVisible, false, '列表平台保持后台隐藏');
 
   inspectSignals = { headerLogin: true };
   const firstVisit = browse.open({ platform: 'xiaohongshu' });
@@ -475,6 +474,49 @@ assert.strictEqual(windowsCreated, 0);
   const wall = await browse.refreshLoginState();
   assert.strictEqual(wall.loggedIn, false);
   assert.strictEqual(viewVisible, false, '已确认登录的平台遇到明确登录墙要收回');
+
+  // 列表方案：探测登录和后台搜索都不露出官网；点开详情才露出那一条
+  inspectSignals = { userSelfLink: true };
+  const createdBeforeProbe = windowsCreated;
+  const probed = browse.probeLogin({ platform: 'douyin' });
+  assert.strictEqual(probed.ok, true);
+  assert.strictEqual(probed.newWindow, false);
+  assert.strictEqual(windowsCreated, createdBeforeProbe, '探测登录不得新开窗口');
+  assert.strictEqual(viewVisible, false, '探测登录不得露出平台首页');
+
+  const wcSearch = viewInstance.webContents;
+  const origSearchExec = wcSearch.executeJavaScript;
+  wcSearch.executeJavaScript = async (code, ...rest) => {
+    const src = String(code);
+    if (src.includes('extractSearchFromPage')) {
+      return {
+        items: [{
+          id: '12345678901',
+          url: 'https://www.douyin.com/video/12345678901',
+          title: '长沙烤鱼探店',
+          author: '老王',
+          cover: 'https://example.com/c.jpg',
+        }],
+        hasMore: false,
+      };
+    }
+    if (typeof origSearchExec === 'function') return origSearchExec.call(wcSearch, code, ...rest);
+    return { ...inspectSignals, href: currentUrl };
+  };
+  const found = await browse.searchPlatform({ platform: 'douyin', keyword: '餐饮美食' });
+  wcSearch.executeJavaScript = origSearchExec;
+  assert.strictEqual(found.ok, true);
+  assert.strictEqual(found.items.length, 1);
+  assert.strictEqual(found.items[0].title, '长沙烤鱼探店');
+  assert.strictEqual(found.note, '目前只展示这一批');
+  assert.strictEqual(viewVisible, false, '后台搜索不得露出平台搜索页');
+  assert.ok(loadedUrls.some((u) => String(u).includes('/search/') && String(u).includes(encodeURIComponent('餐饮美食'))));
+
+  const detail = browse.open({ url: 'https://www.douyin.com/video/12345678901', detail: true, platform: 'douyin' });
+  browse.layoutEmbed({ x: 20, y: 80, width: 900, height: 500 });
+  assert.strictEqual(detail.ok, true);
+  assert.strictEqual(viewVisible, true, '详情才露出这一条的内容页');
+  assert.deepStrictEqual(viewInstance._bounds, { x: 20, y: 80, width: 900, height: 500 });
 
   browse.hideEmbed();
   browse.closeLoginWindow();

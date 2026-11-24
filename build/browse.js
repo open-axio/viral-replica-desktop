@@ -11,6 +11,9 @@ const { BrowserWindow, WebContentsView, session, ipcMain, app } = require('elect
 const path = require('path');
 const fs = require('fs');
 const { detectLogin, INSPECT } = require('./login-state');
+const { parseSearchPage, extractSearchSource } = require('./search-extract');
+const EXTRACT_SEARCH = extractSearchSource();
+const LIST_PLATFORMS = { douyin: true, xiaohongshu: true };
 const { Readable } = require('stream');
 const { pipeline } = require('stream/promises');
 
@@ -44,6 +47,18 @@ function platformOf(url) {
   return 'other';
 }
 
+function isListPlatform(p) {
+  return !!LIST_PLATFORMS[p];
+}
+
+function isDetailUrl(url) {
+  try {
+    const u = new URL(url);
+    const path = u.pathname || '';
+    return /\/video\/\d+/.test(path) || /\/explore\/[^/]+/.test(path) || /\/discovery\/item\//.test(path) || /\/note\//.test(path);
+  } catch (e) { return false; }
+}
+
 // 从分享文案里取链接：「3.89 复制打开抖音，看看【xx的作品】... https://v.douyin.com/abc/ xxx」
 function urlFromShareText(text) {
   const m = String(text || '').match(/https?:\/\/[^\s，。,；;"'<>【】]+/);
@@ -66,6 +81,7 @@ let loginCheckGen = 0;
 let loginWin = null;       // T4：只承担登录的小窗，和搜索窗不是同一个
 let pendingAfterLogin = ''; // T6：未登录时先记下分享链接，登完再在内嵌区打开
 let holdVisibleAfterLogin = false; // 登完打开分享页时先露出，避免只在隐藏视图里加载
+let detailActive = false; // 列表方案：只在详情里露出那一条的内容页
 let loginWatchTimer = null;
 let loginWatchGen = 0;
 const mediaSeen = new Map();   // webContents id -> [{ url, type, at }]
@@ -261,6 +277,11 @@ function beginLoginCheck(platform) {
 }
 
 function applyLoginVisibility() {
+  const p = (loginResult && loginResult.platform) || (view && view.webContents && typeof view.webContents.getURL === 'function' ? platformOf(view.webContents.getURL()) : '');
+  if (isListPlatform(p) && !detailActive && !holdVisibleAfterLogin) {
+    setEmbedVisible(false);
+    return;
+  }
   if (holdVisibleAfterLogin || (loginResult && loginResult.loggedIn)) setEmbedVisible(true, lastEmbedBounds);
   else setEmbedVisible(false);
 }
@@ -389,8 +410,10 @@ function open(opts) {
   if (!host) return { ok: false, error: '主窗口还没打开', newWindow: false, url: '' };
   if (!ensureEmbeddedView()) return { ok: false, error: '没能挂上平台视图', newWindow: false, url: '' };
   const url = resolveOpenUrl(opts);
+  const platform = platformOf(url) !== 'other' ? platformOf(url) : ((opts && opts.platform) || 'douyin');
+  detailActive = !!(opts && (opts.detail || (opts.url && isListPlatform(platform) && isDetailUrl(url))));
   status = { kind: 'idle', text: '' };
-  beginLoginCheck(platformOf(url));
+  beginLoginCheck(platform);
   applyLoginVisibility();
   view.webContents.loadURL(url);
   scheduleLoginCheck();
@@ -407,8 +430,135 @@ function layoutEmbed(bounds) {
 }
 
 function hideEmbed() {
-  setEmbedVisible(false);
+  if (!detailActive) setEmbedVisible(false);
+  else setEmbedVisible(false);
   return debugInfo();
+}
+
+function loadUrl(wc, url, settleMs) {
+  if (!wc || typeof wc.loadURL !== 'function') {
+    return Promise.reject(new Error('后台搜索视图还没准备好，请重试'));
+  }
+  const waitForEvent = typeof wc.once === 'function';
+  const loading = new Promise((resolve, reject) => {
+    if (!waitForEvent) {
+      try { wc.loadURL(url); resolve(); } catch (err) { reject(err); }
+      return;
+    }
+    let settled = false;
+    const done = (err) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      if (err) reject(err);
+      else resolve();
+    };
+    const timer = setTimeout(() => done(new Error('搜索页加载超时，请重试')), 20000);
+    if (timer && typeof timer.unref === 'function') timer.unref();
+    wc.once('did-finish-load', () => done());
+    wc.once('did-fail-load', (_e, _code, desc) => done(new Error(desc || '搜索页打开失败，请重试')));
+    try { wc.loadURL(url); } catch (err) { done(err); }
+  });
+  const wait = Number(settleMs) > 0 ? sleep(settleMs) : Promise.resolve();
+  return loading.then(() => wait);
+}
+
+async function searchPlatform(opts) {
+  const platform = (opts && opts.platform && PLATFORMS[opts.platform]) ? opts.platform : 'douyin';
+  const keyword = String((opts && opts.keyword) || '').trim().slice(0, 60);
+  if (!keyword) return { ok: false, error: '先输入要找的行业或关键词，或者点下面的常用行业', items: [], platform };
+  if (!isListPlatform(platform)) return { ok: false, error: '这个平台本版本还没有列表搜索', items: [], platform };
+  if (!mainHost() || !ensureEmbeddedView()) return { ok: false, error: '还不能搜索，主窗口没准备好', items: [], platform };
+  lastKeyword = keyword;
+  detailActive = false;
+  applyLoginVisibility();
+  setStatus('working', '正在搜索…');
+  const url = PLATFORMS[platform].search(keyword);
+  const wc = view.webContents;
+  const settle = typeof wc.once === 'function' ? 2000 : 0;
+  try {
+    await loadUrl(wc, url, settle);
+    const login = await refreshLoginState();
+    if (!login.loggedIn) {
+      const error = '还没登录，或登录状态读不准。先去登录后再搜索。';
+      setStatus('error', error);
+      return { ok: false, loggedIn: false, error, items: [], platform, keyword };
+    }
+    let data;
+    try {
+      data = await Promise.race([
+        wc.executeJavaScript(EXTRACT_SEARCH, true),
+        sleep(15000).then(() => { throw new Error('搜索页没有响应，请重试'); }),
+      ]);
+    } catch (err) {
+      const error = String((err && err.message) || err) || '搜索页没有响应，请重试';
+      setStatus('error', error);
+      return { ok: false, error, items: [], platform, keyword };
+    }
+    const parsed = (!data || typeof data !== 'object')
+      ? { items: [], hasMore: false }
+      : (Array.isArray(data.items) ? data : parseSearchPage(data, platform));
+    const items = (parsed.items || []).filter((it) => it && it.url && (it.title || it.author || it.cover));
+    if (!items.length) {
+      const error = '这一页没读到搜索结果。取数依赖登录后当时能看到的条目，平台改版时可能失败，可以重试。';
+      setStatus('error', error);
+      return { ok: false, error, items: [], platform, keyword, note: '目前只展示这一批' };
+    }
+    const note = parsed.hasMore ? '' : '目前只展示这一批';
+    setStatus('idle', '找到 ' + items.length + ' 条');
+    return { ok: true, items, hasMore: !!parsed.hasMore, platform, keyword, note };
+  } finally {
+    applyLoginVisibility();
+    sendState();
+  }
+}
+
+function probeLogin(opts) {
+  const platform = (opts && opts.platform && PLATFORMS[opts.platform]) ? opts.platform : 'douyin';
+  if (!mainHost()) return { ok: false, error: '主窗口还没打开', platform, newWindow: false };
+  if (!ensureEmbeddedView()) return { ok: false, error: '没能挂上后台视图', platform, newWindow: false };
+  detailActive = false;
+  beginLoginCheck(platform);
+  applyLoginVisibility();
+  view.webContents.loadURL(PLATFORMS[platform].home);
+  scheduleLoginCheck();
+  sendState();
+  return {
+    ok: true, platform, newWindow: false, partition: 'persist:find-viral',
+    loginChecking: !!(loginResult && loginResult.checking),
+    loggedIn: !!(loginResult && loginResult.loggedIn),
+  };
+}
+
+async function captureItem(opts) {
+  const raw = (opts && opts.url) || '';
+  const url = urlFromShareText(String(raw)) || (/^https?:/.test(String(raw)) ? String(raw) : '');
+  if (!url) {
+    const error = '没有这条的链接，没法同款';
+    setStatus('error', error);
+    return { ok: false, error };
+  }
+  if (!mainHost() || !ensureEmbeddedView()) {
+    const error = '还不能打开这条内容';
+    setStatus('error', error);
+    return { ok: false, error };
+  }
+  detailActive = !!(opts && opts.detail);
+  applyLoginVisibility();
+  setStatus('working', '正在打开这条视频…');
+  const wc = view.webContents;
+  const settle = typeof wc.once === 'function' ? 2500 : 0;
+  try {
+    await loadUrl(wc, url, settle);
+    await capture();
+    const st = status || {};
+    if (st.kind === 'error') return { ok: false, error: st.text };
+    return { ok: true, projectId: st.projectId };
+  } catch (err) {
+    const error = String((err && err.message) || err);
+    setStatus('error', error);
+    return { ok: false, error };
+  }
 }
 
 function senderAllowed(e) {
@@ -762,11 +912,28 @@ async function onLoginSuccess(platform) {
   const name = (PLATFORMS[platform] || PLATFORMS.douyin).name;
   const text = `已登录${name}，下面是你的内容`;
   setStatus('done', text);
-  notifyLoggedIn({ platform, text });
-  const next = pendingAfterLogin || (PLATFORMS[platform] || PLATFORMS.douyin).home;
-  const hold = !!pendingAfterLogin;
+  const next = pendingAfterLogin;
   pendingAfterLogin = '';
+  const payload = { platform, text };
+  if (next) payload.afterUrl = next;
+  notifyLoggedIn(payload);
   closeLoginWindow();
+  loginResult = { loggedIn: true, checking: isListPlatform(platform) ? false : true, reason: 'login-window', platform };
+  rememberSessionLogin(platform, true);
+  if (isListPlatform(platform)) {
+    detailActive = !!next;
+    holdVisibleAfterLogin = !!next;
+    const dest = next || (PLATFORMS[platform] || PLATFORMS.douyin).home;
+    if (view && view.webContents && typeof view.webContents.loadURL === 'function') {
+      view.webContents.loadURL(dest);
+    }
+    applyLoginVisibility();
+    sendState();
+    if (next) scheduleLoginCheck();
+    return { loggedIn: true, checking: false, platform, reason: 'login-window', afterUrl: next || '' };
+  }
+  const dest = next || (PLATFORMS[platform] || PLATFORMS.douyin).home;
+  const hold = !!next;
   if (hold) {
     holdVisibleAfterLogin = true;
     loginResult = { loggedIn: true, checking: false, reason: 'login-window', platform };
@@ -774,7 +941,7 @@ async function onLoginSuccess(platform) {
     sendState();
   }
   if (view && view.webContents && typeof view.webContents.loadURL === 'function') {
-    view.webContents.loadURL(next);
+    view.webContents.loadURL(dest);
   }
   if (!hold) {
     loginResult = { loggedIn: false, checking: true, reason: 'pending', platform };
@@ -909,11 +1076,23 @@ function register() {
     if (!senderAllowed(e)) return null;
     return startLogin(opts);
   });
+  ipcMain.handle('browse:search', (e, opts) => {
+    if (!senderAllowed(e)) return null;
+    return searchPlatform(opts);
+  });
+  ipcMain.handle('browse:probeLogin', (e, opts) => {
+    if (!senderAllowed(e)) return null;
+    return probeLogin(opts);
+  });
+  ipcMain.handle('browse:captureItem', (e, opts) => {
+    if (!senderAllowed(e)) return null;
+    return captureItem(opts);
+  });
 }
 
 module.exports = {
   mediaSeen, init, register, open, capture, platformOf, urlFromShareText, chooseMedia,
   PLATFORMS, EXTRACT, debugInfo, layoutEmbed, hideEmbed, runToolbar, resolveOpenUrl,
   refreshLoginState, detectLogin, startLogin, checkLoginWindow, closeLoginWindow, loginStartUrl,
-  resetSessionLogin,
+  resetSessionLogin, isListPlatform, searchPlatform, probeLogin, captureItem, EXTRACT_SEARCH,
 };

@@ -15,6 +15,7 @@ files:
   - setup-preload.js
   - browse.js
   - login-state.js
+  - search-extract.js
   - browse.html
   - browse-preload.js
   - package.json

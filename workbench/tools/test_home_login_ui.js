@@ -50,7 +50,7 @@ async function setup({desktop = true, seen = true} = {}) {
   if (seen) storage.set('vrc.aboutAutoSeen', '1');
   document.body.innerHTML = page.replace(/<!doctype[^>]*>/gi, '').replace(/<script[\s\S]*?<\/script>/g, '');
   document.addEventListener = (name, fn) => (events[name] ||= []).push(fn);
-  const opens = [], layouts = [], windowOpens = [];
+  const opens = [], layouts = [], windowOpens = [], probes = [], searches = [], captures = [];
   let hidden = 0, startLogin = 0;
   const startLoginOpts = [];
   const browseMock = desktop ? {
@@ -66,6 +66,12 @@ async function setup({desktop = true, seen = true} = {}) {
     hide() { hidden += 1; return Promise.resolve(true); },
     act() { return Promise.resolve(true); },
     startLogin(opts) { startLogin += 1; startLoginOpts.push(opts || {}); },
+    probeLogin(opts) { probes.push({...(opts || {})}); return Promise.resolve({ok: true, platform: (opts && opts.platform) || 'douyin', loginChecking: true, loggedIn: false}); },
+    search(opts) {
+      searches.push({...opts});
+      return Promise.resolve({ok: true, items: [{id: '1', url: 'https://www.douyin.com/video/1', title: '长沙烤鱼探店', cover: 'https://example.com/c.jpg'}], note: '目前只展示这一批', platform: opts.platform, keyword: opts.keyword});
+    },
+    captureItem(opts) { captures.push({...opts}); return Promise.resolve({ok: true, projectId: 'p-new'}); },
     onState(cb) { this._onState = cb; },
     onLoggedIn(cb) { this._onLoggedIn = cb; },
     onLoginClosed(cb) { this._onLoginClosed = cb; },
@@ -112,10 +118,11 @@ async function setup({desktop = true, seen = true} = {}) {
     await Promise.resolve();
   };
   const emitState = (s) => { if (browseMock && browseMock._onState) browseMock._onState(s); };
-  return {run, $, document, storage, click, submit, opens, layouts, windowOpens, hidden: () => hidden, startLogin: () => startLogin, startLoginOpts, emitLoggedIn: (s) => { if (browseMock && browseMock._onLoggedIn) browseMock._onLoggedIn(s); }, emitLoginClosed: () => { if (browseMock && browseMock._onLoginClosed) browseMock._onLoginClosed(); }, emitState, browse: browseMock};
+  return {run, $, document, storage, click, submit, opens, layouts, windowOpens, probes, searches, captures, hidden: () => hidden, startLogin: () => startLogin, startLoginOpts, emitLoggedIn: (s) => { if (browseMock && browseMock._onLoggedIn) browseMock._onLoggedIn(s); }, emitLoginClosed: () => { if (browseMock && browseMock._onLoginClosed) browseMock._onLoginClosed(); }, emitState, browse: browseMock};
 }
 
 const tests = [], test = (name, fn) => tests.push([name, fn]);
+const flush = async () => { await Promise.resolve(); await Promise.resolve(); await Promise.resolve(); };
 
 test('桌面版刚打开先确认登录态，不出现「去登录」，也不自动弹窗', async () => {
   const t = await setup();
@@ -148,14 +155,19 @@ test('点「去登录」在尚未接上登录窗时不会自己开窗口', async
   assert.equal(t.opens.filter((o) => o && o.login).length, 0);
 });
 
-test('已登录时收起空态，露出嵌入区', async () => {
+test('已登录时收起空态，按默认分类自动搜索，不露出平台网站', async () => {
   const t = await setup();
   t.emitState({url: 'https://www.douyin.com/', loggedIn: false, loginChecking: false, canBack: false, canForward: false});
   t.emitState({url: 'https://www.douyin.com/', loggedIn: true, loginChecking: false, loginReason: 'user-self', canBack: false, canForward: false});
+  await flush();
   assert.equal(t.$('#fvLoginEmpty').hidden, true);
-  assert.equal(t.$('#fvEmbed').getAttribute('data-fv-url'), 'https://www.douyin.com/');
   assert.equal(t.$('#fvLoginBtn').hidden, true);
-  assert.ok(t.layouts.length >= 1);
+  assert.equal(t.$('#fvEmbed').hidden, true, '列表态不应露出平台页');
+  assert.ok(t.searches.length >= 1, '已登录进入 Tab 应自动搜索');
+  assert.match(t.searches.at(-1).keyword, /餐饮美食/);
+  assert.equal(t.$('#fvResults').hidden, false);
+  assert.match(t.$('#fvResults').textContent, /同款/);
+  assert.match(t.$('#fvResults').textContent, /长沙烤鱼探店/);
 });
 
 test('判定不准（checking 结束但仍未确认）也当成未登录', async () => {
@@ -253,16 +265,15 @@ test('未成功登录就关掉后，再点「去登录」不再带上旧分享�
   assert.ok(!t.startLoginOpts[1].afterUrl, '关窗后不应再带上旧分享链接');
 });
 
-test('已确认登录后再检查：保持内嵌区，工具栏可显示加载中，不铺正在确认登录状态', async () => {
+test('已确认登录后再检查：保持列表可见，不铺正在确认登录状态', async () => {
   const t = await setup();
   t.emitState({url: 'https://www.douyin.com/', loggedIn: true, loginChecking: false, loginReason: 'user-self', canBack: false, canForward: false});
-  const hiddenAfterIn = t.hidden();
+  await flush();
   t.emitState({url: 'https://www.douyin.com/', loggedIn: true, loginChecking: true, loading: true, canBack: false, canForward: false});
   assert.equal(t.$('#fvLoginEmpty').hidden, true);
   assert.equal(t.$('#fvLoginBtn').hidden, true);
-  assert.match(t.$('#fvStatus').textContent, /加载中/);
   assert.doesNotMatch(t.$('#fvStatus').textContent, /正在确认登录状态/);
-  assert.equal(t.hidden(), hiddenAfterIn, '已登录再检查时不得再藏起嵌入区');
+  assert.equal(t.$('#fvResults').hidden, false);
 });
 
 test('已确认未登录再切回：直接出去登录，不闪正在确认', async () => {

@@ -635,46 +635,131 @@ function maybeOpenAbout() {
 }
 $("#aboutDialog")?.addEventListener("close", () => { store(ABOUT_SEEN_KEY, "1"); syncFindViralEmbed(); });
 // ---------- 首页：找同行的爆款 ----------
-// 桌面版：把平台页嵌进首页当前 Tab 下方，复用 persist:find-viral；搜索、切 Tab、行业词都在这片区域更新，不再新开浏览窗口（build/browse.js）。
-// 浏览器里打开的工作台没有内置会话：在新标签页打开平台搜索，下载视频后拖进来。
+// 桌面版：抖音 / 小红书用已登录会话在后台搜索，结果用我们自己的列表展示，不再把平台网站嵌在 Tab 里。
+// B站本切片仍走内嵌。浏览器里打开的工作台没有内置会话：在新标签页打开平台搜索。
 const FV_PLATFORMS = [
   { id: "douyin", name: "抖音", search: (k) => `https://www.douyin.com/search/${encodeURIComponent(k)}?type=video` },
   { id: "xiaohongshu", name: "小红书", search: (k) => `https://www.xiaohongshu.com/search_result?keyword=${encodeURIComponent(k)}&source=web_search_result_notes` },
   { id: "bilibili", name: "B站", search: (k) => `https://search.bilibili.com/video?keyword=${encodeURIComponent(k)}` },
 ];
-const FV_INDUSTRIES = [
-  ["餐饮", ["烤鱼", "火锅", "烧烤", "小龙虾", "麻辣烫", "奶茶", "咖啡", "烘焙", "早餐"]],
-  ["美业", ["美甲", "美发", "美容", "美睫", "按摩"]],
-  ["生活服务", ["健身房", "瑜伽", "宠物店", "洗车", "汽车美容", "民宿", "婚纱摄影", "花店"]],
+const FV_CATEGORIES = [
+  { name: "本地生活", children: ["餐饮美食", "酒店民宿", "门店零售", "宠物服务", "汽车服务"] },
+  { name: "电商带货", children: ["服饰鞋包", "美妆个护", "数码家电", "家居日用"] },
+  { name: "美业健康", children: ["美容护肤", "健身瑜伽", "养生理疗", "美发美甲"] },
+  { name: "知识教育", children: ["课程招生", "读书讲座", "少儿兴趣"] },
+  { name: "房产家装", children: ["房产中介", "装修公司"] },
+  { name: "穿搭美妆", children: ["穿搭分享", "美妆好物"] },
+  { name: "生活旅行", children: ["旅行出片", "居家美食", "萌宠日常"] },
+  { name: "运动健身", children: ["健身打卡"] },
 ];
+const FV_DEFAULT_GROUP = "本地生活";
+const FV_DEFAULT_ITEM = "餐饮美食";
+const FV_LIST_PLATFORMS = { douyin: true, xiaohongshu: true };
 let fvPlatform = null;
+let fvCatGroup = FV_DEFAULT_GROUP;
+let fvCatItem = FV_DEFAULT_ITEM;
+let fvQueryKind = "category";
+let fvKeywordText = "";
+const fvPlatformState = Object.create(null);
+let fvPendingSearch = null;
+let fvSearchOnNextLogin = false;
+let fvSearchSeq = 0;
 function fvCurrentPlatform() {
   if (!fvPlatform) fvPlatform = FV_PLATFORMS.some((p) => p.id === storeGet("vrc.fvPlatform")) ? storeGet("vrc.fvPlatform") : "douyin";
   return fvPlatform;
 }
 function inDesktop() { return !!(window.__browse && window.__browse.available); }
+function fvIsListPlatform(id) { return !!FV_LIST_PLATFORMS[id || fvCurrentPlatform()]; }
+function fvStateOf(id) {
+  const p = id || fvCurrentPlatform();
+  if (!fvPlatformState[p]) fvPlatformState[p] = { mode: "idle", items: [], error: "", keyword: "", note: "", selected: null, listScroll: 0, kind: "category", group: "", item: "" };
+  return fvPlatformState[p];
+}
+function fvCatOf(name) { return FV_CATEGORIES.find((g) => g.name === name) || FV_CATEGORIES[0]; }
+function fvCurrentCity() { return (($("#fvCity") && $("#fvCity").value) || storeGet("vrc.fvCity") || "").trim(); }
+function fvCurrentQuery() {
+  const city = fvCurrentCity();
+  if (fvQueryKind === "keyword" && (fvKeywordText || (($("#fvKeyword") && $("#fvKeyword").value) || "").trim())) {
+    const keyword = fvKeywordText || (($("#fvKeyword") && $("#fvKeyword").value) || "").trim();
+    return { kind: "keyword", keyword, city, platform: fvCurrentPlatform() };
+  }
+  const group = fvCatGroup || FV_DEFAULT_GROUP;
+  const item = fvCatItem || FV_DEFAULT_ITEM;
+  return { kind: "category", group, item, city, platform: fvCurrentPlatform(), keyword: [city, item].filter(Boolean).join(" ") };
+}
+function fvQueryLabel(q) {
+  const query = q || fvCurrentQuery();
+  const city = query.city ? ` · ${query.city}` : "";
+  if (query.kind === "keyword") return `当前按关键词「${query.keyword}」搜索${city}`;
+  return `当前按「${query.group} / ${query.item}」搜索${city}`;
+}
+function fvSearchTerm(q) {
+  const query = q || fvCurrentQuery();
+  if (query.kind === "keyword") return [query.city, query.keyword].filter(Boolean).join(" ");
+  return [query.city, query.item].filter(Boolean).join(" ");
+}
 const ICON_FV_BACK = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M10 3L5 8l5 5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"></path></svg>';
 const ICON_FV_FORWARD = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M6 3l5 5-5 5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"></path></svg>';
 const ICON_FV_RELOAD = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M13 8a5 5 0 1 1-1.5-3.6M13 2.5v2.8h-2.8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"></path></svg>';
+function renderFvCatBar() {
+  const group = fvCatOf(fvCatGroup);
+  const l2 = FV_CATEGORIES.map((g) => `<button type="button" class="chip" data-fv-cat-group="${esc(g.name)}" aria-pressed="${g.name === fvCatGroup}">${esc(g.name)}</button>`).join("");
+  const l3 = group.children.map((n) => `<button type="button" class="chip" data-fv-cat-item="${esc(n)}" aria-pressed="${n === fvCatItem}">${esc(n)}</button>`).join("");
+  const hidden = fvIsListPlatform() ? "" : " hidden";
+  return `<div class="fv-cats" id="fvCats"${hidden}>
+      <div class="fv-cat-l2" role="group" aria-label="行业">${l2}</div>
+      <div class="fv-cat-l3" role="group" aria-label="分类">${l3}</div>
+    </div>`;
+}
+function syncFvCatBar() {
+  const root = $("#fvCats");
+  if (!root) return;
+  root.hidden = !fvIsListPlatform();
+  const group = fvCatOf(fvCatGroup);
+  const l2 = root.querySelector(".fv-cat-l2");
+  const l3 = root.querySelector(".fv-cat-l3");
+  if (l2) {
+    const btns = l2.querySelectorAll("[data-fv-cat-group]");
+    for (let i = 0; i < btns.length; i++) btns[i].setAttribute("aria-pressed", String(btns[i].getAttribute("data-fv-cat-group") === fvCatGroup));
+  }
+  if (l3) {
+    l3.innerHTML = group.children.map((n) => `<button type="button" class="chip" data-fv-cat-item="${esc(n)}" aria-pressed="${n === fvCatItem}">${esc(n)}</button>`).join("");
+  }
+}
 function renderFindViral() {
   const cur = fvCurrentPlatform();
   const desktop = inDesktop();
+  const city = storeGet("vrc.fvCity") || "";
+  const keyword = storeGet("vrc.fvKeyword") || "";
   const pane = desktop ? `<div class="fv-pane">
       <div class="fv-toolbar">
-        <div class="fv-nav">
+        <div class="fv-nav" id="fvNav">
           <button type="button" class="icon-btn" data-fv-back title="后退" aria-label="后退" disabled>${ICON_FV_BACK}</button>
           <button type="button" class="icon-btn" data-fv-forward title="前进" aria-label="前进" disabled>${ICON_FV_FORWARD}</button>
           <button type="button" class="icon-btn" data-fv-reload title="刷新" aria-label="刷新">${ICON_FV_RELOAD}</button>
         </div>
-        <div class="fv-status" id="fvStatus">打开一条视频，看到它在播放了，点「同款复刻」</div>
-        <button type="button" class="fv-capture" data-fv-capture>同款复刻</button>
+        <button type="button" class="ghost fv-back-list" data-fv-back-list hidden>返回列表</button>
+        <div class="fv-status" id="fvStatus">登录后点分类或输入关键词搜索</div>
+        <button type="button" class="fv-capture" data-fv-capture>同款</button>
       </div>
+      <p class="fv-bili-note" id="fvBiliNote" hidden>B站本版本先保持原来的打开方式，列表稍后提供。</p>
       <div class="fv-capture-hint" id="fvCaptureHint" hidden>
         <p>看中了就点同款，会自动拆给你看</p>
         <button type="button" data-fv-hint-close>关闭</button>
       </div>
-      <div class="fv-embed-wrap">
-        <div class="fv-embed" id="fvEmbed" data-fv-url="" aria-label="平台内容"></div>
+      <div class="fv-embed-wrap" id="fvListWrap">
+        <div class="fv-list-idle" id="fvListIdle" hidden>
+          <p>点下面的分类，或输入关键词搜索。用已登录的账号在后台搜索相关视频。</p>
+          <p class="hint">结果来自登录后当时能看到的条目，不是平台官方接口；平台改版时可能取不到，失败了可以重试。</p>
+        </div>
+        <div class="fv-list-loading" id="fvListLoading" hidden>正在搜索…</div>
+        <div class="fv-list-error" id="fvListError" hidden>
+          <p id="fvListErrorCopy"></p>
+          <button type="button" data-fv-retry>重试</button>
+        </div>
+        <div class="fv-results" id="fvResults" hidden></div>
+        <div class="fv-detail-meta" id="fvDetailMeta" hidden></div>
+        <div class="fv-embed" id="fvEmbed" data-fv-url="" aria-label="这条内容"></div>
         <div class="fv-login-empty" id="fvLoginEmpty">
           <p class="fv-login-copy" id="fvLoginCopy">正在确认登录状态…</p>
           <button type="button" class="fv-login-btn" data-fv-login id="fvLoginBtn" hidden>去登录</button>
@@ -685,15 +770,15 @@ function renderFindViral() {
     <div class="fv-chrome">
     <div class="fv-head">
       <div><h2 id="fvTitle">找同行的爆款</h2>
-        <p class="hint">${desktop ? "在下面刷同行怎么拍。搜索、切平台、点行业词都留在这一页，不会新开窗口。看中了点「同款复刻」就直接建好项目。" : "会在新标签页打开平台搜索。看中的视频下载下来，拖进新项目就行（桌面版可以一键同款复刻）。"}</p></div>
+        <p class="hint">${desktop ? "先登录抖音或小红书，再点分类或输入关键词搜索。结果用我们自己的列表展示，不会把平台网站嵌在这一页。看中了点「同款」就直接建好项目。取数只用已登录会话里当时能看到的结果，平台改版时可能失败。" : "会在新标签页打开平台搜索。看中的视频下载下来，拖进新项目就行（桌面版可以一键同款）。"}</p></div>
       <div class="fv-tabs" role="group" aria-label="平台">${FV_PLATFORMS.map((p) => `<button type="button" data-fv-platform="${p.id}" aria-pressed="${p.id === cur}">${p.name}</button>`).join("")}</div>
     </div>
     <form class="fv-search" data-fv-form>
-      <input id="fvCity" class="fv-city" placeholder="城市（可不填）" aria-label="城市" maxlength="12" autocomplete="off">
-      <input id="fvKeyword" placeholder="搜什么？比如：烤鱼店、美甲、探店" aria-label="搜索关键词" maxlength="40" autocomplete="off">
+      <input id="fvCity" class="fv-city" placeholder="城市（可不填）" aria-label="城市" maxlength="12" autocomplete="off" value="${esc(city)}">
+      <input id="fvKeyword" placeholder="搜什么？比如：烤鱼店、美甲、探店" aria-label="搜索关键词" maxlength="40" autocomplete="off" value="${esc(keyword)}">
       <button type="submit">去找爆款</button>
     </form>
-    <div class="fv-industries">${FV_INDUSTRIES.map(([group, words]) => `<div class="fv-group"><span>${group}</span>${words.map((w) => `<button type="button" class="chip" data-fv-word="${esc(w)}">${esc(w)}</button>`).join("")}</div>`).join("")}</div>
+    ${renderFvCatBar()}
     <form class="fv-link" data-fv-link>
       <span class="fv-link-label">有分享链接？</span>
       <input id="fvLink" placeholder="在抖音 / 小红书 / B站点「分享 → 复制链接」，粘贴到这里" aria-label="分享链接" autocomplete="off">
@@ -726,6 +811,9 @@ function fvSelectPlatform(id) {
     const btn = btns[i];
     if (btn && btn.setAttribute) btn.setAttribute("aria-pressed", String(btn.dataset.fvPlatform === id));
   }
+  const note = $("#fvBiliNote");
+  if (note) note.hidden = id !== "bilibili";
+  syncFvCatBar();
 }
 function fvCaptureHintAllowed() {
   return !storeGet(FV_HINT_DISMISSED) && !storeGet(FV_CAPTURE_DONE);
@@ -744,7 +832,8 @@ function fvOpenShare(url) {
   fvSelectPlatform(platform);
   if (fvLastLoggedIn) {
     fvPendingShareUrl = "";
-    fvOpen({ url });
+    if (fvIsListPlatform(platform)) openFvDetail(url);
+    else fvOpen({ url });
     return;
   }
   // 未登录：先走「去登录」，不要只在隐藏视图里默默加载。登完由主进程用 afterUrl 打开。
@@ -764,7 +853,7 @@ function syncDesktopHomeShell() {
   if (on) fillDesktopEmbedHeight();
 }
 function fillDesktopEmbedHeight() {
-  const embed = $("#fvEmbed");
+  const embed = $("#fvListWrap") || $("#fvEmbed");
   const dock = document.querySelector(".home-dock");
   if (!embed || typeof embed.getBoundingClientRect !== "function") return;
   const top = embed.getBoundingClientRect().top;
@@ -774,6 +863,11 @@ function fillDesktopEmbedHeight() {
   if (height >= 80 && embed.style) {
     embed.style.height = height + "px";
     embed.style.minHeight = "0";
+  }
+  const inner = $("#fvEmbed");
+  if (inner && inner.style && !$("#fvEmbed").hidden) {
+    inner.style.height = "100%";
+    inner.style.minHeight = "0";
   }
 }
 function anyOverlayOpen() {
@@ -786,7 +880,7 @@ function anyOverlayOpen() {
 }
 function fvEmbedVisibleBounds() {
   const el = $("#fvEmbed");
-  if (!el || typeof el.getBoundingClientRect !== "function") return null;
+  if (!el || el.hidden || typeof el.getBoundingClientRect !== "function") return null;
   const r = el.getBoundingClientRect();
   const vw = (typeof window !== "undefined" && window.innerWidth) || r.right || r.width || 0;
   const vh = (typeof window !== "undefined" && window.innerHeight) || r.bottom || r.height || 0;
@@ -797,6 +891,94 @@ function fvEmbedVisibleBounds() {
   if (width < 8 || height < 8) return null;
   return { x, y, width, height };
 }
+function fvItemMeta(item) {
+  if (!item) return "";
+  const bits = [];
+  if (item.author) bits.push(item.author);
+  const stats = item.stats || {};
+  if (stats.views) bits.push(stats.views + " 播放");
+  if (stats.likes) bits.push(stats.likes + " 赞");
+  return bits.join(" · ");
+}
+function renderFvResults(st) {
+  const items = (st && st.items) || [];
+  const q = fvQueryLabel({ kind: st.kind || fvQueryKind, group: st.group || fvCatGroup, item: st.item || fvCatItem, keyword: st.rawKeyword || fvKeywordText, city: fvCurrentCity() });
+  const cards = items.map((item, i) => {
+    const cover = item.cover ? `<img src="${esc(item.cover)}" alt="">` : `<div class="fv-cover-empty" aria-hidden="true"></div>`;
+    const dur = item.duration ? `<span class="fv-dur">${esc(item.duration)}</span>` : "";
+    const title = item.title ? `<h3>${esc(item.title)}</h3>` : "";
+    const meta = fvItemMeta(item);
+    return `<article class="fv-card" data-fv-item="${i}">
+        <div class="fv-cover">${cover}${dur}</div>
+        ${title}
+        ${meta ? `<p class="fv-card-meta">${esc(meta)}</p>` : ""}
+        <button type="button" class="fv-same" data-fv-same="${i}">同款</button>
+      </article>`;
+  }).join("");
+  const note = st && st.note ? `<p class="hint fv-results-note">${esc(st.note)}</p>` : "";
+  return `<p class="fv-results-query">${esc(q)}</p><div class="fv-grid">${cards}</div>${note}`;
+}
+function applyFvListView() {
+  const list = fvIsListPlatform();
+  const st = fvStateOf();
+  const inDetail = list && st.mode === "detail";
+  const pane = document.querySelector(".fv-pane");
+  setFlagClass(pane, "is-list-mode", list);
+  setFlagClass(pane, "is-detail", inDetail);
+  const idle = $("#fvListIdle");
+  const loading = $("#fvListLoading");
+  const error = $("#fvListError");
+  const results = $("#fvResults");
+  const detailMeta = $("#fvDetailMeta");
+  const embed = $("#fvEmbed");
+  const backList = $("[data-fv-back-list]");
+  const biliNote = $("#fvBiliNote");
+  if (biliNote) biliNote.hidden = fvCurrentPlatform() !== "bilibili";
+  if (!list) {
+    if (idle) idle.hidden = true;
+    if (loading) loading.hidden = true;
+    if (error) error.hidden = true;
+    if (results) results.hidden = true;
+    if (detailMeta) detailMeta.hidden = true;
+    if (embed) embed.hidden = false;
+    if (backList) backList.hidden = true;
+    return;
+  }
+  if (embed) embed.hidden = !inDetail;
+  if (backList) backList.hidden = !inDetail;
+  if (detailMeta) {
+    detailMeta.hidden = !inDetail;
+    if (inDetail) {
+      const sel = st.selected;
+      const title = sel && typeof sel === "object" ? (sel.title || "") : "";
+      detailMeta.innerHTML = title ? `<p>${esc(title)}</p>` : "";
+      if (!title) detailMeta.hidden = true;
+    }
+  }
+  if (!fvLastLoggedIn) {
+    if (idle) idle.hidden = true;
+    if (loading) loading.hidden = true;
+    if (error) error.hidden = true;
+    if (results) results.hidden = true;
+    return;
+  }
+  const mode = st.mode;
+  if (idle) idle.hidden = mode !== "idle";
+  if (loading) loading.hidden = mode !== "loading";
+  if (error) {
+    error.hidden = mode !== "error";
+    const copy = $("#fvListErrorCopy");
+    if (copy) copy.textContent = st.error || "搜索失败，请重试。";
+  }
+  if (results) {
+    results.hidden = mode !== "results" && !(inDetail && st.items && st.items.length);
+    if (mode === "results" || (inDetail && st.items && st.items.length)) {
+      if (mode === "results") results.innerHTML = renderFvResults(st);
+      if (mode === "results" && st.listScroll && results.scrollTop !== st.listScroll) results.scrollTop = st.listScroll;
+    }
+    if (inDetail) results.hidden = true;
+  }
+}
 function applyFvState(s) {
   if (!s) return;
   const back = $("[data-fv-back]");
@@ -806,10 +988,24 @@ function applyFvState(s) {
   if (back) back.disabled = !s.canBack;
   if (forward) forward.disabled = !s.canForward;
   if (embed && s.url) embed.setAttribute("data-fv-url", s.url);
+  const list = fvIsListPlatform();
+  const st = fvStateOf();
+  const inDetail = list && st.mode === "detail";
   if (status) {
     status.className = "fv-status" + (s.status && s.status.kind ? " " + s.status.kind : "");
-    if (s.loggedIn) {
-      status.textContent = (s.status && s.status.text) || ((s.loading || s.loginChecking) ? "加载中…" : "打开一条视频，看到它在播放了，点「同款复刻」");
+    if (list && !inDetail) {
+      if (s.loggedIn) {
+        if (st.mode === "loading") status.textContent = "正在搜索…";
+        else if (st.mode === "error") status.textContent = st.error || "搜索失败，请重试";
+        else if (st.mode === "results") status.textContent = (s.status && s.status.text) || (`找到 ${st.items.length} 条`);
+        else status.textContent = (s.status && s.status.text) || "点分类或输入关键词搜索";
+      } else if (s.loginChecking) {
+        status.textContent = "正在确认登录状态…";
+      } else {
+        status.textContent = "登录后就能在这里搜索内容";
+      }
+    } else if (s.loggedIn) {
+      status.textContent = (s.status && s.status.text) || ((s.loading || s.loginChecking) ? "加载中…" : "打开一条视频，看到它在播放了，点「同款」");
     } else if (s.loginChecking) {
       status.textContent = "正在确认登录状态…";
     } else {
@@ -826,9 +1022,13 @@ function applyFvState(s) {
       if (loginBtn) loginBtn.hidden = true;
       setFlagClass(pane, "is-logged-out", false);
       setFlagClass(pane, "is-checking", false);
-      if (!anyOverlayOpen()) {
-        const bounds = fvEmbedVisibleBounds();
-        if (bounds && window.__browse && window.__browse.layout) window.__browse.layout(bounds);
+      if (!list || inDetail) {
+        if (!anyOverlayOpen()) {
+          const bounds = fvEmbedVisibleBounds();
+          if (bounds && window.__browse && window.__browse.layout) window.__browse.layout(bounds);
+        }
+      } else {
+        hideFindViralEmbed();
       }
     } else {
       empty.hidden = false;
@@ -848,6 +1048,11 @@ function applyFvState(s) {
   }
   fvLastLoggedIn = !!s.loggedIn;
   syncCaptureHint(fvLastLoggedIn);
+  applyFvListView();
+  if (list && s.loggedIn && fvSearchOnNextLogin && !inDetail) {
+    fvSearchOnNextLogin = false;
+    runListSearch(fvPendingSearch || fvCurrentQuery());
+  }
 }
 function setFlagClass(el, name, on) {
   if (!el) return;
@@ -861,7 +1066,7 @@ function setFlagClass(el, name, on) {
 }
 function wireFindViralEmbed() {
   const relayout = () => { if (!P) syncFindViralEmbed(); };
-  const el = $("#fvEmbed");
+  const el = $("#fvListWrap") || $("#fvEmbed");
   if (typeof ResizeObserver !== "undefined") {
     if (!fvEmbedObs) fvEmbedObs = new ResizeObserver(relayout);
     try { fvEmbedObs.disconnect(); if (el) fvEmbedObs.observe(el); } catch (_) { /* 测试 DOM 可能没有完整观察器 */ }
@@ -875,6 +1080,15 @@ function wireFindViralEmbed() {
     if (d && !d.__fvWired) { d.__fvWired = true; d.addEventListener("close", relayout); }
   }
 }
+function startListPlatform(id) {
+  const platform = id || fvCurrentPlatform();
+  fvSearchOnNextLogin = true;
+  if (window.__browse && typeof window.__browse.probeLogin === "function") {
+    window.__browse.probeLogin({ platform });
+    return;
+  }
+  fvOpen({ platform });
+}
 function syncFindViralEmbed() {
   if (!inDesktop() || !window.__browse) {
     setFlagClass(document.documentElement, "is-desktop-home", false);
@@ -884,13 +1098,22 @@ function syncFindViralEmbed() {
   syncDesktopHomeShell();
   if (!onHome || anyOverlayOpen()) { hideFindViralEmbed(); return; }
   wireFindViralEmbed();
-  const bounds = fvEmbedVisibleBounds();
-  if (bounds && window.__browse.layout) window.__browse.layout(bounds);
+  const list = fvIsListPlatform();
+  const inDetail = list && fvStateOf().mode === "detail";
+  if (!list || inDetail) {
+    const bounds = fvEmbedVisibleBounds();
+    if (bounds && window.__browse.layout) window.__browse.layout(bounds);
+  } else {
+    hideFindViralEmbed();
+  }
   if (!fvAttached) {
     fvAttached = true;
-    const city = ($("#fvCity")?.value || "").trim();
-    const kw = ($("#fvKeyword")?.value || "").trim();
-    fvOpen({ platform: fvCurrentPlatform(), keyword: kw ? [city, kw].filter(Boolean).join(" ") : undefined });
+    if (list) startListPlatform(fvCurrentPlatform());
+    else {
+      const city = ($("#fvCity")?.value || "").trim();
+      const kw = ($("#fvKeyword")?.value || "").trim();
+      fvOpen({ platform: fvCurrentPlatform(), keyword: kw ? [city, kw].filter(Boolean).join(" ") : undefined });
+    }
   }
 }
 async function fvOpen(opts) {
@@ -909,13 +1132,145 @@ async function fvOpen(opts) {
   const p = FV_PLATFORMS.find((x) => x.id === opts.platform) || FV_PLATFORMS[0];
   window.open(opts.url || p.search(opts.keyword), "_blank", "noopener");
 }
+function openFvDetail(itemOrUrl) {
+  const st = fvStateOf();
+  const results = $("#fvResults");
+  if (results) st.listScroll = results.scrollTop || st.listScroll || 0;
+  st.mode = "detail";
+  st.selected = itemOrUrl;
+  applyFvListView();
+  const url = typeof itemOrUrl === "string" ? itemOrUrl : (itemOrUrl && itemOrUrl.url);
+  if (url) fvOpen({ url, detail: true, platform: fvCurrentPlatform() });
+}
+function backFvList() {
+  const st = fvStateOf();
+  st.mode = (st.items && st.items.length) ? "results" : "idle";
+  st.selected = null;
+  applyFvListView();
+  hideFindViralEmbed();
+  const results = $("#fvResults");
+  if (results && st.listScroll) results.scrollTop = st.listScroll;
+}
+async function runListSearch(opts) {
+  const query = Object.assign({}, fvCurrentQuery(), opts || {});
+  if (query.kind === "keyword") {
+    fvQueryKind = "keyword";
+    fvKeywordText = query.keyword || "";
+  } else {
+    fvQueryKind = "category";
+    if (query.group) fvCatGroup = query.group;
+    if (query.item) fvCatItem = query.item;
+    syncFvCatBar();
+  }
+  const platform = query.platform || fvCurrentPlatform();
+  const keyword = fvSearchTerm(query);
+  if (!keyword) {
+    toast("先输入要找的关键词，或者点下面的分类");
+    return;
+  }
+  store("vrc.fvCity", query.city || "");
+  if (query.kind === "keyword") store("vrc.fvKeyword", query.keyword || "");
+  if (!inDesktop()) {
+    const p = FV_PLATFORMS.find((x) => x.id === platform) || FV_PLATFORMS[0];
+    window.open(p.search(keyword), "_blank", "noopener");
+    return;
+  }
+  if (!fvIsListPlatform(platform)) {
+    fvOpen({ platform, keyword });
+    return;
+  }
+  if (!fvLastLoggedIn) {
+    fvPendingSearch = query;
+    applyFvListView();
+    return;
+  }
+  fvPendingSearch = null;
+  const st = fvStateOf(platform);
+  st.mode = "loading";
+  st.error = "";
+  st.keyword = keyword;
+  st.kind = query.kind;
+  st.group = query.group || "";
+  st.item = query.item || "";
+  st.rawKeyword = query.kind === "keyword" ? query.keyword : "";
+  applyFvListView();
+  const status = $("#fvStatus");
+  if (status) { status.className = "fv-status working"; status.textContent = "正在搜索…"; }
+  if (!window.__browse || typeof window.__browse.search !== "function") {
+    st.mode = "error";
+    st.error = "当前环境还不能搜索";
+    applyFvListView();
+    return;
+  }
+  const seq = ++fvSearchSeq;
+  try {
+    const res = await window.__browse.search({ platform, keyword });
+    if (seq !== fvSearchSeq) return;
+    if (res && res.ok && res.items && res.items.length) {
+      st.mode = "results";
+      st.items = res.items;
+      st.note = res.note || "目前只展示这一批";
+      st.error = "";
+    } else {
+      st.mode = "error";
+      st.items = (res && res.items) || [];
+      st.error = (res && res.error) || "这一页没读到搜索结果。取数依赖登录后当时能看到的条目，平台改版时可能失败，可以重试。";
+      st.note = (res && res.note) || "";
+    }
+  } catch (err) {
+    if (seq !== fvSearchSeq) return;
+    st.mode = "error";
+    st.items = [];
+    st.error = String((err && err.message) || err) || "搜索失败，请重试。";
+  }
+  applyFvListView();
+  if (status) {
+    status.className = "fv-status" + (st.mode === "error" ? " error" : "");
+    status.textContent = st.mode === "error" ? st.error : (`找到 ${st.items.length} 条`);
+  }
+}
 function fvSearch(word) {
   const city = ($("#fvCity")?.value || "").trim();
   const kw = (word || $("#fvKeyword")?.value || "").trim();
-  if (!kw) { $("#fvKeyword")?.focus(); toast("先输入要找的行业或关键词，或者点下面的常用行业"); return; }
+  if (!kw) { $("#fvKeyword")?.focus(); toast("先输入要找的关键词，或者点下面的分类"); return; }
   store("vrc.fvCity", city);
   if (word && $("#fvKeyword")) $("#fvKeyword").value = word;
-  fvOpen({ platform: fvCurrentPlatform(), keyword: [city, kw].filter(Boolean).join(" ") });
+  fvKeywordText = kw;
+  fvQueryKind = "keyword";
+  if (fvIsListPlatform() && inDesktop()) runListSearch({ kind: "keyword", keyword: kw, city, platform: fvCurrentPlatform() });
+  else fvOpen({ platform: fvCurrentPlatform(), keyword: [city, kw].filter(Boolean).join(" ") });
+}
+function pickFvGroup(name) {
+  const group = fvCatOf(name);
+  fvCatGroup = group.name;
+  if (group.children.length === 1) {
+    fvCatItem = group.children[0];
+    fvQueryKind = "category";
+    syncFvCatBar();
+    runListSearch({ kind: "category", group: fvCatGroup, item: fvCatItem, city: fvCurrentCity(), platform: fvCurrentPlatform() });
+    return;
+  }
+  if (!group.children.includes(fvCatItem)) fvCatItem = "";
+  syncFvCatBar();
+}
+function pickFvItem(name) {
+  fvCatItem = name;
+  fvQueryKind = "category";
+  syncFvCatBar();
+  runListSearch({ kind: "category", group: fvCatGroup, item: fvCatItem, city: fvCurrentCity(), platform: fvCurrentPlatform() });
+}
+async function fvCaptureFromItem(item) {
+  if (!item || !item.url) { toast("没有这条的链接，没法同款", true); return; }
+  if (!window.__browse || typeof window.__browse.captureItem !== "function") {
+    toast("当前环境还不能同款", true);
+    return;
+  }
+  try {
+    const res = await window.__browse.captureItem({ url: item.url, detail: true });
+    if (!res || !res.ok) toast((res && res.error) || "同款失败", true);
+  } catch (err) {
+    toast(String((err && err.message) || err) || "同款失败", true);
+  }
 }
 document.addEventListener("submit", (e) => {
   if (e.target.closest("[data-fv-form]")) { e.preventDefault(); fvSearch(); }
@@ -932,6 +1287,18 @@ if (window.__browse && window.__browse.onLoggedIn) {
   window.__browse.onLoggedIn((s) => {
     const text = (s && s.text) || "已登录，下面是你的内容";
     if (typeof toast === "function") toast(text);
+    fvLastLoggedIn = true;
+    if (s && s.afterUrl) {
+      fvPendingShareUrl = "";
+      fvPendingSearch = null;
+      fvSearchOnNextLogin = false;
+      if (fvIsListPlatform(s.platform || fvPlatformOf(s.afterUrl))) openFvDetail(s.afterUrl);
+      return;
+    }
+    if (fvIsListPlatform()) {
+      fvSearchOnNextLogin = false;
+      runListSearch(fvPendingSearch || fvCurrentQuery());
+    }
   });
 }
 if (window.__browse && window.__browse.onLoginClosed) {
@@ -988,20 +1355,39 @@ document.addEventListener("click", (e) => {
       return;
     }
   }
+  if (e.target.closest("[data-fv-back-list]")) { backFvList(); return; }
+  if (e.target.closest("[data-fv-retry]")) { runListSearch(fvPendingSearch || fvCurrentQuery()); return; }
+  const same = e.target.closest("[data-fv-same]");
+  if (same) {
+    const st = fvStateOf();
+    const item = st.items && st.items[Number(same.getAttribute("data-fv-same"))];
+    fvCaptureFromItem(item);
+    return;
+  }
+  const card = e.target.closest("[data-fv-item]");
+  if (card && !e.target.closest("[data-fv-same]")) {
+    const st = fvStateOf();
+    const item = st.items && st.items[Number(card.getAttribute("data-fv-item"))];
+    if (item) openFvDetail(item);
+    return;
+  }
   const tab = e.target.closest("[data-fv-platform]");
   if (tab) {
-    fvPlatform = tab.dataset.fvPlatform;
-    store("vrc.fvPlatform", fvPlatform);
-    document.querySelectorAll("[data-fv-platform]").forEach((b) => b.setAttribute("aria-pressed", String(b === tab)));
+    fvSelectPlatform(tab.getAttribute("data-fv-platform") || tab.dataset.fvPlatform);
     if (inDesktop()) {
-      const city = ($("#fvCity")?.value || "").trim();
-      const kw = ($("#fvKeyword")?.value || "").trim();
-      fvOpen({ platform: fvPlatform, keyword: kw ? [city, kw].filter(Boolean).join(" ") : undefined });
+      if (fvIsListPlatform()) startListPlatform(fvPlatform);
+      else {
+        const city = ($("#fvCity")?.value || "").trim();
+        const kw = ($("#fvKeyword")?.value || "").trim();
+        fvOpen({ platform: fvPlatform, keyword: kw ? [city, kw].filter(Boolean).join(" ") : undefined });
+      }
     }
     return;
   }
-  const word = e.target.closest("[data-fv-word]");
-  if (word) { fvSearch(word.dataset.fvWord); return; }
+  const groupBtn = e.target.closest("[data-fv-cat-group]");
+  if (groupBtn) { pickFvGroup(groupBtn.getAttribute("data-fv-cat-group")); return; }
+  const itemBtn = e.target.closest("[data-fv-cat-item]");
+  if (itemBtn) { pickFvItem(itemBtn.getAttribute("data-fv-cat-item")); return; }
   const orig = e.target.closest("[data-origin-open]");
   if (orig) { fvOpen({ url: orig.dataset.originOpen }); }
 });

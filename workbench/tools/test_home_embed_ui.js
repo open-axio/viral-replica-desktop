@@ -19,7 +19,7 @@ Node.prototype.close = function () {
 Node.prototype.getBoundingClientRect = function () {
   const id = this.id || (typeof this.getAttribute === 'function' ? this.getAttribute('id') : '');
   const cls = (this.getAttribute && this.getAttribute('class')) || '';
-  if (id === 'fvEmbed') return { left: 24, top: 280, right: 1000, bottom: 700, width: 976, height: 420 };
+  if (id === 'fvEmbed' || id === 'fvListWrap') return { left: 24, top: 280, right: 1000, bottom: 700, width: 976, height: 420 };
   if (/\bhome-dock\b/.test(cls)) return { left: 24, top: 700, right: 1000, bottom: 800, width: 976, height: 100 };
   return { left: 0, top: 0, right: 0, bottom: 0, width: 0, height: 0 };
 };
@@ -70,6 +70,9 @@ async function setup({desktop = false, seen = true, ids = []} = {}) {
   const layouts = [];
   const acts = [];
   const windowOpens = [];
+  const probes = [];
+  const searches = [];
+  const captures = [];
   let hidden = 0;
   const browseMock = desktop ? {
     available: true,
@@ -84,8 +87,17 @@ async function setup({desktop = false, seen = true, ids = []} = {}) {
     layout(b) { layouts.push(b); return Promise.resolve(true); },
     hide() { hidden += 1; return Promise.resolve(true); },
     act(action, arg) { acts.push([action, arg]); return Promise.resolve(true); },
+    startLogin(opts) { return Promise.resolve({ok: true, ...(opts || {})}); },
+    probeLogin(opts) { probes.push({...(opts || {})}); return Promise.resolve({ok: true, platform: (opts && opts.platform) || 'douyin', loginChecking: true, loggedIn: false}); },
+    search(opts) {
+      searches.push({...opts});
+      return Promise.resolve({ok: true, items: [{id: '1', url: 'https://www.douyin.com/video/1', title: '烤鱼店探店', cover: 'https://example.com/c.jpg'}], note: '目前只展示这一批', platform: opts.platform, keyword: opts.keyword});
+    },
+    captureItem(opts) { captures.push({...opts}); return Promise.resolve({ok: true, projectId: 'p-new'}); },
     onState(cb) { this._onState = cb; },
     onImported(cb) { this._onImported = cb; },
+    onLoggedIn(cb) { this._onLoggedIn = cb; },
+    onLoginClosed(cb) { this._onLoginClosed = cb; },
   } : undefined;
   const windowObj = {
     scrollTo() {},
@@ -142,82 +154,85 @@ async function setup({desktop = false, seen = true, ids = []} = {}) {
     await Promise.resolve();
     await Promise.resolve();
   };
-  return {run, $, document, storage, click, submit, opens, layouts, acts, windowOpens, hidden: () => hidden, browse: browseMock, projects};
+  return {run, $, document, storage, click, submit, opens, layouts, acts, windowOpens, probes, searches, captures, hidden: () => hidden, browse: browseMock, projects};
 }
 
 const tests = [], test = (name, fn) => tests.push([name, fn]);
 
-test('桌面版首页出现内嵌区和工具栏，自动打开当前平台首页，不调 window.open', async () => {
+test('桌面版抖音进入时探测登录，不打开平台首页，也不调 window.open', async () => {
   const t = await setup({desktop: true, seen: true});
-  assert.ok(t.$('#fvEmbed'), '应有嵌入占位');
-  assert.match(t.$('[data-fv-capture]').textContent, /同款复刻/);
+  assert.ok(t.$('#fvEmbed'), '应有详情占位');
+  assert.match(t.$('[data-fv-capture]').textContent, /同款/);
   assert.ok(t.$('[data-fv-back]'));
   assert.ok(t.$('[data-fv-forward]'));
   assert.ok(t.$('[data-fv-reload]'));
-  assert.match(t.$('.fv .hint').textContent, /不会新开窗口/);
-  assert.equal(t.opens.length, 1);
-  assert.equal(t.opens[0].platform, 'douyin');
-  assert.equal(t.opens[0].keyword, undefined);
-  assert.equal(t.$('#fvEmbed').getAttribute('data-fv-url'), 'https://www.douyin.com/');
+  assert.match(t.$('.fv .hint').textContent, /不会把平台网站嵌在这一页/);
+  assert.equal(t.opens.length, 0, '抖音不应自动打开官方首页');
+  assert.ok(t.probes.length >= 1);
+  assert.equal(t.probes[0].platform, 'douyin');
   assert.equal(t.windowOpens.length, 0);
-  assert.ok(t.layouts.length >= 1);
   await t.run('renderHome()');
   await Promise.resolve();
-  assert.equal(t.opens.length, 1, '重新渲染首页不应再加载一次');
+  assert.equal(t.probes.length, 1, '重新渲染首页不应再探测一次');
 });
 
-test('桌面版搜索把当前区域换成平台搜索页，不新开窗口', async () => {
+test('桌面版已登录后关键词搜索走后台列表，不新开窗口、不嵌官方搜索页', async () => {
   const t = await setup({desktop: true, seen: true});
+  t.browse._onState({url: 'https://www.douyin.com/', loggedIn: true, loginChecking: false, canBack: false, canForward: false});
+  await Promise.resolve();
+  await Promise.resolve();
   t.$('#fvKeyword').value = '烤鱼';
   await t.submit(t.$('[data-fv-form]'));
+  await Promise.resolve();
+  await Promise.resolve();
   assert.equal(t.windowOpens.length, 0);
-  const last = t.opens.at(-1);
-  assert.equal(last.platform, 'douyin');
-  assert.equal(last.keyword, '烤鱼');
-  assert.equal(t.$('#fvEmbed').getAttribute('data-fv-url'), SEARCH.douyin('烤鱼'));
+  assert.ok(t.searches.some((s) => s.platform === 'douyin' && s.keyword === '烤鱼'));
+  assert.equal(t.$('#fvEmbed').hidden, true);
+  assert.match(t.$('#fvResults').textContent, /烤鱼店探店|当前按关键词/);
 });
 
-test('桌面版切 Tab 更新当前区域：有关键词就搜，没有就打开平台首页', async () => {
+test('桌面版切到小红书只探测登录，切到 B 站仍走内嵌', async () => {
   const t = await setup({desktop: true, seen: true});
   await t.click(t.$('[data-fv-platform="xiaohongshu"]'));
-  let last = t.opens.at(-1);
-  assert.equal(last.platform, 'xiaohongshu');
-  assert.equal(last.keyword, undefined);
-  assert.equal(t.$('#fvEmbed').getAttribute('data-fv-url'), HOME.xiaohongshu);
+  assert.ok(t.probes.some((p) => p.platform === 'xiaohongshu'));
+  assert.equal(t.opens.filter((o) => o.platform === 'xiaohongshu').length, 0);
   assert.equal(t.windowOpens.length, 0);
   t.$('#fvKeyword').value = '美甲';
   await t.click(t.$('[data-fv-platform="bilibili"]'));
-  last = t.opens.at(-1);
+  const last = t.opens.at(-1);
   assert.equal(last.platform, 'bilibili');
   assert.equal(last.keyword, '美甲');
   assert.equal(t.$('#fvEmbed').getAttribute('data-fv-url'), SEARCH.bilibili('美甲'));
   assert.equal(t.windowOpens.length, 0);
+  assert.equal(t.$('#fvBiliNote').hidden, false);
 });
 
-test('桌面版点行业词在当前区域搜索，不新开窗口', async () => {
+test('桌面版未登录点分类不会打开平台页，也不自动弹登录窗', async () => {
   const t = await setup({desktop: true, seen: true});
-  await t.click(t.$('[data-fv-word="火锅"]'));
-  const last = t.opens.at(-1);
-  assert.equal(last.platform, 'douyin');
-  assert.equal(last.keyword, '火锅');
-  assert.equal(t.$('#fvEmbed').getAttribute('data-fv-url'), SEARCH.douyin('火锅'));
+  t.browse._onState({url: 'https://www.douyin.com/', loggedIn: false, loginChecking: false, canBack: false, canForward: false});
+  await t.click(t.$('[data-fv-cat-item="餐饮美食"]'));
+  await Promise.resolve();
   assert.equal(t.windowOpens.length, 0);
+  assert.equal(t.searches.length, 0, '未登录不得发起后台搜索');
+  assert.equal(t.$('#fvResults').hidden, true);
+  assert.equal(t.$('#fvLoginEmpty').hidden, false);
 });
 
-test('介绍弹层打开时会把原生视图藏起来，关掉后再布局', async () => {
+test('介绍弹层打开时会把原生视图藏起来', async () => {
   const t = await setup({desktop: true, seen: true});
   const hiddenAtStart = t.hidden();
   await t.click(t.$('#aboutBtn'));
   assert.ok(t.hidden() > hiddenAtStart, '打开介绍应 hide 嵌入视图');
   await t.click(t.$('#aboutCloseBtn'));
-  assert.ok(t.layouts.length >= 2, '关闭介绍后应重新 layout');
-  assert.equal(t.$('#fvEmbed').getAttribute('data-fv-url'), 'https://www.douyin.com/');
+  assert.ok(t.$('#aboutDialog') && !t.$('#aboutDialog').open);
 });
 
-test('桌面版工具栏后退、前进、刷新和同款复刻都作用在当前内嵌区', async () => {
+test('桌面版 B 站工具栏后退、前进、刷新和同款都作用在当前内嵌区', async () => {
   const t = await setup({desktop: true, seen: true});
+  await t.click(t.$('[data-fv-platform="bilibili"]'));
+  const opensBefore = t.opens.length;
   t.browse._onState({
-    url: 'https://www.douyin.com/video/123',
+    url: 'https://www.bilibili.com/video/BV1',
     loggedIn: true,
     loginChecking: false,
     canBack: true,
@@ -231,7 +246,7 @@ test('桌面版工具栏后退、前进、刷新和同款复刻都作用在当�
   await t.click(t.$('[data-fv-capture]'));
   assert.deepEqual(t.acts, [['back', undefined], ['forward', undefined], ['reload', undefined], ['capture', undefined]]);
   assert.equal(t.windowOpens.length, 0);
-  assert.equal(t.opens.length, 1, '工具栏操作不应再调 open 新建浏览');
+  assert.equal(t.opens.length, opensBefore, '工具栏操作不应再调 open 新建浏览');
 });
 
 test('同款导入成功后打开项目，并出现在「最近的项目」里', async () => {
@@ -284,7 +299,7 @@ test('桌面首页操作区固定、内嵌区高度随剩余窗口空间变化',
   assert.match(css, /html\.is-desktop-home \.fv-chrome/);
   assert.match(css, /html\.is-desktop-home \.fv-embed/);
   // 窗口 800，占位区顶 280，底部码头 100，再留 12 边距 → 408
-  assert.equal(t.$('#fvEmbed').style.height, '408px');
+  assert.equal(t.$('#fvListWrap').style.height, '408px');
   const chrome = t.$('.fv-chrome');
   const pane = t.$('.fv-pane');
   const dock = t.$('.home-dock');

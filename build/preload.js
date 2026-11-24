@@ -9,7 +9,7 @@ contextBridge.exposeInMainWorld('__dlg', {
   alert: (message) => ipcRenderer.sendSync('dlg-alert', { message })
 });
 
-// 「找爆款」：把平台页嵌进首页；点「同款复刻」建好项目后通知页面打开它。搜索不再新开窗口。
+// 「找爆款」：抖音/小红书用已登录会话在后台搜索，结果在工作台列表展示；B站本切片仍走内嵌。点「同款复刻」建好项目后通知页面打开它。
 contextBridge.exposeInMainWorld('__browse', {
   available: true,
   open: (opts) => ipcRenderer.invoke('browse:open', opts),
@@ -18,6 +18,9 @@ contextBridge.exposeInMainWorld('__browse', {
   debug: () => ipcRenderer.invoke('browse:debug'),
   act: (action, arg) => ipcRenderer.invoke('browse:toolbar', action, arg),
   startLogin: (opts) => ipcRenderer.invoke('browse:startLogin', opts),
+  search: (opts) => ipcRenderer.invoke('browse:search', opts),
+  probeLogin: (opts) => ipcRenderer.invoke('browse:probeLogin', opts),
+  captureItem: (opts) => ipcRenderer.invoke('browse:captureItem', opts),
   onState: (cb) => ipcRenderer.on('browse:state', (_e, s) => cb(s)),
   onImported: (cb) => ipcRenderer.on('browse:imported', (_e, project) => cb(project)),
   onLoggedIn: (cb) => ipcRenderer.on('browse:logged-in', (_e, s) => cb(s)),

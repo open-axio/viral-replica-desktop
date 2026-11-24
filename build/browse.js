@@ -184,6 +184,16 @@ function mainHost() {
   return host && !host.isDestroyed() ? host : null;
 }
 
+// 后台探测登录和搜索时视图必须是隐藏的，但需要真实视口。
+// 收成 0×0 时平台页往往不渲染条目，可见性判断也会全部失败。
+const HIDDEN_WORKSPACE = { x: -16000, y: 0, width: 1280, height: 900 };
+
+function setHiddenWorkspace() {
+  if (!view) return;
+  if (typeof view.setVisible === 'function') view.setVisible(false);
+  if (typeof view.setBounds === 'function') view.setBounds(HIDDEN_WORKSPACE);
+}
+
 function setEmbedVisible(visible, bounds) {
   if (!view) return;
   if (bounds) {
@@ -195,8 +205,7 @@ function setEmbedVisible(visible, bounds) {
     };
   }
   if (!visible || !lastEmbedBounds || lastEmbedBounds.width < 8 || lastEmbedBounds.height < 8) {
-    if (typeof view.setVisible === 'function') view.setVisible(false);
-    if (typeof view.setBounds === 'function') view.setBounds({ x: 0, y: 0, width: 0, height: 0 });
+    setHiddenWorkspace();
     return;
   }
   if (typeof view.setBounds === 'function') view.setBounds(lastEmbedBounds);
@@ -234,7 +243,7 @@ function wireSiteView(v) {
 }
 
 function isClearLoginWall(reason) {
-  return /^(login-host|login-path|login-wall|header-login|login-modal|sidebar-login|header-login-entry)$/.test(reason || '');
+  return /^(login-host|login-path|login-wall|header-login|login-modal|sidebar-login|chrome-login|header-login-entry)$/.test(reason || '');
 }
 
 function sessionOf(platform) {
@@ -477,32 +486,73 @@ async function searchPlatform(opts) {
   const wc = view.webContents;
   const settle = typeof wc.once === 'function' ? 2000 : 0;
   try {
+    setHiddenWorkspace();
     await loadUrl(wc, url, settle);
     const login = await refreshLoginState();
     if (!login.loggedIn) {
-      const error = '还没登录，或登录状态读不准。先去登录后再搜索。';
+      const error = '还没登录。请先点「去登录」，登录后再搜索。';
       setStatus('error', error);
-      return { ok: false, loggedIn: false, error, items: [], platform, keyword };
+      return { ok: false, loggedIn: false, error, failKind: 'not-logged-in', items: [], platform, keyword };
     }
-    let data;
-    try {
-      data = await Promise.race([
-        wc.executeJavaScript(EXTRACT_SEARCH, true),
-        sleep(15000).then(() => { throw new Error('搜索页没有响应，请重试'); }),
-      ]);
-    } catch (err) {
-      const error = String((err && err.message) || err) || '搜索页没有响应，请重试';
-      setStatus('error', error);
-      return { ok: false, error, items: [], platform, keyword };
+    const pageUrlOf = () => (wc && typeof wc.getURL === 'function' ? wc.getURL() : url);
+    const isSearchUrl = (u) => {
+      const href = String(u || '');
+      if (platform === 'xiaohongshu') return /search_result|\/search/.test(href);
+      return /\/search\//.test(href);
+    };
+    const parseExtracted = (data) => {
+      if (!data || typeof data !== 'object') return { items: [], hasMore: false, pageUrl: pageUrlOf() };
+      if (Array.isArray(data.items)) return data;
+      return parseSearchPage(data, platform);
+    };
+    const takeItems = (parsed) => (parsed.items || []).filter((it) => it && it.url && (it.title || it.author || it.cover));
+    const emptyReason = (parsed, href, extractErr) => {
+      if (extractErr || !isSearchUrl(href)) {
+        return {
+          error: '搜索结果页还没出来。请重试；如果一直不行，可能是平台页打开失败。',
+          failKind: 'page-not-ready',
+        };
+      }
+      if (parsed && (parsed.hasVisibleResults || parsed.cardCount > 0 || parsed.jsonCount > 0)) {
+        return {
+          error: '这一页上看得到结果，但没能读出封面或标题。平台页面结构可能变了，可以重试。',
+          failKind: 'extract-miss',
+        };
+      }
+      return {
+        error: '这一页没读到搜索结果。当前搜索页上还没有可展示的条目，可以重试。',
+        failKind: 'empty',
+      };
+    };
+    const canWait = typeof wc.once === 'function';
+    const tries = canWait ? 8 : 1;
+    let parsed = { items: [], hasMore: false };
+    let items = [];
+    let lastErr = null;
+    for (let i = 0; i < tries; i++) {
+      if (i > 0) {
+        try {
+          await wc.executeJavaScript('window.scrollBy(0, Math.min(900, (document.body && document.body.scrollHeight) || 900));', true);
+        } catch (_) { /* 滚动只是为了触发懒加载，失败就再读一次 */ }
+        await sleep(700);
+      }
+      try {
+        const data = await Promise.race([
+          wc.executeJavaScript(EXTRACT_SEARCH, true),
+          sleep(15000).then(() => { throw new Error('搜索页没有响应，请重试'); }),
+        ]);
+        lastErr = null;
+        parsed = parseExtracted(data);
+        items = takeItems(parsed);
+        if (items.length) break;
+      } catch (err) {
+        lastErr = err;
+      }
     }
-    const parsed = (!data || typeof data !== 'object')
-      ? { items: [], hasMore: false }
-      : (Array.isArray(data.items) ? data : parseSearchPage(data, platform));
-    const items = (parsed.items || []).filter((it) => it && it.url && (it.title || it.author || it.cover));
     if (!items.length) {
-      const error = '这一页没读到搜索结果。取数依赖登录后当时能看到的条目，平台改版时可能失败，可以重试。';
-      setStatus('error', error);
-      return { ok: false, error, items: [], platform, keyword, note: '目前只展示这一批' };
+      const fail = emptyReason(parsed, pageUrlOf(), lastErr);
+      setStatus('error', fail.error);
+      return { ok: false, error: fail.error, failKind: fail.failKind, items: [], platform, keyword, note: '目前只展示这一批', pageUrl: pageUrlOf() };
     }
     const note = parsed.hasMore ? '' : '目前只展示这一批';
     setStatus('idle', '找到 ' + items.length + ' 条');
@@ -1095,4 +1145,5 @@ module.exports = {
   PLATFORMS, EXTRACT, debugInfo, layoutEmbed, hideEmbed, runToolbar, resolveOpenUrl,
   refreshLoginState, detectLogin, startLogin, checkLoginWindow, closeLoginWindow, loginStartUrl,
   resetSessionLogin, isListPlatform, searchPlatform, probeLogin, captureItem, EXTRACT_SEARCH,
+  HIDDEN_WORKSPACE,
 };

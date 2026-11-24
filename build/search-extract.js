@@ -20,6 +20,8 @@ function firstUrl(v) {
   }
   if (typeof v === 'object') {
     return firstUrl(v.url_list) || firstUrl(v.urlList) || firstUrl(v.urls) || firstUrl(v.url)
+      || firstUrl(v.url_default) || firstUrl(v.urlDefault) || firstUrl(v.url_pre) || firstUrl(v.urlPre)
+      || firstUrl(v.preview_url) || firstUrl(v.cover_url) || firstUrl(v.thumbnail_url)
       || firstUrl(v.src) || firstUrl(v.uri) || firstUrl(v.thumbnail) || firstUrl(v.thumb)
       || firstUrl(v.info_list) || firstUrl(v.origin_cover) || firstUrl(v.originCover);
   }
@@ -158,7 +160,7 @@ function itemFromCard(card, platform) {
   const href = textOf(card.href || card.url);
   let id = textOf(card.id);
   if (!id && href) {
-    const m = href.match(/\/video\/(\d+)/) || href.match(/\/explore\/([0-9a-zA-Z]+)/) || href.match(/\/discovery\/item\/([0-9a-zA-Z]+)/);
+    const m = href.match(/\/video\/(\d+)/) || href.match(/modal_id=(\d+)/) || href.match(/\/share\/video\/(\d+)/) || href.match(/\/aweme\/detail\/(\d+)/) || href.match(/\/explore\/([0-9a-zA-Z]+)/) || href.match(/\/discovery\/item\/([0-9a-zA-Z]+)/) || href.match(/\/note\/([0-9a-zA-Z]+)/);
     if (m) id = m[1];
   }
   if (!id) return null;
@@ -211,10 +213,25 @@ function parseSearchPage(page, platform) {
       for (let j = 0; j < found.length; j++) add(found[j]);
     }
   }
+  const jsonCount = items.length;
   if (page && Array.isArray(page.cards)) {
     for (let i = 0; i < page.cards.length; i++) add(itemFromCard(page.cards[i], p));
   }
-  return { items: items.slice(0, 40), hasMore: false };
+  const url = (page && (page.url || page.href)) || '';
+  const cardCount = (page && Array.isArray(page.cards)) ? page.cards.length : 0;
+  const scriptCount = (page && Array.isArray(page.scripts)) ? page.scripts.length : 0;
+  const looksLikeSearch = /\/search\/|search_result|\/search\?/.test(url);
+  const hasVisibleResults = cardCount > 0 || jsonCount > 0 || !!(page && page.hasFeed);
+  return {
+    items: items.slice(0, 40),
+    hasMore: false,
+    pageUrl: url,
+    cardCount: cardCount,
+    scriptCount: scriptCount,
+    jsonCount: jsonCount,
+    looksLikeSearch: looksLikeSearch,
+    hasVisibleResults: hasVisibleResults,
+  };
 }
 
 function collectSearchDom() {
@@ -231,28 +248,44 @@ function collectSearchDom() {
     cards.push({ href: abs, title: text.slice(0, 120), cover: cover });
   };
   if (typeof document !== 'undefined' && document.querySelectorAll) {
-    const dy = document.querySelectorAll('a[href*="/video/"]');
+    const dy = document.querySelectorAll('a[href*="/video/"], a[href*="modal_id="], a[href*="/share/video/"], a[href*="/aweme/"]');
     for (let i = 0; i < dy.length; i++) push(dy[i]);
-    const xhs = document.querySelectorAll('a[href*="/explore/"], a[href*="/discovery/item/"]');
+    const xhs = document.querySelectorAll('a[href*="/explore/"], a[href*="/discovery/item/"], a[href*="/note/"]');
     for (let i = 0; i < xhs.length; i++) push(xhs[i]);
+    const extra = document.querySelectorAll('[data-e2e*="search"] a, [class*="search-result"] a, [class*="SearchResult"] a');
+    for (let i = 0; i < extra.length; i++) push(extra[i]);
+  }
+  let hasFeed = cards.length > 0;
+  if (!hasFeed && typeof document !== 'undefined' && document.querySelectorAll) {
+    const media = document.querySelectorAll('[data-e2e*="search"] img, [class*="search-result"] img, [class*="video-card"] img, video');
+    hasFeed = media.length >= 3;
   }
   const scripts = [];
   if (typeof document !== 'undefined' && document.querySelectorAll) {
     const nodes = document.querySelectorAll('script');
     for (let i = 0; i < nodes.length; i++) {
       const t = nodes[i].textContent || '';
-      if (t && t.length > 40 && t.length < 4000000 && (/__INITIAL_STATE__|_ROUTER_DATA|RENDER_DATA|aweme|__UNIVERSAL_DATA/.test(t) || nodes[i].id === 'RENDER_DATA' || t.trim().charAt(0) === '{')) {
+      if (t && t.length > 40 && t.length < 4000000 && (/__INITIAL_STATE__|_ROUTER_DATA|RENDER_DATA|aweme|__UNIVERSAL_DATA|__NEXT_DATA__/.test(t) || nodes[i].id === 'RENDER_DATA' || nodes[i].id === '__NEXT_DATA__' || t.trim().charAt(0) === '{')) {
         scripts.push(t);
       }
     }
   }
-  const renderEl = (typeof document !== 'undefined' && document.getElementById) ? document.getElementById('RENDER_DATA') : null;
+  const renderEl = (typeof document !== 'undefined' && document.getElementById) ? (document.getElementById('RENDER_DATA') || document.getElementById('__NEXT_DATA__')) : null;
+  let state = null;
+  try {
+    if (typeof window !== 'undefined') {
+      state = window.__INITIAL_STATE__ || window._ROUTER_DATA || window.__NEXT_DATA__
+        || window.__UNIVERSAL_DATA_FOR_REHYDRATION__ || window._SSR_HYDRATED_DATA || null;
+    }
+  } catch (_) { state = null; }
   return {
     url: (typeof location !== 'undefined' && location.href) || '',
     host: (typeof location !== 'undefined' && location.hostname) || '',
     renderData: renderEl ? (renderEl.textContent || '') : '',
     scripts: scripts.slice(0, 20),
     cards: cards.slice(0, 60),
+    state: state,
+    hasFeed: hasFeed,
   };
 }
 

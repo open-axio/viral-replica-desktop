@@ -42,8 +42,13 @@ function detectXiaohongshu(page) {
   }
   if (page.loginModal) return out('xiaohongshu', 'login-modal');
   if (page.sidebarLogin) return out('xiaohongshu', 'sidebar-login');
+  if (page.chromeLogin) return out('xiaohongshu', 'chrome-login');
   if (page.userSideEntry) return inn('xiaohongshu', 'user-side');
   if (page.chromeAvatar) return inn('xiaohongshu', 'chrome-avatar');
+  // 登录小窗在窄屏常落到个人主页（无侧栏入口）。只要已经能看到个人页且没有登录墙，就视为已登录。
+  if (page.userProfilePath) return inn('xiaohongshu', 'user-profile');
+  if (page.ownProfileHint) return inn('xiaohongshu', 'own-profile');
+  if (page.mobileMeTab) return inn('xiaohongshu', 'mobile-me');
   return out('xiaohongshu', 'uncertain');
 }
 
@@ -120,6 +125,7 @@ const INSPECT = {
       const st = window.getComputedStyle(el);
       return r.width > 0 && r.height > 0 && st.visibility !== 'hidden' && st.display !== 'none';
     };
+    const bodyText = (document.body && document.body.innerText) || '';
     const loginModal = visible(document.querySelector('.login-modal')) ||
       visible(document.querySelector('.reds-modal-open .login-container'));
     let sidebarLogin = false;
@@ -127,6 +133,12 @@ const INSPECT = {
     for (let i = 0; i < sideBtns.length && i < 200; i++) {
       const el = sideBtns[i];
       if (visible(el) && String(el.textContent || '').trim() === '登录') sidebarLogin = true;
+    }
+    let chromeLogin = false;
+    const chromeLoginNodes = document.querySelectorAll('header a, header button, header span, nav a, nav button, nav span, [class*="tab-bar"] a, [class*="tab-bar"] span, [class*="tabbar"] a, [class*="tabbar"] span');
+    for (let i = 0; i < chromeLoginNodes.length && i < 200; i++) {
+      const el = chromeLoginNodes[i];
+      if (visible(el) && String(el.textContent || '').trim() === '登录') chromeLogin = true;
     }
     const userAvatar = visible(document.querySelector('.user-avatar, .reds-avatar'));
     const userSideEntry = visible(document.querySelector('a[href*="/user/profile"], a[href*="/user/profile/"]'));
@@ -139,15 +151,33 @@ const INSPECT = {
       const r = av.getBoundingClientRect();
       if (r.top < 120 || r.left < 200) chromeAvatar = true;
     }
+    const userProfilePath = /^\/user\/profile(\/|$)/.test(location.pathname || '');
+    const ownProfileHint = /仅自己可见|编辑资料/.test(bodyText) ||
+      (/小红书号/.test(bodyText) && /笔记/.test(bodyText) && /收藏/.test(bodyText) && /点赞/.test(bodyText));
+    let mobileMeTab = false;
+    const tabNodes = document.querySelectorAll('a, span, button, div');
+    const vh = window.innerHeight || 0;
+    for (let i = 0; i < tabNodes.length && i < 400; i++) {
+      const el = tabNodes[i];
+      if (!visible(el)) continue;
+      const r = el.getBoundingClientRect();
+      if (vh && r.top < vh - 140) continue;
+      const own = (el.childNodes && el.childNodes.length <= 2) ? String(el.textContent || '').trim() : '';
+      if (own === '我' || own === '个人') mobileMeTab = true;
+    }
     return {
       host: location.hostname,
       pathname: location.pathname,
       href: location.href,
       loginModal,
       sidebarLogin,
+      chromeLogin,
       userAvatar,
       userSideEntry,
       chromeAvatar,
+      userProfilePath,
+      ownProfileHint,
+      mobileMeTab,
     };
   })()`,
   bilibili: `(() => {

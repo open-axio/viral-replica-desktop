@@ -23,16 +23,24 @@ assert.equal(skip, null);
 
 const xhs = itemFromXhs({
   note_card: {
-    note_id: '64abc',
+    note_id: '64abcdef123',
     display_title: '美甲分享',
     user: {nickname: '小红'},
     cover: {url_default: 'https://example.com/x.jpg'},
   },
 });
-// itemFromXhs may use different fields; accept title/url if present
-if (xhs) {
-  assert.ok(xhs.title || xhs.author || xhs.cover);
-}
+assert.ok(xhs);
+assert.equal(xhs.title, '美甲分享');
+assert.equal(xhs.author, '小红');
+assert.equal(xhs.cover, 'https://example.com/x.jpg');
+
+const fromCard = require('./search-extract').parseSearchPage({
+  url: 'https://www.douyin.com/search/%E9%A4%90%E9%A5%AE%E7%BE%8E%E9%A3%9F?type=video',
+  cards: [{ href: 'https://www.douyin.com/video/12345678901?modal_id=12345678901', title: '探店', cover: 'https://c.jpg' }],
+}, 'douyin');
+assert.ok(fromCard.items.length >= 1);
+assert.equal(fromCard.looksLikeSearch, true);
+assert.equal(fromCard.hasVisibleResults, true);
 
 const parsed = parseSearchPage({
   url: 'https://www.douyin.com/search/test',

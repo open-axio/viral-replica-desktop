@@ -57,6 +57,30 @@ assertOut(detectXiaohongshu({ url: 'https://www.xiaohongshu.com/explore', userSi
 assertOut(detectXiaohongshu({ url: 'https://www.xiaohongshu.com/explore', loginModal: true, hasCards: true }), 'xiaohongshu', 'login-modal');
 // 不能拿抖音的信号套到小红书
 assertOut(detectXiaohongshu({ url: 'https://www.xiaohongshu.com/explore', headerLogin: true, userSelfLink: true }), 'xiaohongshu', 'uncertain');
+// 已经打开个人主页（含登录小窗窄屏、无侧栏入口）必须判为已登录
+assertIn(detectXiaohongshu({
+  url: 'https://www.xiaohongshu.com/user/profile/64abc',
+  userProfilePath: true,
+  ownProfileHint: true,
+}), 'xiaohongshu', 'user-profile');
+assertIn(detectXiaohongshu({
+  url: 'https://www.xiaohongshu.com/explore',
+  ownProfileHint: true,
+}), 'xiaohongshu', 'own-profile');
+assertIn(detectXiaohongshu({
+  url: 'https://www.xiaohongshu.com/explore',
+  mobileMeTab: true,
+}), 'xiaohongshu', 'mobile-me');
+// 个人页上仍有登录墙时保持未登录
+assertOut(detectXiaohongshu({
+  url: 'https://www.xiaohongshu.com/user/profile/64abc',
+  userProfilePath: true,
+  loginModal: true,
+}), 'xiaohongshu', 'login-modal');
+assertOut(detectXiaohongshu({
+  url: 'https://www.xiaohongshu.com/explore',
+  chromeLogin: true,
+}), 'xiaohongshu', 'chrome-login');
 
 // ---- B 站：首页未登录也能看推荐，必须看顶栏 ----
 assertOut(detectBilibili({ url: 'https://passport.bilibili.com/login' }), 'bilibili', 'login-host');

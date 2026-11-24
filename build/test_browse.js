@@ -177,7 +177,8 @@ assert.strictEqual(loadedUrls[1], tab.url);
 
 browse.layoutEmbed({ x: 20, y: 80, width: 900, height: 500 });
 assert.strictEqual(viewVisible, false, '未确认已登录前不能露出平台页');
-assert.deepStrictEqual(viewInstance._bounds, { x: 0, y: 0, width: 0, height: 0 });
+assert.ok(viewInstance._bounds.width >= 800 && viewInstance._bounds.height >= 600, '隐藏时仍要保留真实视口');
+assert.ok(viewInstance._bounds.x <= 0, '隐藏视口应放到窗外');
 assert.strictEqual(windowsCreated, 0);
 
 (async () => {
@@ -268,6 +269,17 @@ assert.strictEqual(windowsCreated, 0);
   createdWindows[createdWindows.length - 1].url = 'https://www.xiaohongshu.com/explore';
   const xhsIn = await browse.checkLoginWindow('xiaohongshu');
   assert.strictEqual(xhsIn.loggedIn, true);
+  assert.deepStrictEqual(loggedInEvents[loggedInEvents.length - 1], { platform: 'xiaohongshu', text: '已登录小红书，下面是你的内容' });
+
+  // 登录小窗已落到已登录个人主页（无侧栏入口）也要判成功并关窗
+  const profileLogin = browse.startLogin({ platform: 'xiaohongshu' });
+  assert.strictEqual(profileLogin.ok, true);
+  const profileWin = createdWindows[createdWindows.length - 1];
+  loginInspect = { userProfilePath: true, ownProfileHint: true };
+  profileWin.url = 'https://www.xiaohongshu.com/user/profile/246545038';
+  const profileIn = await browse.checkLoginWindow('xiaohongshu');
+  assert.strictEqual(profileIn.loggedIn, true, '个人主页应识别为已登录');
+  assert.strictEqual(profileWin.destroyed, true, '已登录个人页应收起登录小窗');
   assert.deepStrictEqual(loggedInEvents[loggedInEvents.length - 1], { platform: 'xiaohongshu', text: '已登录小红书，下面是你的内容' });
 
   const biliLogin = browse.startLogin({ platform: 'bilibili' });
@@ -511,6 +523,46 @@ assert.strictEqual(windowsCreated, 0);
   assert.strictEqual(found.note, '目前只展示这一批');
   assert.strictEqual(viewVisible, false, '后台搜索不得露出平台搜索页');
   assert.ok(loadedUrls.some((u) => String(u).includes('/search/') && String(u).includes(encodeURIComponent('餐饮美食'))));
+  assert.ok(viewInstance._bounds.width >= 800, '后台搜索时隐藏视图也要有真实视口');
+
+  wcSearch.executeJavaScript = async (code, ...rest) => {
+    const src = String(code);
+    if (src.includes('extractSearchFromPage')) {
+      return { items: [], hasMore: false, cardCount: 6, jsonCount: 0, hasVisibleResults: true, looksLikeSearch: true, pageUrl: currentUrl };
+    }
+    if (typeof origSearchExec === 'function') return origSearchExec.call(wcSearch, code, ...rest);
+    return { ...inspectSignals, href: currentUrl };
+  };
+  const missed = await browse.searchPlatform({ platform: 'douyin', keyword: '餐饮美食' });
+  assert.strictEqual(missed.ok, false);
+  assert.strictEqual(missed.failKind, 'extract-miss');
+  assert.match(String(missed.error), /看得到结果，但没能读出/);
+
+  wcSearch.executeJavaScript = async (code, ...rest) => {
+    const src = String(code);
+    if (src.includes('extractSearchFromPage')) {
+      return { items: [], hasMore: false, cardCount: 0, jsonCount: 0, hasVisibleResults: false, looksLikeSearch: true, pageUrl: currentUrl };
+    }
+    if (typeof origSearchExec === 'function') return origSearchExec.call(wcSearch, code, ...rest);
+    return { ...inspectSignals, href: currentUrl };
+  };
+  const emptyPage = await browse.searchPlatform({ platform: 'douyin', keyword: '餐饮美食' });
+  assert.strictEqual(emptyPage.ok, false);
+  assert.strictEqual(emptyPage.failKind, 'empty');
+  assert.match(String(emptyPage.error), /还没有可展示的条目/);
+
+  inspectSignals = { headerLogin: true };
+  const loggedOutSearch = await browse.searchPlatform({ platform: 'douyin', keyword: '餐饮美食' });
+  wcSearch.executeJavaScript = origSearchExec;
+  assert.strictEqual(loggedOutSearch.ok, false);
+  assert.strictEqual(loggedOutSearch.failKind, 'not-logged-in');
+  assert.match(String(loggedOutSearch.error), /还没登录/);
+  assert.ok(!String(loggedOutSearch.error).includes('没读到搜索结果'));
+
+  inspectSignals = { userSelfLink: true };
+  browse.resetSessionLogin({ douyin: true });
+  currentUrl = 'https://www.douyin.com/';
+  await browse.refreshLoginState();
 
   const detail = browse.open({ url: 'https://www.douyin.com/video/12345678901', detail: true, platform: 'douyin' });
   browse.layoutEmbed({ x: 20, y: 80, width: 900, height: 500 });

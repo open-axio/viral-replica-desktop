@@ -996,7 +996,7 @@ function applyFvState(s) {
     if (list && !inDetail) {
       if (s.loggedIn) {
         if (st.mode === "loading") status.textContent = "正在搜索…";
-        else if (st.mode === "error") status.textContent = st.error || "搜索失败，请重试";
+        else if (st.mode === "error") status.textContent = "没搜到结果，可点重试";
         else if (st.mode === "results") status.textContent = (s.status && s.status.text) || (`找到 ${st.items.length} 条`);
         else status.textContent = (s.status && s.status.text) || "点分类或输入关键词搜索";
       } else if (s.loginChecking) {
@@ -1226,7 +1226,7 @@ async function runListSearch(opts) {
   applyFvListView();
   if (status) {
     status.className = "fv-status" + (st.mode === "error" ? " error" : "");
-    status.textContent = st.mode === "error" ? st.error : (`找到 ${st.items.length} 条`);
+    status.textContent = st.mode === "error" ? "没搜到结果，可点重试" : (`找到 ${st.items.length} 条`);
   }
 }
 function fvSearch(word) {

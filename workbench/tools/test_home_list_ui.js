@@ -297,6 +297,11 @@ test('搜索失败时给出原因和重试', async () => {
   await flush();
   assert.equal(t.$('#fvListError').hidden, false);
   assert.match(t.$('#fvListError').textContent, /没读到搜索结果|请重试|可以重试/);
+  const fullErr = String(t.$('#fvListErrorCopy').textContent || '').trim();
+  assert.ok(fullErr);
+  const body = String((t.document && t.document.body && t.document.body.textContent) || t.$('body').textContent || '');
+  assert.equal(body.split(fullErr).length - 1, 1, '同一句失败文案不得出现两遍');
+  assert.ok(!String(t.$('#fvStatus').textContent).includes(fullErr), '状态栏不要再重复完整失败文案');
   assert.ok(t.$('[data-fv-retry]'));
   const before = t.searches.length;
   await t.click(t.$('[data-fv-retry]'));

@@ -9,6 +9,7 @@
 <body>
 <header class="topbar v2">
   <div class="brand" data-go-home title="回到首页" role="button" tabindex="0"><svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><rect width="24" height="24" rx="6.5" fill="#2f6f55"></rect><path d="M13 7.6l5.2 4.4L13 16.4z" fill="#fff"></path><path d="M11 7.6L5.8 12 11 16.4z" fill="#fff" opacity=".4"></path><path d="M12 5.6v12.8" stroke="#fff" stroke-width="1" opacity=".55"></path></svg><span>爆款复刻工作台</span></div>
+  <button type="button" class="text-btn" id="aboutBtn" data-about-open>这是什么</button>
   <div class="project-switch"><select id="projectSelect" aria-label="切换项目"></select>
     <button type="button" class="icon-btn close-project" id="closeProjectBtn" data-go-home title="关闭这个项目，回到首页" aria-label="关闭项目"><svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true"><path d="M3.5 3.5l7 7M10.5 3.5l-7 7" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path></svg></button></div>
   <nav class="stage-nav" id="stageNav" aria-label="流程阶段"></nav>
@@ -28,21 +29,6 @@
 <div class="stale" id="staleBanner" hidden></div>
 <main id="app">
   <section class="home" id="emptyState" hidden>
-    <div class="home-hero">
-      <div class="home-hero-text">
-        <span class="home-kicker">给实体店做短视频</span>
-        <h1>看懂一条爆款，<br>再换成你的店、你的人</h1>
-        <p>把同行的爆款视频放进来，先在你的电脑上免费拆开：说了什么、切了几个镜头、每一镜是怎么拍的。想照着做一条，再一步步换成你的人和商品，生成新视频。</p>
-        <div class="home-cta"><button type="button" id="heroNew" class="big-cta">新建项目，放一条视频进来</button></div>
-        <small class="home-safe">视频只留在你的电脑上，不会上传到任何服务器</small>
-      </div>
-      <ol class="home-steps">
-        <li><span class="home-step-no">1</span><div><b>放进对标视频</b><p>拖进来就行，mp4 / mov 都可以</p></div><span class="tag-free">免费</span></li>
-        <li><span class="home-step-no">2</span><div><b>免费拆解</b><p>台词、镜头、拍摄方式，导出报告和分镜图</p></div><span class="tag-free">免费</span></li>
-        <li><span class="home-step-no">3</span><div><b>内容拆解</b><p>大模型读懂它为什么火、每段在做什么</p></div><span class="tag-paid">要 Key</span></li>
-        <li><span class="home-step-no">4</span><div><b>复刻成片</b><p>换成你的人和商品，分段生成新视频</p></div><span class="tag-paid">要 Key</span></li>
-      </ol>
-    </div>
     <div id="homeBody"></div>
   </section>
 
@@ -216,6 +202,23 @@
 <div id="storyboardLightbox" class="storyboard-lightbox" role="dialog" aria-modal="true" aria-labelledby="storyboardLightboxTitle" hidden></div>
 <div id="motionCheckModal" class="motion-check-modal" role="dialog" aria-modal="true" aria-labelledby="motionCheckTitle" hidden></div>
 <div id="pageConfirmation" class="page-confirmation" role="dialog" aria-modal="true" aria-labelledby="pageConfirmationTitle" hidden></div>
+
+<dialog id="aboutDialog" aria-labelledby="aboutTitle">
+  <h2 id="aboutTitle">看懂一条爆款，再换成你的店、你的人</h2>
+  <p>先在这里看同行怎么拍；拆解在你电脑上免费完成，不用填 Key；想照着做，再换成你的人和商品出片。</p>
+  <p class="hint">视频只留在这台电脑上，不会上传到任何服务器。</p>
+  <ol class="home-steps about-steps">
+    <li><span class="home-step-no">1</span><div><b>放进对标视频</b><p>免费</p></div><span class="tag-free">免费</span></li>
+    <li><span class="home-step-no">2</span><div><b>免费拆解</b><p>台词、镜头、拍摄方式（免费）</p></div><span class="tag-free">免费</span></li>
+    <li><span class="home-step-no">3</span><div><b>内容拆解</b><p>要 Key</p></div><span class="tag-paid">要 Key</span></li>
+    <li><span class="home-step-no">4</span><div><b>复刻成片</b><p>要 Key</p></div><span class="tag-paid">要 Key</span></li>
+  </ol>
+  <div class="row end about-actions">
+    <button type="button" class="ghost" id="aboutSkipBtn" data-about-close hidden>跳过</button>
+    <button type="button" id="aboutCloseBtn" data-about-close>关闭</button>
+  </div>
+</dialog>
+
 <div class="toast" id="toast"></div>
 <script src="/static/app.js"></script>
 <script src="/static/flow.js"></script>

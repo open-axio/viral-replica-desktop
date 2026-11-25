@@ -45,6 +45,44 @@ async function main(){
   assert.match($('#updateInfo').textContent,/下载失败/);
   assert.equal($('#checkUpdateBtn').disabled,false,'failure allows retry');
   $('#closeUpdateBtn').onclick();assert.equal($('#updateDialog').open,false);
-  console.log('Code update UI: status, explicit check, confirm/cancel, pinned version, error recovery passed');
+
+  reject=false;
+  result={phase:'idle',current_version:'20261123-1220',message:'当前已是可用版本。',available:null,can_update_in_place:true,has_formal_release:false};
+  await $('#updatesBtn').onclick();
+  assert.equal($('#applyUpdateBtn').hidden,true);
+  assert.match($('#updateInfo').textContent,/可用版本|已是最新/);
+  assert.doesNotMatch($('#updateInfo').textContent,/有新版本|请到 Releases 下载/);
+  $('#closeUpdateBtn').onclick();
+  assert.equal($('#updateDialog').open,false);
+
+  result={phase:'idle',current_version:'20261123-1220',message:'可以继续用当前这个安装包。应用内不能改程序代码。',available:{sha:'b'.repeat(40),version:'20261118-1715'},can_update_in_place:false,has_formal_release:false};
+  await $('#updatesBtn').onclick();
+  assert.equal($('#applyUpdateBtn').hidden,true,'不能原地更新时不要出立即更新');
+  assert.equal($('#updateConfirmation').hidden,true,'不能原地更新时不要出确认并继续');
+  assert.doesNotMatch($('#updateInfo').textContent,/有新版本|请到 Releases 下载/);
+  assert.match($('#updateInfo').textContent,/可以继续用当前这个安装包/);
+  $('#closeUpdateBtn').onclick();
+  assert.equal($('#updateDialog').open,false,'点关闭必须马上关掉弹层');
+
+  result={phase:'idle',current_version:'20261123-1220',message:'可以继续用当前这个安装包。应用内不能改程序代码。',available:null,can_update_in_place:false,has_formal_release:true};
+  await $('#updatesBtn').onclick();
+  const link=$('#updateInfo a');
+  assert.ok(link && /github\.com\/open-axio\/viral-replica-desktop\/releases$/.test(link.getAttribute('href')||''));
+  assert.match($('#updateInfo').textContent,/请到 Releases 下载/);
+  $('#closeUpdateBtn').onclick();
+
+  result={phase:'idle',current_version:'old',message:'发现新版本',available:{sha:'a'.repeat(40),version:'new'},can_update_in_place:true,has_formal_release:false};
+  await $('#updatesBtn').onclick();
+  assert.equal($('#applyUpdateBtn').hidden,false);
+  $('#applyUpdateBtn').onclick();
+  assert.equal($('#updateConfirmation').hidden,false);
+  assert.equal($('#applyUpdateBtn').hidden,true,'确认时不要再露出立即更新');
+  result={phase:'idle',current_version:'new',message:'代码已更新到新版本',available:null,can_update_in_place:true};
+  await $('#confirmCodeUpdateBtn').onclick();
+  assert.equal(requests.at(-1).url,'updates/apply');
+  assert.match($('#updateInfo').textContent,/代码已更新/);
+  assert.equal($('#updateConfirmation').hidden,true);
+
+  console.log('Code update UI: status, explicit check, confirm/cancel, pinned version, error recovery, blocked and close passed');
 }
 main().catch(e=>{console.error(e);process.exitCode=1;});

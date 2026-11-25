@@ -6,7 +6,12 @@ class Node {
     this.childNodes = []; this.attrs = {}; this.style = { setProperty() {} };
     this.dataset = new Proxy({}, { has: (_, k) => this.hasAttribute('data-' + k.replace(/[A-Z]/g, c => '-' + c.toLowerCase())), get: (_, k) => this.getAttribute('data-' + k.replace(/[A-Z]/g, c => '-' + c.toLowerCase())) ?? undefined,
       set: (_, k, v) => { this.setAttribute('data-' + k.replace(/[A-Z]/g, c => '-' + c.toLowerCase()), v); return true; } });
-    this.classList = { add: c => this.setAttribute('class', (this.getAttribute('class') || '') + ' ' + c), remove() {} };
+    this.classList = {
+      add: c => this.setAttribute('class', (this.getAttribute('class') || '') + ' ' + c),
+      remove: c => this.setAttribute('class', (this.getAttribute('class') || '').trim().split(/\s+/).filter(x => x && x !== c).join(' ')),
+      contains: c => (this.getAttribute('class') || '').trim().split(/\s+/).includes(c),
+      toggle: (c, force) => { const on = force === undefined ? !this.classList.contains(c) : !!force; on ? this.classList.add(c) : this.classList.remove(c); return on; },
+    };
     this.selectionStart = 0; this.selectionEnd = 0; this.selectionDirection = 'none'; this.scrollTop = 0;
     this.currentTime = 0; this.paused = true; this.reloads = 0;
   }

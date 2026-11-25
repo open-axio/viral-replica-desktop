@@ -10,6 +10,10 @@
 const { BrowserWindow, WebContentsView, session, ipcMain, app } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const { detectLogin, INSPECT } = require('./login-state');
+const { parseSearchPage, extractSearchSource } = require('./search-extract');
+const EXTRACT_SEARCH = extractSearchSource();
+const LIST_PLATFORMS = { douyin: true, xiaohongshu: true };
 const { Readable } = require('stream');
 const { pipeline } = require('stream/promises');
 
@@ -43,6 +47,18 @@ function platformOf(url) {
   return 'other';
 }
 
+function isListPlatform(p) {
+  return !!LIST_PLATFORMS[p];
+}
+
+function isDetailUrl(url) {
+  try {
+    const u = new URL(url);
+    const path = u.pathname || '';
+    return /\/video\/\d+/.test(path) || /\/explore\/[^/]+/.test(path) || /\/discovery\/item\//.test(path) || /\/note\//.test(path);
+  } catch (e) { return false; }
+}
+
 // 从分享文案里取链接：「3.89 复制打开抖音，看看【xx的作品】... https://v.douyin.com/abc/ xxx」
 function urlFromShareText(text) {
   const m = String(text || '').match(/https?:\/\/[^\s，。,；;"'<>【】]+/);
@@ -50,11 +66,24 @@ function urlFromShareText(text) {
 }
 
 let ctx = { port: () => 8765, mainWindow: () => null };
-let win = null;
+let win = null;            // 旧的独立浏览窗；T2 起搜索/切 Tab 不再创建
+let hostWindow = null;     // 承载内嵌视图的主窗口
 let view = null;
 let busy = false;
 let lastKeyword = '';
 let status = { kind: 'idle', text: '' };
+let lastEmbedBounds = null;
+let windowsCreated = 0;
+let loginResult = { loggedIn: false, checking: true, reason: 'pending', platform: '' };
+let sessionLogin = Object.create(null);
+let loginCheckTimer = null;
+let loginCheckGen = 0;
+let loginWin = null;       // T4：只承担登录的小窗，和搜索窗不是同一个
+let pendingAfterLogin = ''; // T6：未登录时先记下分享链接，登完再在内嵌区打开
+let holdVisibleAfterLogin = false; // 登完打开分享页时先露出，避免只在隐藏视图里加载
+let detailActive = false; // 列表方案：只在详情里露出那一条的内容页
+let loginWatchTimer = null;
+let loginWatchGen = 0;
 const mediaSeen = new Map();   // webContents id -> [{ url, type, at }]
 
 function init(options) { ctx = { ...ctx, ...options }; }
@@ -98,20 +127,264 @@ function siteSession() {
   return ses;
 }
 
-function sendState() {
-  if (!win || win.isDestroyed() || !view) return;
+function statePayload() {
+  if (!view || !view.webContents) return null;
   const wc = view.webContents;
-  const url = wc.getURL();
-  win.webContents.send('browse:state', {
+  const url = typeof wc.getURL === 'function' ? wc.getURL() : '';
+  const nav = wc.navigationHistory || wc;
+  return {
     url,
     platform: platformOf(url),
-    canBack: wc.navigationHistory ? wc.navigationHistory.canGoBack() : wc.canGoBack(),
-    canForward: wc.navigationHistory ? wc.navigationHistory.canGoForward() : wc.canGoForward(),
-    loading: wc.isLoading(),
+    canBack: nav.canGoBack ? !!nav.canGoBack() : false,
+    canForward: nav.canGoForward ? !!nav.canGoForward() : false,
+    loading: typeof wc.isLoading === 'function' ? wc.isLoading() : false,
     keyword: lastKeyword,
     busy,
     status,
+    embedded: true,
+    newWindow: false,
+    loggedIn: !!(loginResult && loginResult.loggedIn),
+    loginChecking: !!(loginResult && loginResult.checking),
+    loginReason: loginResult && loginResult.reason || '',
+    sessionLogin: { ...sessionLogin },
+  };
+}
+
+function sendTo(wc, channel, payload) {
+  if (!wc || (typeof wc.isDestroyed === 'function' && wc.isDestroyed())) return;
+  if (typeof wc.send === 'function') wc.send(channel, payload);
+}
+
+function sendState() {
+  if (!view) return;
+  const payload = statePayload();
+  if (!payload) return;
+  const main = ctx.mainWindow && ctx.mainWindow();
+  if (main && !main.isDestroyed()) sendTo(main.webContents, 'browse:state', payload);
+  if (win && !win.isDestroyed()) sendTo(win.webContents, 'browse:state', payload);
+}
+
+function debugInfo() {
+  const wc = view && view.webContents;
+  return {
+    url: wc && typeof wc.getURL === 'function' ? wc.getURL() : '',
+    partition: 'persist:find-viral',
+    newWindow: false,
+    windowsCreated,
+    embedded: !!view,
+    bounds: lastEmbedBounds,
+    loggedIn: !!(loginResult && loginResult.loggedIn),
+    loginChecking: !!(loginResult && loginResult.checking),
+    loginReason: loginResult && loginResult.reason || '',
+  };
+}
+
+function mainHost() {
+  const host = ctx.mainWindow && ctx.mainWindow();
+  return host && !host.isDestroyed() ? host : null;
+}
+
+// 后台探测登录和搜索时视图必须是隐藏的，但需要真实视口。
+// 收成 0×0 时平台页往往不渲染条目，可见性判断也会全部失败。
+const HIDDEN_WORKSPACE = { x: -16000, y: 0, width: 1280, height: 900 };
+
+function setHiddenWorkspace() {
+  if (!view) return;
+  if (typeof view.setVisible === 'function') view.setVisible(false);
+  if (typeof view.setBounds === 'function') view.setBounds(HIDDEN_WORKSPACE);
+}
+
+function setEmbedVisible(visible, bounds) {
+  if (!view) return;
+  if (bounds) {
+    lastEmbedBounds = {
+      x: Math.round(bounds.x || 0),
+      y: Math.round(bounds.y || 0),
+      width: Math.round(Math.max(0, bounds.width || 0)),
+      height: Math.round(Math.max(0, bounds.height || 0)),
+    };
+  }
+  if (!visible || !lastEmbedBounds || lastEmbedBounds.width < 8 || lastEmbedBounds.height < 8) {
+    setHiddenWorkspace();
+    return;
+  }
+  if (typeof view.setBounds === 'function') view.setBounds(lastEmbedBounds);
+  if (typeof view.setVisible === 'function') view.setVisible(true);
+}
+
+function wireSiteView(v) {
+  const wc = v.webContents;
+  if (wc.__findViralWired) return;
+  wc.__findViralWired = true;
+  if (typeof wc.setWindowOpenHandler === 'function') {
+    wc.setWindowOpenHandler(({ url }) => {
+      if (/^https?:/.test(url)) wc.loadURL(url);
+      return { action: 'deny' };
+    });
+  }
+  for (const ev of ['did-start-loading', 'did-stop-loading', 'did-navigate', 'did-navigate-in-page', 'page-title-updated']) {
+    wc.on(ev, () => {
+      if (ev === 'did-navigate' && status.kind !== 'working') status = { kind: 'idle', text: '' };
+      if (ev === 'did-start-loading') {
+        beginLoginCheck(platformOf((wc.getURL && wc.getURL()) || ''));
+        applyLoginVisibility();
+      }
+      if (ev === 'did-stop-loading' || ev === 'did-navigate') scheduleLoginCheck();
+      sendState();
+    });
+  }
+  wc.on('did-fail-load', (_e, code, desc, url, isMain) => {
+    if (isMain && code !== -3) {
+      loginResult = { loggedIn: false, checking: false, reason: 'load-failed', platform: platformOf(url || '') };
+      applyLoginVisibility();
+      setStatus('error', `页面没打开（${desc}）。检查一下网络，点刷新再试`);
+    }
   });
+}
+
+function isClearLoginWall(reason) {
+  return /^(login-host|login-path|login-wall|header-login|login-modal|sidebar-login|chrome-login|header-login-entry)$/.test(reason || '');
+}
+
+function sessionOf(platform) {
+  if (!platform || platform === 'other') return undefined;
+  if (!Object.prototype.hasOwnProperty.call(sessionLogin, platform)) return undefined;
+  return sessionLogin[platform];
+}
+
+function rememberSessionLogin(platform, loggedIn) {
+  if (!platform || platform === 'other') return;
+  sessionLogin[platform] = !!loggedIn;
+}
+
+function resetSessionLogin(map) {
+  sessionLogin = Object.create(null);
+  if (map && typeof map === 'object') {
+    for (const key of Object.keys(map)) sessionLogin[key] = !!map[key];
+  }
+}
+
+function beginLoginCheck(platform) {
+  if (holdVisibleAfterLogin) {
+    loginResult = {
+      ...(loginResult || {}),
+      loggedIn: true,
+      checking: true,
+      reason: (loginResult && loginResult.reason) || 'login-window',
+      platform: platform || (loginResult && loginResult.platform) || '',
+    };
+    return;
+  }
+  const confirmed = sessionOf(platform);
+  if (confirmed === true) {
+    loginResult = { loggedIn: true, checking: true, reason: 'session-in', platform };
+  } else if (confirmed === false) {
+    loginResult = { loggedIn: false, checking: false, reason: 'session-out', platform };
+  } else {
+    loginResult = { loggedIn: false, checking: true, reason: 'pending', platform: platform || '' };
+  }
+}
+
+function applyLoginVisibility() {
+  const p = (loginResult && loginResult.platform) || (view && view.webContents && typeof view.webContents.getURL === 'function' ? platformOf(view.webContents.getURL()) : '');
+  if (isListPlatform(p) && !detailActive && !holdVisibleAfterLogin) {
+    setEmbedVisible(false);
+    return;
+  }
+  if (holdVisibleAfterLogin || (loginResult && loginResult.loggedIn)) setEmbedVisible(true, lastEmbedBounds);
+  else setEmbedVisible(false);
+}
+
+async function refreshLoginState() {
+  if (!view || !view.webContents) {
+    loginResult = { loggedIn: false, checking: false, reason: 'no-view', platform: '' };
+    return loginResult;
+  }
+  const wc = view.webContents;
+  const url = typeof wc.getURL === 'function' ? wc.getURL() : '';
+  const platform = platformOf(url);
+  const src = INSPECT[platform];
+  let page = { url };
+  if (src && typeof wc.executeJavaScript === 'function') {
+    try {
+      const collected = await Promise.race([
+        wc.executeJavaScript(src, true),
+        sleep(3000).then(() => null),
+      ]);
+      if (collected && typeof collected === 'object') page = { url, ...collected };
+    } catch (e) {
+      page = { url };
+    }
+  }
+  loginResult = detectLogin(platform, page);
+  if (holdVisibleAfterLogin) {
+    if (loginResult.loggedIn) {
+      holdVisibleAfterLogin = false;
+      rememberSessionLogin(platform, true);
+    } else if (isClearLoginWall(loginResult.reason)) {
+      holdVisibleAfterLogin = false;
+      rememberSessionLogin(platform, false);
+    } else {
+      loginResult = { loggedIn: true, checking: false, reason: 'login-window', platform };
+    }
+  } else if (sessionOf(platform) === true) {
+    if (loginResult.loggedIn) {
+      rememberSessionLogin(platform, true);
+    } else if (isClearLoginWall(loginResult.reason)) {
+      rememberSessionLogin(platform, false);
+    } else {
+      loginResult = { loggedIn: true, checking: false, reason: 'session-in', platform };
+    }
+  } else {
+    rememberSessionLogin(platform, !!loginResult.loggedIn);
+  }
+  applyLoginVisibility();
+  sendState();
+  console.log('[browse] login-state', JSON.stringify({
+    platform: loginResult.platform, loggedIn: loginResult.loggedIn, reason: loginResult.reason, url, newWindow: false, windowsCreated,
+  }));
+  return loginResult;
+}
+
+function scheduleLoginCheck() {
+  const url = view && view.webContents && typeof view.webContents.getURL === 'function' ? view.webContents.getURL() : '';
+  beginLoginCheck(platformOf(url));
+  applyLoginVisibility();
+  sendState();
+  const gen = ++loginCheckGen;
+  clearTimeout(loginCheckTimer);
+  loginCheckTimer = setTimeout(() => {
+    if (gen !== loginCheckGen) return;
+    refreshLoginState().catch(() => {
+      const platform = (loginResult && loginResult.platform) || '';
+      if (holdVisibleAfterLogin || sessionOf(platform) === true) {
+        loginResult = { loggedIn: true, checking: false, reason: 'session-in', platform };
+      } else {
+        loginResult = { loggedIn: false, checking: false, reason: 'check-failed', platform };
+      }
+      applyLoginVisibility();
+      sendState();
+    });
+  }, 700);
+  if (loginCheckTimer && typeof loginCheckTimer.unref === 'function') loginCheckTimer.unref();
+}
+
+function ensureEmbeddedView() {
+  const host = mainHost();
+  if (!host) return null;
+  if (!view) {
+    view = new WebContentsView({
+      webPreferences: { session: siteSession(), contextIsolation: true, nodeIntegration: false, sandbox: true },
+    });
+    wireSiteView(view);
+  }
+  hostWindow = host;
+  const root = host.contentView;
+  if (root && typeof root.addChildView === 'function') {
+    const kids = typeof root.getChildViews === 'function' ? root.getChildViews() : [];
+    if (!kids.includes(view)) root.addChildView(view);
+  }
+  return view;
 }
 
 function setStatus(kind, text, extra) {
@@ -120,53 +393,14 @@ function setStatus(kind, text, extra) {
 }
 
 function layout() {
-  if (!win || !view) return;
+  // 旧独立窗布局，T2 不再走这条路径；登录小窗（T4）如需再用再接。
+  if (!win || !view || typeof win.getContentSize !== 'function') return;
   const [w, h] = win.getContentSize();
   view.setBounds({ x: 0, y: TOOLBAR_H, width: w, height: Math.max(0, h - TOOLBAR_H) });
 }
 
-function ensureWindow() {
-  if (win && !win.isDestroyed()) return win;
-  const parent = ctx.mainWindow();
-  const b = parent && !parent.isDestroyed() ? parent.getBounds() : { x: undefined, y: undefined };
-  win = new BrowserWindow({
-    width: 1280, height: 860, minWidth: 900, minHeight: 600,
-    x: b.x !== undefined ? b.x + 40 : undefined, y: b.y !== undefined ? b.y + 30 : undefined,
-    title: '找爆款', backgroundColor: '#ffffff',
-    webPreferences: { preload: path.join(__dirname, 'browse-preload.js'), contextIsolation: true, nodeIntegration: false },
-  });
-  win.loadFile(path.join(__dirname, 'browse.html'));
-  view = new WebContentsView({
-    webPreferences: { session: siteSession(), contextIsolation: true, nodeIntegration: false, sandbox: true },
-  });
-  win.contentView.addChildView(view);
-  layout();
-  win.on('resize', layout);
-  const wc = view.webContents;
-  // 页面里「新窗口打开」的链接（比如搜索结果点进详情）留在这个窗口里打开
-  wc.setWindowOpenHandler(({ url }) => {
-    if (/^https?:/.test(url)) wc.loadURL(url);
-    return { action: 'deny' };
-  });
-  for (const ev of ['did-start-loading', 'did-stop-loading', 'did-navigate', 'did-navigate-in-page', 'page-title-updated']) {
-    wc.on(ev, () => {
-      if (ev === 'did-navigate' && status.kind !== 'working') status = { kind: 'idle', text: '' };
-      sendState();
-    });
-  }
-  wc.on('did-fail-load', (_e, code, desc, url, isMain) => {
-    if (isMain && code !== -3) setStatus('error', `页面没打开（${desc}）。检查一下网络，点刷新再试`);
-  });
-  win.on('closed', () => {
-    if (view) mediaSeen.delete(view.webContents.id);
-    win = null; view = null; busy = false; status = { kind: 'idle', text: '' };
-  });
-  return win;
-}
-
-function open(opts) {
+function resolveOpenUrl(opts) {
   const o = opts || {};
-  ensureWindow();
   let url = '';
   if (o.url) url = urlFromShareText(o.url) || (/^https?:/.test(o.url) ? o.url : '');
   if (!url && o.keyword) {
@@ -175,12 +409,230 @@ function open(opts) {
     url = p.search(lastKeyword);
   }
   if (!url) url = (PLATFORMS[o.platform] || PLATFORMS.douyin).home;
-  if (!o.keyword) lastKeyword = '';
+  if (!o.keyword && !o.url) lastKeyword = '';
+  return url;
+}
+
+function open(opts) {
+  // T2：把平台页嵌进主窗口，复用 persist:find-viral；搜索 / 切 Tab 不再新建 BrowserWindow。
+  const host = mainHost();
+  if (!host) return { ok: false, error: '主窗口还没打开', newWindow: false, url: '' };
+  if (!ensureEmbeddedView()) return { ok: false, error: '没能挂上平台视图', newWindow: false, url: '' };
+  const url = resolveOpenUrl(opts);
+  const platform = platformOf(url) !== 'other' ? platformOf(url) : ((opts && opts.platform) || 'douyin');
+  detailActive = !!(opts && (opts.detail || (opts.url && isListPlatform(platform) && isDetailUrl(url))));
   status = { kind: 'idle', text: '' };
+  beginLoginCheck(platform);
+  applyLoginVisibility();
   view.webContents.loadURL(url);
-  win.show(); win.focus();
+  scheduleLoginCheck();
   sendState();
-  return { ok: true, url };
+  console.log('[browse] embed-load', JSON.stringify({ url, newWindow: false, partition: 'persist:find-viral', windowsCreated, loginChecking: true }));
+  return { ok: true, url, newWindow: false, partition: 'persist:find-viral', loginChecking: true };
+}
+
+function layoutEmbed(bounds) {
+  ensureEmbeddedView();
+  if (bounds) setEmbedVisible(false, bounds); // 先记下位置；未登录时保持隐藏，避免露出登录页
+  applyLoginVisibility();
+  return debugInfo();
+}
+
+function hideEmbed() {
+  if (!detailActive) setEmbedVisible(false);
+  else setEmbedVisible(false);
+  return debugInfo();
+}
+
+function loadUrl(wc, url, settleMs) {
+  if (!wc || typeof wc.loadURL !== 'function') {
+    return Promise.reject(new Error('后台搜索视图还没准备好，请重试'));
+  }
+  const waitForEvent = typeof wc.once === 'function';
+  const loading = new Promise((resolve, reject) => {
+    if (!waitForEvent) {
+      try { wc.loadURL(url); resolve(); } catch (err) { reject(err); }
+      return;
+    }
+    let settled = false;
+    const done = (err) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      if (err) reject(err);
+      else resolve();
+    };
+    const timer = setTimeout(() => done(new Error('搜索页加载超时，请重试')), 20000);
+    if (timer && typeof timer.unref === 'function') timer.unref();
+    wc.once('did-finish-load', () => done());
+    wc.once('did-fail-load', (_e, _code, desc) => done(new Error(desc || '搜索页打开失败，请重试')));
+    try { wc.loadURL(url); } catch (err) { done(err); }
+  });
+  const wait = Number(settleMs) > 0 ? sleep(settleMs) : Promise.resolve();
+  return loading.then(() => wait);
+}
+
+async function searchPlatform(opts) {
+  const platform = (opts && opts.platform && PLATFORMS[opts.platform]) ? opts.platform : 'douyin';
+  const keyword = String((opts && opts.keyword) || '').trim().slice(0, 60);
+  if (!keyword) return { ok: false, error: '先输入要找的行业或关键词，或者点下面的常用行业', items: [], platform };
+  if (!isListPlatform(platform)) return { ok: false, error: '这个平台本版本还没有列表搜索', items: [], platform };
+  if (!mainHost() || !ensureEmbeddedView()) return { ok: false, error: '还不能搜索，主窗口没准备好', items: [], platform };
+  lastKeyword = keyword;
+  detailActive = false;
+  applyLoginVisibility();
+  setStatus('working', '正在搜索…');
+  const url = PLATFORMS[platform].search(keyword);
+  const wc = view.webContents;
+  const settle = typeof wc.once === 'function' ? 2000 : 0;
+  try {
+    setHiddenWorkspace();
+    await loadUrl(wc, url, settle);
+    const login = await refreshLoginState();
+    if (!login.loggedIn) {
+      const error = '还没登录。请先点「去登录」，登录后再搜索。';
+      setStatus('error', error);
+      return { ok: false, loggedIn: false, error, failKind: 'not-logged-in', items: [], platform, keyword };
+    }
+    const pageUrlOf = () => (wc && typeof wc.getURL === 'function' ? wc.getURL() : url);
+    const isSearchUrl = (u) => {
+      const href = String(u || '');
+      if (platform === 'xiaohongshu') return /search_result|\/search/.test(href);
+      return /\/search\//.test(href);
+    };
+    const parseExtracted = (data) => {
+      if (!data || typeof data !== 'object') return { items: [], hasMore: false, pageUrl: pageUrlOf() };
+      if (Array.isArray(data.items)) return data;
+      return parseSearchPage(data, platform);
+    };
+    const takeItems = (parsed) => (parsed.items || []).filter((it) => it && it.url && (it.title || it.author || it.cover));
+    const emptyReason = (parsed, href, extractErr) => {
+      if (extractErr || !isSearchUrl(href)) {
+        return {
+          error: '搜索结果页还没出来。请重试；如果一直不行，可能是平台页打开失败。',
+          failKind: 'page-not-ready',
+        };
+      }
+      if (parsed && (parsed.hasVisibleResults || parsed.cardCount > 0 || parsed.jsonCount > 0)) {
+        return {
+          error: '这一页上看得到结果，但没能读出封面或标题。平台页面结构可能变了，可以重试。',
+          failKind: 'extract-miss',
+        };
+      }
+      return {
+        error: '这一页没读到搜索结果。当前搜索页上还没有可展示的条目，可以重试。',
+        failKind: 'empty',
+      };
+    };
+    const canWait = typeof wc.once === 'function';
+    const tries = canWait ? 8 : 1;
+    let parsed = { items: [], hasMore: false };
+    let items = [];
+    let lastErr = null;
+    for (let i = 0; i < tries; i++) {
+      if (i > 0) {
+        try {
+          await wc.executeJavaScript('window.scrollBy(0, Math.min(900, (document.body && document.body.scrollHeight) || 900));', true);
+        } catch (_) { /* 滚动只是为了触发懒加载，失败就再读一次 */ }
+        await sleep(700);
+      }
+      try {
+        const data = await Promise.race([
+          wc.executeJavaScript(EXTRACT_SEARCH, true),
+          sleep(15000).then(() => { throw new Error('搜索页没有响应，请重试'); }),
+        ]);
+        lastErr = null;
+        parsed = parseExtracted(data);
+        items = takeItems(parsed);
+        if (items.length) break;
+      } catch (err) {
+        lastErr = err;
+      }
+    }
+    if (!items.length) {
+      const fail = emptyReason(parsed, pageUrlOf(), lastErr);
+      setStatus('error', fail.error);
+      return { ok: false, error: fail.error, failKind: fail.failKind, items: [], platform, keyword, note: '目前只展示这一批', pageUrl: pageUrlOf() };
+    }
+    const note = parsed.hasMore ? '' : '目前只展示这一批';
+    setStatus('idle', '找到 ' + items.length + ' 条');
+    return { ok: true, items, hasMore: !!parsed.hasMore, platform, keyword, note };
+  } finally {
+    applyLoginVisibility();
+    sendState();
+  }
+}
+
+function probeLogin(opts) {
+  const platform = (opts && opts.platform && PLATFORMS[opts.platform]) ? opts.platform : 'douyin';
+  if (!mainHost()) return { ok: false, error: '主窗口还没打开', platform, newWindow: false };
+  if (!ensureEmbeddedView()) return { ok: false, error: '没能挂上后台视图', platform, newWindow: false };
+  detailActive = false;
+  beginLoginCheck(platform);
+  applyLoginVisibility();
+  view.webContents.loadURL(PLATFORMS[platform].home);
+  scheduleLoginCheck();
+  sendState();
+  return {
+    ok: true, platform, newWindow: false, partition: 'persist:find-viral',
+    loginChecking: !!(loginResult && loginResult.checking),
+    loggedIn: !!(loginResult && loginResult.loggedIn),
+  };
+}
+
+async function captureItem(opts) {
+  const raw = (opts && opts.url) || '';
+  const url = urlFromShareText(String(raw)) || (/^https?:/.test(String(raw)) ? String(raw) : '');
+  if (!url) {
+    const error = '没有这条的链接，没法同款';
+    setStatus('error', error);
+    return { ok: false, error };
+  }
+  if (!mainHost() || !ensureEmbeddedView()) {
+    const error = '还不能打开这条内容';
+    setStatus('error', error);
+    return { ok: false, error };
+  }
+  detailActive = !!(opts && opts.detail);
+  applyLoginVisibility();
+  setStatus('working', '正在打开这条视频…');
+  const wc = view.webContents;
+  const settle = typeof wc.once === 'function' ? 2500 : 0;
+  try {
+    await loadUrl(wc, url, settle);
+    await capture();
+    const st = status || {};
+    if (st.kind === 'error') return { ok: false, error: st.text };
+    return { ok: true, projectId: st.projectId };
+  } catch (err) {
+    const error = String((err && err.message) || err);
+    setStatus('error', error);
+    return { ok: false, error };
+  }
+}
+
+function senderAllowed(e) {
+  const main = mainHost();
+  const fromMain = main && e && e.sender === main.webContents;
+  const fromOldWin = win && e && e.sender === win.webContents;
+  return !!(fromMain || fromOldWin);
+}
+
+function runToolbar(action, arg) {
+  const wc = view && view.webContents;
+  if (!wc) return null;
+  const nav = wc.navigationHistory || wc;
+  if (action === 'back' && nav.canGoBack()) nav.goBack();
+  else if (action === 'forward' && nav.canGoForward()) nav.goForward();
+  else if (action === 'reload') wc.reload();
+  else if (action === 'home') wc.loadURL((PLATFORMS[arg] || PLATFORMS.douyin).home);
+  else if (action === 'search' && arg && arg.keyword) {
+    lastKeyword = String(arg.keyword).trim().slice(0, 60);
+    wc.loadURL((PLATFORMS[arg.platform] || PLATFORMS[platformOf(wc.getURL())] || PLATFORMS.douyin).search(lastKeyword));
+  } else if (action === 'capture') capture();
+  else if (action === 'show-project') showProject();
+  else if (action === 'state') sendState();
+  return statePayload() || true;
 }
 
 // ---------- 读当前页面 ----------
@@ -382,7 +834,10 @@ const REVEAL_COMMENTS = `(() => {
   }
   return true;
 })()`;
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const sleep = (ms) => new Promise((r) => {
+  const t = setTimeout(r, ms);
+  if (t && typeof t.unref === 'function') t.unref();
+});
 
 async function capture() {
   if (!view || busy) return;
@@ -393,10 +848,15 @@ async function capture() {
     const wc = view.webContents;
     const pageUrl = wc.getURL();
     const platform = platformOf(pageUrl);
+    let extractTimer;
     const info = await Promise.race([
       wc.executeJavaScript(EXTRACT, true),
-      new Promise((_, reject) => setTimeout(() => reject(new Error('页面没有响应，等它加载完再点一次「同款复刻」')), 15000)),
+      new Promise((_, reject) => {
+        extractTimer = setTimeout(() => reject(new Error('页面没有响应，等它加载完再点一次「同款复刻」')), 15000);
+        if (extractTimer && typeof extractTimer.unref === 'function') extractTimer.unref();
+      }),
     ]);
+    clearTimeout(extractTimer);
     if (!info.hasVideo && !(info.sources || []).length) {
       throw new Error('这一页没找到视频。先点开一条视频，看到它在播放了，再点「同款复刻」');
     }
@@ -455,25 +915,235 @@ function showProject() {
   }
 }
 
+function loginStartUrl(platform) {
+  if (platform === 'xiaohongshu') return 'https://www.xiaohongshu.com/login?redirectPath=%2Fexplore';
+  if (platform === 'bilibili') return 'https://passport.bilibili.com/login';
+  return (PLATFORMS[platform] || PLATFORMS.douyin).home;
+}
+
+function resolveLoginPlatform(opts) {
+  const o = opts || {};
+  if (o.platform && PLATFORMS[o.platform]) return o.platform;
+  if (loginResult && PLATFORMS[loginResult.platform]) return loginResult.platform;
+  if (view && view.webContents && typeof view.webContents.getURL === 'function') {
+    const p = platformOf(view.webContents.getURL());
+    if (PLATFORMS[p]) return p;
+  }
+  return 'douyin';
+}
+
+function abandonPendingAfterLogin() {
+  pendingAfterLogin = '';
+  const main = mainHost();
+  if (main && !main.isDestroyed()) sendTo(main.webContents, 'browse:login-closed', {});
+}
+
+function closeLoginWindow() {
+  loginWatchGen += 1;
+  clearTimeout(loginWatchTimer);
+  loginWatchTimer = null;
+  const w = loginWin;
+  loginWin = null;
+  if (w && (typeof w.isDestroyed !== 'function' || !w.isDestroyed()) && typeof w.close === 'function') {
+    try { w.close(); } catch (e) { abandonPendingAfterLogin(); }
+  } else {
+    abandonPendingAfterLogin();
+  }
+}
+
+function notifyLoggedIn(payload) {
+  const main = mainHost();
+  if (main && !main.isDestroyed()) sendTo(main.webContents, 'browse:logged-in', payload);
+}
+
+async function onLoginSuccess(platform) {
+  // 小窗已经判定成功：立刻发短确认并关窗。不要等内嵌区二次加载后再提示，
+  // 否则个人入口还没出现时窗已关、提示也出不来。
+  const name = (PLATFORMS[platform] || PLATFORMS.douyin).name;
+  const text = `已登录${name}，下面是你的内容`;
+  setStatus('done', text);
+  const next = pendingAfterLogin;
+  pendingAfterLogin = '';
+  const payload = { platform, text };
+  if (next) payload.afterUrl = next;
+  notifyLoggedIn(payload);
+  closeLoginWindow();
+  loginResult = { loggedIn: true, checking: isListPlatform(platform) ? false : true, reason: 'login-window', platform };
+  rememberSessionLogin(platform, true);
+  if (isListPlatform(platform)) {
+    detailActive = !!next;
+    holdVisibleAfterLogin = !!next;
+    const dest = next || (PLATFORMS[platform] || PLATFORMS.douyin).home;
+    if (view && view.webContents && typeof view.webContents.loadURL === 'function') {
+      view.webContents.loadURL(dest);
+    }
+    applyLoginVisibility();
+    sendState();
+    if (next) scheduleLoginCheck();
+    return { loggedIn: true, checking: false, platform, reason: 'login-window', afterUrl: next || '' };
+  }
+  const dest = next || (PLATFORMS[platform] || PLATFORMS.douyin).home;
+  const hold = !!next;
+  if (hold) {
+    holdVisibleAfterLogin = true;
+    loginResult = { loggedIn: true, checking: false, reason: 'login-window', platform };
+    applyLoginVisibility();
+    sendState();
+  }
+  if (view && view.webContents && typeof view.webContents.loadURL === 'function') {
+    view.webContents.loadURL(dest);
+  }
+  if (!hold) {
+    loginResult = { loggedIn: false, checking: true, reason: 'pending', platform };
+    applyLoginVisibility();
+    sendState();
+  }
+  scheduleLoginCheck();
+  return { loggedIn: true, checking: true, platform, reason: 'login-window' };
+}
+
+async function checkLoginWindow(platform) {
+  if (!loginWin || (typeof loginWin.isDestroyed === 'function' && loginWin.isDestroyed())) return null;
+  const wc = loginWin.webContents;
+  const url = wc && typeof wc.getURL === 'function' ? wc.getURL() : '';
+  const detected = platformOf(url);
+  const p = PLATFORMS[detected] ? detected : (platform || 'douyin');
+  let page = { url };
+  const src = INSPECT[p];
+  if (src && wc && typeof wc.executeJavaScript === 'function') {
+    try {
+      const collected = await Promise.race([
+        wc.executeJavaScript(src, true),
+        sleep(3000).then(() => null),
+      ]);
+      if (collected && typeof collected === 'object') page = { url, ...collected };
+    } catch (e) { /* 判定不准就继续当未登录，保持窗口 */ }
+  }
+  const result = detectLogin(p, page);
+  if (result.loggedIn) return onLoginSuccess(p);
+  return result;
+}
+
+function scheduleLoginWinCheck(platform) {
+  const gen = ++loginWatchGen;
+  const tick = () => {
+    if (gen !== loginWatchGen) return;
+    if (!loginWin || (typeof loginWin.isDestroyed === 'function' && loginWin.isDestroyed())) return;
+    checkLoginWindow(platform).catch(() => {}).finally(() => {
+      if (gen !== loginWatchGen) return;
+      if (loginWin && (typeof loginWin.isDestroyed !== 'function' || !loginWin.isDestroyed())) {
+        loginWatchTimer = setTimeout(tick, 700);
+        if (loginWatchTimer && typeof loginWatchTimer.unref === 'function') loginWatchTimer.unref();
+      }
+    });
+  };
+  clearTimeout(loginWatchTimer);
+  loginWatchTimer = setTimeout(tick, 700);
+  if (loginWatchTimer && typeof loginWatchTimer.unref === 'function') loginWatchTimer.unref();
+}
+
+function rememberAfterLoginUrl(opts) {
+  const raw = opts && opts.afterUrl;
+  if (!raw) {
+    pendingAfterLogin = '';
+    return;
+  }
+  const url = urlFromShareText(String(raw)) || (/^https?:/.test(String(raw)) ? String(raw) : '');
+  pendingAfterLogin = url || '';
+}
+
+function startLogin(opts) {
+  // T4：点「去登录」才新开小窗，只承担登录，不带搜索和同款。分区与内嵌区相同，登完 cookie 才能带到首页。
+  // T6：未登录打开分享链接时带 afterUrl，登完在内嵌区打开该链接，而不是只回平台首页。
+  rememberAfterLoginUrl(opts);
+  const id = resolveLoginPlatform(opts);
+  const url = loginStartUrl(id);
+  if (loginWin && (typeof loginWin.isDestroyed !== 'function' || !loginWin.isDestroyed())) {
+    const wc = loginWin.webContents;
+    if (wc && typeof wc.loadURL === 'function') wc.loadURL(url);
+    if (typeof loginWin.focus === 'function') loginWin.focus();
+    if (typeof loginWin.setTitle === 'function') loginWin.setTitle('登录' + PLATFORMS[id].name);
+    scheduleLoginWinCheck(id);
+    return { ok: true, reused: true, platform: id, url, newWindow: false, partition: 'persist:find-viral', windowsCreated };
+  }
+  const host = mainHost();
+  loginWin = new BrowserWindow({
+    width: 480,
+    height: 720,
+    title: '登录' + PLATFORMS[id].name,
+    parent: host || undefined,
+    autoHideMenuBar: true,
+    show: true,
+    webPreferences: {
+      session: siteSession(),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+    },
+  });
+  windowsCreated += 1;
+  const opened = loginWin;
+  if (typeof opened.on === 'function') {
+    opened.on('closed', () => {
+      if (loginWin === opened) {
+        loginWin = null;
+        loginWatchGen += 1;
+        clearTimeout(loginWatchTimer);
+        loginWatchTimer = null;
+      }
+      // 未登录成功就关掉：清掉待打开链接，避免下次「去登录」仍打开旧分享页
+      abandonPendingAfterLogin();
+    });
+  }
+  const wc = opened.webContents;
+  if (wc && typeof wc.setWindowOpenHandler === 'function') {
+    wc.setWindowOpenHandler(({ url: next }) => {
+      if (/^https?:/.test(next)) wc.loadURL(next);
+      return { action: 'deny' };
+    });
+  }
+  if (wc) {
+    for (const ev of ['did-stop-loading', 'did-navigate', 'did-navigate-in-page']) {
+      if (typeof wc.on === 'function') wc.on(ev, () => scheduleLoginWinCheck(id));
+    }
+    if (typeof wc.loadURL === 'function') wc.loadURL(url);
+  }
+  scheduleLoginWinCheck(id);
+  console.log('[browse] start-login', JSON.stringify({ url, platform: id, newWindow: true, partition: 'persist:find-viral', windowsCreated }));
+  return { ok: true, reused: false, platform: id, url, newWindow: true, partition: 'persist:find-viral', windowsCreated };
+}
+
 function register() {
   ipcMain.handle('browse:open', (_e, opts) => open(opts));
+  ipcMain.handle('browse:layout', (_e, bounds) => layoutEmbed(bounds));
+  ipcMain.handle('browse:hide', () => hideEmbed());
+  ipcMain.handle('browse:debug', () => debugInfo());
   ipcMain.handle('browse:toolbar', (e, action, arg) => {
-    if (!win || e.sender !== win.webContents) return null;
-    const wc = view && view.webContents;
-    if (!wc) return null;
-    const nav = wc.navigationHistory || wc;
-    if (action === 'back' && nav.canGoBack()) nav.goBack();
-    else if (action === 'forward' && nav.canGoForward()) nav.goForward();
-    else if (action === 'reload') wc.reload();
-    else if (action === 'home') wc.loadURL((PLATFORMS[arg] || PLATFORMS.douyin).home);
-    else if (action === 'search' && arg && arg.keyword) {
-      lastKeyword = String(arg.keyword).trim().slice(0, 60);
-      wc.loadURL((PLATFORMS[arg.platform] || PLATFORMS[platformOf(wc.getURL())] || PLATFORMS.douyin).search(lastKeyword));
-    } else if (action === 'capture') capture();
-    else if (action === 'show-project') showProject();
-    else if (action === 'state') sendState();
-    return true;
+    if (!senderAllowed(e)) return null;
+    return runToolbar(action, arg);
+  });
+  ipcMain.handle('browse:startLogin', (e, opts) => {
+    if (!senderAllowed(e)) return null;
+    return startLogin(opts);
+  });
+  ipcMain.handle('browse:search', (e, opts) => {
+    if (!senderAllowed(e)) return null;
+    return searchPlatform(opts);
+  });
+  ipcMain.handle('browse:probeLogin', (e, opts) => {
+    if (!senderAllowed(e)) return null;
+    return probeLogin(opts);
+  });
+  ipcMain.handle('browse:captureItem', (e, opts) => {
+    if (!senderAllowed(e)) return null;
+    return captureItem(opts);
   });
 }
 
-module.exports = { mediaSeen, init, register, open, capture, platformOf, urlFromShareText, chooseMedia, PLATFORMS, EXTRACT };
+module.exports = {
+  mediaSeen, init, register, open, capture, platformOf, urlFromShareText, chooseMedia,
+  PLATFORMS, EXTRACT, debugInfo, layoutEmbed, hideEmbed, runToolbar, resolveOpenUrl,
+  refreshLoginState, detectLogin, startLogin, checkLoginWindow, closeLoginWindow, loginStartUrl,
+  resetSessionLogin, isListPlatform, searchPlatform, probeLogin, captureItem, EXTRACT_SEARCH,
+  HIDDEN_WORKSPACE,
+};

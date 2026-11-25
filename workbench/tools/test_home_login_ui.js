@@ -1,0 +1,306 @@
+/* T3 登录空态：未登录只出示说明和「去登录」，不自动弹窗；已登录才露出嵌入区。离线 DOM。 */
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const vm = require('node:vm');
+const {createDocument, Node} = require('./ui_test_dom');
+for (const property of ['hidden', 'disabled']) Object.defineProperty(Node.prototype, property, {
+  get() { return this.hasAttribute(property); },
+  set(value) { value ? this.setAttribute(property, '') : this.removeAttribute(property); },
+  configurable: true,
+});
+Node.prototype.showModal = function () { this.setAttribute('open', ''); this.open = true; };
+Node.prototype.close = function () {
+  this.removeAttribute('open');
+  this.open = false;
+  const ev = { type: 'close', target: this };
+  (this._listeners?.close || []).forEach((fn) => fn(ev));
+};
+Node.prototype.getBoundingClientRect = function () {
+  const id = this.id || (typeof this.getAttribute === 'function' ? this.getAttribute('id') : '');
+  if (id === 'fvEmbed') return { left: 24, top: 280, right: 1000, bottom: 700, width: 976, height: 420 };
+  return { left: 0, top: 0, right: 0, bottom: 0, width: 0, height: 0 };
+};
+const origAdd = Node.prototype.addEventListener;
+Node.prototype.addEventListener = function (name, fn) {
+  (this._listeners ||= {})[name] ||= [];
+  this._listeners[name].push(fn);
+  if (typeof origAdd === 'function') origAdd.call(this, name, fn);
+};
+
+const root = path.resolve(__dirname, '..');
+const appSrc = fs.readFileSync(path.join(root, 'web/app.js'), 'utf8');
+const flowSrc = fs.readFileSync(path.join(root, 'web/flow.js'), 'utf8');
+const page = fs.readFileSync(path.join(root, 'web/index.html'), 'utf8');
+const response = (data, code = 200) => ({ok: code < 400, status: code, statusText: 'OK', json: async () => structuredClone(data), text: async () => JSON.stringify(data)});
+
+async function setup({desktop = true, seen = true} = {}) {
+  const document = createDocument(), events = {}, storage = new Map();
+  const classNames = (node) => (node.getAttribute('class') || '').trim().split(/\s+/).filter(Boolean);
+  document.body.classList = {
+    add(c) { document.body.setAttribute('class', [...new Set([...classNames(document.body), c])].join(' ')); },
+    remove(c) { document.body.setAttribute('class', classNames(document.body).filter((x) => x !== c).join(' ')); },
+    contains(c) { return classNames(document.body).includes(c); },
+    toggle(c, force) {
+      const on = force === undefined ? !this.contains(c) : !!force;
+      on ? this.add(c) : this.remove(c);
+      return on;
+    },
+  };
+  if (seen) storage.set('vrc.aboutAutoSeen', '1');
+  document.body.innerHTML = page.replace(/<!doctype[^>]*>/gi, '').replace(/<script[\s\S]*?<\/script>/g, '');
+  document.addEventListener = (name, fn) => (events[name] ||= []).push(fn);
+  const opens = [], layouts = [], windowOpens = [], probes = [], searches = [], captures = [];
+  let hidden = 0, startLogin = 0;
+  const startLoginOpts = [];
+  const browseMock = desktop ? {
+    available: true,
+    open(opts) {
+      opens.push({...opts});
+      const url = opts.url || (opts.keyword
+        ? `https://www.douyin.com/search/${encodeURIComponent(opts.keyword)}?type=video`
+        : 'https://www.douyin.com/');
+      return Promise.resolve({ok: true, url, newWindow: false, partition: 'persist:find-viral', loginChecking: true});
+    },
+    layout(b) { layouts.push(b); return Promise.resolve(true); },
+    hide() { hidden += 1; return Promise.resolve(true); },
+    act() { return Promise.resolve(true); },
+    startLogin(opts) { startLogin += 1; startLoginOpts.push(opts || {}); },
+    probeLogin(opts) { probes.push({...(opts || {})}); return Promise.resolve({ok: true, platform: (opts && opts.platform) || 'douyin', loginChecking: true, loggedIn: false}); },
+    search(opts) {
+      searches.push({...opts});
+      return Promise.resolve({ok: true, items: [{id: '1', url: 'https://www.douyin.com/video/1', title: '长沙烤鱼探店', cover: 'https://example.com/c.jpg'}], note: '目前只展示这一批', platform: opts.platform, keyword: opts.keyword});
+    },
+    captureItem(opts) { captures.push({...opts}); return Promise.resolve({ok: true, projectId: 'p-new'}); },
+    onState(cb) { this._onState = cb; },
+    onLoggedIn(cb) { this._onLoggedIn = cb; },
+    onLoginClosed(cb) { this._onLoginClosed = cb; },
+    onImported(cb) { this._onImported = cb; },
+  } : undefined;
+  const windowObj = {
+    scrollTo() {}, addEventListener() {}, innerWidth: 1280, innerHeight: 800,
+    __browse: browseMock, open(...args) { windowOpens.push(args); }, localStorage: null,
+  };
+  const localStorage = {
+    getItem: (key) => storage.get(key) ?? null,
+    setItem: (key, value) => storage.set(key, String(value)),
+    removeItem: (key) => storage.delete(key),
+  };
+  windowObj.localStorage = localStorage;
+  const context = vm.createContext({
+    document, console, structuredClone, window: windowObj, localStorage,
+    setTimeout() { return 1; }, clearTimeout() {},
+    fetch: async (url, options = {}) => {
+      const route = String(url).replace(/^\/api\//, ''), method = options.method || 'GET';
+      if (method === 'GET' && route === 'status') return response({providers: {}, default_llm: '', runtime: {}, ffmpeg: true, asr: true});
+      if (method === 'GET' && route === 'projects') return response([]);
+      throw Error('Unexpected offline request: ' + method + ' ' + route);
+    },
+    URL, URLSearchParams, JSON, Error, Date, Math, Number, String, Boolean, Array, Object, Map, Set, Promise,
+    encodeURIComponent, decodeURIComponent, parseInt, parseFloat, isNaN, undefined,
+  });
+  context.window = windowObj;
+  context.globalThis = context;
+  const run = (code) => vm.runInContext(code, context);
+  const $ = (selector) => document.querySelector(selector);
+  const bootAt = appSrc.lastIndexOf('boot().catch');
+  run(appSrc.slice(0, bootAt));
+  run(flowSrc);
+  await run('boot()');
+  await Promise.resolve();
+  await Promise.resolve();
+  const click = async (el) => {
+    for (const fn of events.click || []) await fn({target: el, preventDefault() {}, stopPropagation() {}});
+    await Promise.resolve();
+  };
+  const submit = async (el) => {
+    for (const fn of events.submit || []) await fn({target: el, preventDefault() {}, stopPropagation() {}});
+    await Promise.resolve();
+  };
+  const emitState = (s) => { if (browseMock && browseMock._onState) browseMock._onState(s); };
+  return {run, $, document, storage, click, submit, opens, layouts, windowOpens, probes, searches, captures, hidden: () => hidden, startLogin: () => startLogin, startLoginOpts, emitLoggedIn: (s) => { if (browseMock && browseMock._onLoggedIn) browseMock._onLoggedIn(s); }, emitLoginClosed: () => { if (browseMock && browseMock._onLoginClosed) browseMock._onLoginClosed(); }, emitState, browse: browseMock};
+}
+
+const tests = [], test = (name, fn) => tests.push([name, fn]);
+const flush = async () => { await Promise.resolve(); await Promise.resolve(); await Promise.resolve(); };
+
+test('桌面版刚打开先确认登录态，不出现「去登录」，也不自动弹窗', async () => {
+  const t = await setup();
+  assert.equal(t.$('#fvLoginEmpty').hidden, false);
+  assert.match(t.$('#fvLoginCopy').textContent, /正在确认登录状态/);
+  assert.equal(t.$('#fvLoginBtn').hidden, true);
+  assert.equal(t.windowOpens.length, 0);
+  assert.equal(t.startLogin(), 0);
+});
+
+test('判定为未登录时只出空态和「去登录」，并把嵌入视图藏起来', async () => {
+  const t = await setup();
+  const hiddenBefore = t.hidden();
+  t.emitState({url: 'https://www.douyin.com/', loggedIn: false, loginChecking: false, loginReason: 'header-login', canBack: false, canForward: false});
+  assert.equal(t.$('#fvLoginEmpty').hidden, false);
+  assert.match(t.$('#fvLoginCopy').textContent, /登录后能直接刷到你平时看的内容，不用再复制链接/);
+  assert.equal(t.$('#fvLoginBtn').hidden, false);
+  assert.equal(t.$('#fvLoginBtn').textContent, '去登录');
+  assert.ok(t.hidden() > hiddenBefore, '未登录应 hide 原生视图，避免露出平台登录页');
+  assert.equal(t.startLogin(), 0, '判定未登录时不得自动去登录');
+  assert.equal(t.windowOpens.length, 0);
+});
+
+test('点「去登录」在尚未接上登录窗时不会自己开窗口', async () => {
+  const t = await setup();
+  t.emitState({url: 'https://www.douyin.com/', loggedIn: false, loginChecking: false, canBack: false, canForward: false});
+  delete t.browse.startLogin;
+  await t.click(t.$('#fvLoginBtn'));
+  assert.equal(t.windowOpens.length, 0);
+  assert.equal(t.opens.filter((o) => o && o.login).length, 0);
+});
+
+test('已登录时收起空态，按默认分类自动搜索，不露出平台网站', async () => {
+  const t = await setup();
+  t.emitState({url: 'https://www.douyin.com/', loggedIn: false, loginChecking: false, canBack: false, canForward: false});
+  t.emitState({url: 'https://www.douyin.com/', loggedIn: true, loginChecking: false, loginReason: 'user-self', canBack: false, canForward: false});
+  await flush();
+  assert.equal(t.$('#fvLoginEmpty').hidden, true);
+  assert.equal(t.$('#fvLoginBtn').hidden, true);
+  assert.equal(t.$('#fvEmbed').hidden, true, '列表态不应露出平台页');
+  assert.ok(t.searches.length >= 1, '已登录进入 Tab 应自动搜索');
+  assert.match(t.searches.at(-1).keyword, /餐饮美食/);
+  assert.equal(t.$('#fvResults').hidden, false);
+  assert.match(t.$('#fvResults').textContent, /同款/);
+  assert.match(t.$('#fvResults').textContent, /长沙烤鱼探店/);
+});
+
+test('判定不准（checking 结束但仍未确认）也当成未登录', async () => {
+  const t = await setup();
+  t.emitState({url: 'https://www.bilibili.com/', loggedIn: false, loginChecking: false, loginReason: 'uncertain', canBack: false, canForward: false});
+  assert.equal(t.$('#fvLoginEmpty').hidden, false);
+  assert.equal(t.$('#fvLoginBtn').hidden, false);
+});
+
+test('浏览器打开工作台没有去登录空态，也不承诺内嵌登录', async () => {
+  const t = await setup({desktop: false});
+  assert.equal(t.$('#fvLoginEmpty'), null);
+  assert.equal(t.$('#fvLoginBtn'), null);
+});
+
+test('点「去登录」会请主进程开登录页，不自己 window.open', async () => {
+  const t = await setup();
+  t.emitState({url: 'https://www.douyin.com/', loggedIn: false, loginChecking: false, canBack: false, canForward: false});
+  await t.click(t.$('#fvLoginBtn'));
+  assert.equal(t.startLogin(), 1);
+  assert.equal(t.startLoginOpts[0].platform, 'douyin');
+  assert.equal(t.windowOpens.length, 0);
+});
+
+test('登录成功后出现一句短确认', async () => {
+  const t = await setup();
+  t.emitLoggedIn({platform: 'douyin', text: '已登录抖音，下面是你的内容'});
+  assert.match(t.$('#toast').textContent, /已登录抖音，下面是你的内容/);
+  assert.ok(!/\berr\b/.test(t.$('#toast').className));
+});
+
+test('已登录且还没做过同款时出现可关闭的轻提示，关掉后不再出现', async () => {
+  const t = await setup();
+  assert.equal(t.$('#fvCaptureHint').hidden, true, '未确认登录时先不出现轻提示');
+  t.emitState({url: 'https://www.douyin.com/', loggedIn: false, loginChecking: false, canBack: false, canForward: false});
+  assert.equal(t.$('#fvCaptureHint').hidden, true, '未登录不出现轻提示');
+  t.emitState({url: 'https://www.douyin.com/', loggedIn: true, loginChecking: false, loginReason: 'user-self', canBack: false, canForward: false});
+  assert.equal(t.$('#fvCaptureHint').hidden, false);
+  assert.match(t.$('#fvCaptureHint').textContent, /看中了就点同款，会自动拆给你看/);
+  await t.click(t.$('[data-fv-hint-close]'));
+  assert.equal(t.$('#fvCaptureHint').hidden, true);
+  assert.equal(t.storage.get('vrc.fvCaptureHintDismissed'), '1');
+  t.emitState({url: 'https://www.douyin.com/', loggedIn: true, loginChecking: false, canBack: false, canForward: false});
+  assert.equal(t.$('#fvCaptureHint').hidden, true, '关掉后不再出现');
+});
+
+test('成功做过同款后不再出现轻提示', async () => {
+  const t = await setup();
+  t.emitState({url: 'https://www.douyin.com/', loggedIn: true, loginChecking: false, canBack: false, canForward: false});
+  assert.equal(t.$('#fvCaptureHint').hidden, false);
+  try { await t.browse._onImported({ id: 'p-new', name: '长沙烤鱼' }); } catch (_) { /* 本用例只验提示，不接打开项目接口 */ }
+  await Promise.resolve();
+  assert.equal(t.storage.get('vrc.fvCaptureDone'), '1');
+  assert.equal(t.$('#fvCaptureHint').hidden, true);
+  t.emitState({url: 'https://www.douyin.com/', loggedIn: true, loginChecking: false, canBack: false, canForward: false});
+  assert.equal(t.$('#fvCaptureHint').hidden, true, '成功做过同款后不再出现');
+});
+
+test('已登录时分享链接在首页内容区打开，不新开浏览窗口', async () => {
+  const t = await setup();
+  t.emitState({url: 'https://www.douyin.com/', loggedIn: true, loginChecking: false, canBack: false, canForward: false});
+  const opensBefore = t.opens.length;
+  t.$('#fvLink').value = '看这条 https://www.douyin.com/video/123 复制';
+  await t.submit(t.$('[data-fv-link]'));
+  assert.equal(t.opens.length, opensBefore + 1);
+  assert.equal(t.opens.at(-1).url, 'https://www.douyin.com/video/123');
+  assert.equal(t.startLogin(), 0, '已登录不应再去登录');
+  assert.equal(t.windowOpens.length, 0);
+  assert.equal(t.$('#fvLink').value, '');
+});
+
+test('未登录打开分享链接时先去登录，不在隐藏视图里加载', async () => {
+  const t = await setup();
+  t.emitState({url: 'https://www.douyin.com/', loggedIn: false, loginChecking: false, canBack: false, canForward: false});
+  const opensBefore = t.opens.length;
+  t.$('#fvLink').value = 'https://www.xiaohongshu.com/explore/66aa';
+  await t.submit(t.$('[data-fv-link]'));
+  assert.equal(t.opens.length, opensBefore, '未登录不得在隐藏视图里打开链接');
+  assert.equal(t.startLogin(), 1);
+  assert.equal(t.startLoginOpts[0].platform, 'xiaohongshu');
+  assert.equal(t.startLoginOpts[0].afterUrl, 'https://www.xiaohongshu.com/explore/66aa');
+  assert.equal(t.windowOpens.length, 0);
+  assert.equal(t.$('#fvLink').value, '');
+});
+
+test('未成功登录就关掉后，再点「去登录」不再带上旧分享链接', async () => {
+  const t = await setup();
+  t.emitState({url: 'https://www.douyin.com/', loggedIn: false, loginChecking: false, canBack: false, canForward: false});
+  t.$('#fvLink').value = 'https://www.douyin.com/video/888';
+  await t.submit(t.$('[data-fv-link]'));
+  assert.equal(t.startLoginOpts[0].afterUrl, 'https://www.douyin.com/video/888');
+  t.emitLoginClosed();
+  await t.click(t.$('[data-fv-login]'));
+  assert.equal(t.startLogin(), 2);
+  assert.ok(!t.startLoginOpts[1].afterUrl, '关窗后不应再带上旧分享链接');
+});
+
+test('已确认登录后再检查：保持列表可见，不铺正在确认登录状态', async () => {
+  const t = await setup();
+  t.emitState({url: 'https://www.douyin.com/', loggedIn: true, loginChecking: false, loginReason: 'user-self', canBack: false, canForward: false});
+  await flush();
+  t.emitState({url: 'https://www.douyin.com/', loggedIn: true, loginChecking: true, loading: true, canBack: false, canForward: false});
+  assert.equal(t.$('#fvLoginEmpty').hidden, true);
+  assert.equal(t.$('#fvLoginBtn').hidden, true);
+  assert.doesNotMatch(t.$('#fvStatus').textContent, /正在确认登录状态/);
+  assert.equal(t.$('#fvResults').hidden, false);
+});
+
+test('已确认未登录再切回：直接出去登录，不闪正在确认', async () => {
+  const t = await setup();
+  t.emitState({url: 'https://www.xiaohongshu.com/explore', loggedIn: false, loginChecking: false, loginReason: 'header-login', canBack: false, canForward: false});
+  t.emitState({url: 'https://www.xiaohongshu.com/explore', loggedIn: false, loginChecking: false, loginReason: 'session-out', canBack: false, canForward: false});
+  assert.equal(t.$('#fvLoginEmpty').hidden, false);
+  assert.equal(t.$('#fvLoginBtn').hidden, false);
+  assert.equal(t.$('#fvLoginBtn').textContent, '去登录');
+  assert.match(t.$('#fvLoginCopy').textContent, /登录后能直接刷到你平时看的内容，不用再复制链接/);
+  assert.doesNotMatch(t.$('#fvLoginCopy').textContent, /正在确认登录状态/);
+});
+
+test('从未确认过的平台仍可显示正在确认登录状态', async () => {
+  const t = await setup();
+  t.emitState({url: 'https://www.bilibili.com/', loggedIn: false, loginChecking: true, canBack: false, canForward: false});
+  assert.equal(t.$('#fvLoginEmpty').hidden, false);
+  assert.match(t.$('#fvLoginCopy').textContent, /正在确认登录状态/);
+  assert.equal(t.$('#fvLoginBtn').hidden, true);
+});
+
+(async () => {
+  let failed = 0;
+  for (const [name, fn] of tests) {
+    try { await fn(); console.log('PASS ' + name); }
+    catch (error) { failed++; console.error('FAIL ' + name + '\n' + error.stack); }
+  }
+  assert.equal(failed, 0, `${failed} home-login scenarios failed`);
+  console.log(`Home login UI: ${tests.length} scenarios passed`);
+})().catch((error) => { console.error(error); process.exitCode = 1; });

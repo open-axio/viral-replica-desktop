@@ -166,6 +166,51 @@ def data_root(root):
     return Path(env).expanduser() if env else Path(root)
 
 
+VERSION_STAMP = re.compile(r'^(\d{8})-(\d{4})$')
+FORMAL_RELEASE_ASSET = re.compile(r'\.(dmg|exe|zip)$', re.I)
+RELEASES_API = f'https://api.github.com/repos/{REPOSITORY}/releases?per_page=10'
+RELEASES_PAGE = f'https://github.com/{REPOSITORY}/releases'
+
+
+def version_stamp(value):
+    match = VERSION_STAMP.fullmatch(str(value or '').strip())
+    return (match.group(1), match.group(2)) if match else None
+
+
+def is_newer_version(remote, current):
+    """远端版本是否高于当前。YYYYMMDD-HHMM 按时间先后比；两边都不是这种格式时，字面值不同才视为可更新。"""
+    remote_stamp = version_stamp(remote)
+    current_stamp = version_stamp(current)
+    if remote_stamp and current_stamp:
+        return remote_stamp > current_stamp
+    remote_text = str(remote or '').strip()
+    current_text = str(current or '').strip()
+    if not remote_text or remote_text == current_text:
+        return False
+    return True
+
+
+def parse_has_formal_release(raw):
+    try:
+        releases = json.loads(raw.decode('utf-8') if isinstance(raw, (bytes, bytearray)) else raw)
+    except (TypeError, ValueError, json.JSONDecodeError, UnicodeDecodeError):
+        return False
+    if not isinstance(releases, list):
+        return False
+    for release in releases:
+        if not isinstance(release, dict):
+            continue
+        if release.get('draft') or release.get('prerelease'):
+            continue
+        for asset in release.get('assets') or []:
+            if not isinstance(asset, dict):
+                continue
+            name = str(asset.get('name') or '')
+            if FORMAL_RELEASE_ASSET.search(name) and asset.get('browser_download_url'):
+                return True
+    return False
+
+
 def code_update_blocker(root):
     """代码目录不能原地改写时返回原因，能改写就返回空串。
 
@@ -175,10 +220,31 @@ def code_update_blocker(root):
     """
     root = Path(root).resolve()
     if '.app/Contents/' in root.as_posix():
-        return '桌面版的程序代码装在应用内部，原地改写会破坏 macOS 签名。请到 Releases 下载新版安装包。'
+        return '桌面版的程序代码装在应用内部，原地改写会破坏 macOS 签名。'
     if not os.access(root, os.W_OK):
-        return '程序目录没有写权限，无法原地更新。请下载新版安装包。'
+        return '程序目录没有写权限，无法原地更新。'
     return ''
+
+
+def update_unavailable_message(root, *, has_formal_release=False):
+    if not code_update_blocker(root):
+        return ''
+    text = '可以继续用当前这个安装包。应用内不能改程序代码。'
+    if has_formal_release:
+        text += '请到 Releases 下载新版安装包。'
+    return text
+
+
+def local_version(root, manifest=None):
+    version_file = Path(root) / 'VERSION'
+    if version_file.is_file():
+        text = version_file.read_text(encoding='utf-8').strip()
+        if text:
+            return text
+    if isinstance(manifest, dict) and manifest.get('version'):
+        return str(manifest['version']).strip()
+    return ''
+
 
 
 def state_dir(root):
@@ -410,6 +476,7 @@ class Updater:
         self.phase = 'idle'
         self.message = ''
         self.release = None
+        self.has_formal_release = False
 
     def status(self):
         with self.lock:
@@ -419,6 +486,8 @@ class Updater:
                     'can_rollback': (self.root / 'runtime/updates/latest.json').exists(),
                     # 当前版本这次更新了什么（更新完刷新后给用户看）
                     'current_notes': [e for e in read_changelog(self.root / CHANGELOG) if e['version'] == version][:1],
+                    'can_update_in_place': not bool(code_update_blocker(self.root)),
+                    'has_formal_release': bool(self.has_formal_release),
                     'available': {'sha': self.release['sha'], 'version': self.release['manifest']['version'],
                                   'notes': self.release.get('notes') or []}
                     if self.release else None}
@@ -452,14 +521,30 @@ class Updater:
                 f'https://raw.githubusercontent.com/{REPOSITORY}/{sha}/{SUBDIR}{MANIFEST}', 2_000_000,
                 timeout=deadline - time.monotonic())))
             current = read_json(self.root / MANIFEST)
+            current_ver = local_version(self.root, current)
+            remote_ver = str(manifest.get('version') or '')
+            same_manifest = current == manifest
+            newer = (not same_manifest) and is_newer_version(remote_ver, current_ver)
+            blocker = code_update_blocker(self.root)
+            has_formal = False
+            if newer and blocker:
+                try:
+                    raw = download(RELEASES_API, 2_000_000, timeout=max(0.1, deadline - time.monotonic()))
+                    has_formal = parse_has_formal_release(raw)
+                except Exception:
+                    has_formal = False
+            notes = self._remote_notes(sha, deadline) if newer and not blocker else []
             with self.lock:
-                if current == manifest:
-                    self.message = '当前已是最新发布版本。'
+                self.has_formal_release = has_formal
+                if not newer:
+                    self.release = None
+                    self.message = '当前已是最新发布版本。' if same_manifest else '当前已是可用版本。'
+                elif blocker:
+                    self.release = None
+                    self.message = update_unavailable_message(self.root, has_formal_release=has_formal)
                 else:
-                    self.release = {'sha': sha, 'manifest': manifest, 'notes': self._remote_notes(sha, deadline)}
-                    blocker = code_update_blocker(self.root)
-                    self.message = ('发现新版本 ' + manifest['version'] + '。' + blocker) if blocker \
-                        else '发现新版本，只更新程序代码。'
+                    self.release = {'sha': sha, 'manifest': manifest, 'notes': notes}
+                    self.message = '发现新版本，只更新程序代码。'
                 self.phase = 'idle'
         except Exception as exc:
             with self.lock: self.phase, self.message = 'error', str(exc)
@@ -479,7 +564,8 @@ class Updater:
     def start(self, sha='', *, busy=lambda: False, validate=lambda: '', rollback_only=False, restart=True):
         blocker = code_update_blocker(self.root)
         if blocker:
-            raise UpdateError(blocker)
+            raise UpdateError(update_unavailable_message(
+                self.root, has_formal_release=bool(getattr(self, 'has_formal_release', False))))
         with self.lock:
             if self.applying() or self.phase in {'checking', 'restarting'}:
                 raise UpdateError('已有更新操作正在进行')

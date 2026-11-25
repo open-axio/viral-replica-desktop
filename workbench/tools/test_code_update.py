@@ -408,4 +408,93 @@ class LauncherTests(unittest.TestCase):
             self.assertEqual((root / 'calls.log').read_text().splitlines(), ['updater.py --auto', 'server.py'])
 
 
+
+
+class VersionCompareTests(unittest.TestCase):
+    def test_timestamp_newer_older_and_equal(self):
+        self.assertTrue(updater.is_newer_version('20261123-1220', '20261118-1715'))
+        self.assertFalse(updater.is_newer_version('20261118-1715', '20261123-1220'))
+        self.assertFalse(updater.is_newer_version('20261123-1220', '20261123-1220'))
+
+    def test_legacy_non_timestamp_still_differs(self):
+        self.assertTrue(updater.is_newer_version('2026.11.13.1', 'old'))
+        self.assertFalse(updater.is_newer_version('old', 'old'))
+        self.assertFalse(updater.is_newer_version('', 'old'))
+
+
+class FormalReleaseParseTests(unittest.TestCase):
+    def test_published_dmg_counts(self):
+        raw = json.dumps([{
+            'draft': False, 'prerelease': False,
+            'assets': [{'name': 'ViralReplica-1.0.dmg', 'browser_download_url': 'https://github.com/open-axio/viral-replica-desktop/releases/download/x/a.dmg'}],
+        }])
+        self.assertTrue(updater.parse_has_formal_release(raw))
+
+    def test_draft_or_empty_does_not_count(self):
+        self.assertFalse(updater.parse_has_formal_release(json.dumps([
+            {'draft': True, 'prerelease': False, 'assets': [{'name': 'a.dmg', 'browser_download_url': 'https://example/a.dmg'}]},
+            {'draft': False, 'prerelease': True, 'assets': [{'name': 'a.exe', 'browser_download_url': 'https://example/a.exe'}]},
+        ])))
+        self.assertFalse(updater.parse_has_formal_release(json.dumps([])))
+        self.assertFalse(updater.parse_has_formal_release('not-json'))
+
+
+class CheckVersionPolicyTests(CodeUpdateFixture, unittest.TestCase):
+    def _check(self, remote_version, current_version='20261123-1220', files=None, blocker='', releases=None):
+        payload = files or {'server.py': b'print("remote")\n'}
+        manifest = package(payload, version=remote_version)[1]
+        (self.root / 'VERSION').write_text(current_version + '\n')
+        replies = [json.dumps({'sha': 'a' * 40}).encode(), json.dumps(manifest).encode()]
+        if releases is not None:
+            replies.append(json.dumps(releases).encode())
+        with patch.object(updater, 'download', side_effect=replies) as fetch, \
+                patch.object(updater, 'code_update_blocker', return_value=blocker):
+            result = self.service.check()
+        return result, fetch
+
+    def test_older_timestamp_is_not_a_new_version(self):
+        result, fetch = self._check('20261118-1715', '20261123-1220')
+        self.assertIsNone(result['available'])
+        self.assertIn('可用版本', result['message'])
+        self.assertNotIn('发现新版本', result['message'])
+        self.assertEqual(fetch.call_count, 2)
+
+    def test_equal_timestamp_different_manifest_is_not_newer(self):
+        result, fetch = self._check('20261123-1220', '20261123-1220')
+        self.assertIsNone(result['available'])
+        self.assertIn('可用版本', result['message'])
+        self.assertEqual(fetch.call_count, 2)
+
+    def test_blocked_newer_version_has_no_in_place_update_or_releases_sentence(self):
+        result, fetch = self._check('20261124-1800', '20261123-1220',
+                                    blocker='桌面版的程序代码装在应用内部，原地改写会破坏 macOS 签名。',
+                                    releases=[])
+        self.assertIsNone(result['available'])
+        self.assertFalse(result['can_update_in_place'])
+        self.assertFalse(result['has_formal_release'])
+        self.assertIn('可以继续用当前这个安装包', result['message'])
+        self.assertIn('应用内不能改程序代码', result['message'])
+        self.assertNotIn('请到 Releases 下载', result['message'])
+        self.assertEqual(fetch.call_count, 3)
+
+    def test_blocked_newer_mentions_releases_only_when_formal_exists(self):
+        releases = [{'draft': False, 'prerelease': False, 'assets': [
+            {'name': 'ViralReplica.dmg', 'browser_download_url': 'https://github.com/open-axio/viral-replica-desktop/releases/download/x/a.dmg'}
+        ]}]
+        result, fetch = self._check('20261124-1800', '20261123-1220',
+                                    blocker='桌面版的程序代码装在应用内部，原地改写会破坏 macOS 签名。',
+                                    releases=releases)
+        self.assertIsNone(result['available'])
+        self.assertTrue(result['has_formal_release'])
+        self.assertIn('请到 Releases 下载新版安装包', result['message'])
+        self.assertEqual(fetch.call_count, 3)
+
+    def test_start_when_blocked_uses_continue_message(self):
+        with patch.object(updater, 'code_update_blocker', return_value='桌面版的程序代码装在应用内部，原地改写会破坏 macOS 签名。'):
+            with self.assertRaises(updater.UpdateError) as err:
+                self.service.start('a' * 40)
+        self.assertIn('可以继续用当前这个安装包', str(err.exception))
+        self.assertNotIn('请到 Releases 下载', str(err.exception))
+
+
 if __name__ == '__main__': unittest.main(verbosity=2)

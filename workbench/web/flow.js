@@ -884,18 +884,47 @@ function fvMeasureResultsChrome() {
   if (!measured.pad && !measured.query && !measured.pager && !measured.note) return null;
   return measured;
 }
+function fvFvPadBottom() {
+  const fv = document.querySelector(".fv");
+  if (!fv) return 0;
+  try {
+    const cs = typeof window !== "undefined" && window.getComputedStyle ? window.getComputedStyle(fv) : null;
+    if (cs) return Math.ceil(parseFloat(cs.paddingBottom) || 0);
+  } catch (_) { /* 测试 DOM 可能没有计算样式 */ }
+  return 0;
+}
+function fvClipBottom(el) {
+  const fv = el && el.closest ? el.closest(".fv") : document.querySelector(".fv");
+  if (fv && typeof fv.getBoundingClientRect === "function") {
+    return fv.getBoundingClientRect().bottom - fvFvPadBottom();
+  }
+  const homeBody = document.querySelector("#homeBody");
+  if (homeBody && typeof homeBody.getBoundingClientRect === "function") return homeBody.getBoundingClientRect().bottom;
+  const vh = (typeof window !== "undefined" && window.innerHeight) || 0;
+  return vh - DESKTOP_HOME_PAD;
+}
+function fvVisibleHeight(el) {
+  if (!el || typeof el.getBoundingClientRect !== "function") return 0;
+  const r = el.getBoundingClientRect();
+  return Math.max(0, Math.min(r.bottom, fvClipBottom(el)) - r.top);
+}
 function fvDockNaturalHeight(dock) {
   if (!dock) return 0;
+  const wrap = $("#fvListWrap");
   const prevMax = dock.style ? dock.style.maxHeight : "";
+  const prevWrapH = wrap && wrap.style ? wrap.style.height : "";
   const yielded = !!(dock.getAttribute && /\bis-yielded\b/.test(dock.getAttribute("class") || ""));
-  if (dock.style) dock.style.maxHeight = "";
+  if (dock.style) dock.style.maxHeight = "none";
   if (yielded) setFlagClass(dock, "is-yielded", false);
+  // 先放开列表写死的高度，否则码头会被挤在剩余空隙里，自然高度量不准。
+  if (wrap && wrap.style) wrap.style.height = "";
   let h = 0;
   if (typeof dock.scrollHeight === "number" && dock.scrollHeight > 0) h = dock.scrollHeight;
   const r = typeof dock.getBoundingClientRect === "function" ? dock.getBoundingClientRect() : null;
   if (r && r.height > h) h = r.height;
   if (dock.style) dock.style.maxHeight = prevMax || "";
   if (yielded) setFlagClass(dock, "is-yielded", true);
+  if (wrap && wrap.style) wrap.style.height = prevWrapH || "";
   return Math.ceil(h);
 }
 function fvDockMinHeight(dock) {
@@ -905,7 +934,7 @@ function fvDockMinHeight(dock) {
 function fvMinCompleteListHeight(itemCount, hasNote, measured) {
   const reservePager = (itemCount || 0) > FV_MIN_PAGE_SIZE;
   const ch = fvListChromeHeights(hasNote, reservePager, measured, true, true);
-  return ch.reserved + FV_MIN_COVER + FV_CARD_CHROME_COMPACT + 2;
+  return ch.reserved + FV_MIN_COVER + FV_CARD_CHROME_COMPACT + 8;
 }
 function applyListAndDockHeights() {
   const embed = $("#fvListWrap") || $("#fvEmbed");
@@ -913,7 +942,14 @@ function applyListAndDockHeights() {
   if (!embed || typeof embed.getBoundingClientRect !== "function") return;
   const top = embed.getBoundingClientRect().top;
   const vh = (typeof window !== "undefined" && window.innerHeight) || 0;
-  const space = Math.floor(vh - top - DESKTOP_HOME_PAD);
+  const homeBody = document.querySelector("#homeBody");
+  let bodyBottom = vh - DESKTOP_HOME_PAD;
+  if (homeBody && typeof homeBody.getBoundingClientRect === "function") {
+    const bb = homeBody.getBoundingClientRect().bottom;
+    if (bb > top) bodyBottom = bb;
+  }
+  // .fv 底部 padding + overflow:hidden 会吃掉可见高度，必须从可用于放卡片的空间里扣掉。
+  const space = Math.floor(bodyBottom - top - fvFvPadBottom());
   const natural = fvDockNaturalHeight(dock);
   const minDock = fvDockMinHeight(dock);
   const st = typeof fvStateOf === "function" ? fvStateOf() : null;
@@ -937,6 +973,18 @@ function applyListAndDockHeights() {
     const cssCap = Math.floor(vh * 0.28);
     dockH = Math.min(natural, cssCap || natural);
     listH = space - dockH;
+  }
+  // 有条目时列表高度不得低于一行完整卡所需，也不得把空间再让给码头导致越算越矮。
+  if ((items.length || 0) >= FV_MIN_PAGE_SIZE) {
+    const floor = Math.min(minList, Math.max(0, space - minDock));
+    if (listH < floor) {
+      listH = floor;
+      dockH = space - listH;
+      if (dock && dock.style) {
+        dock.style.maxHeight = Math.max(0, Math.floor(dockH)) + "px";
+        setFlagClass(dock, "is-yielded", true);
+      }
+    }
   }
   if (embed.style && listH >= 80) {
     embed.style.height = Math.max(0, Math.floor(listH)) + "px";
@@ -998,7 +1046,8 @@ function fvListWrapSize() {
   if (!wrap || typeof wrap.getBoundingClientRect !== "function") return { width: 0, height: 0 };
   const r = wrap.getBoundingClientRect();
   const styled = wrap.style && parseFloat(wrap.style.height);
-  const height = (r && r.height) || (Number.isFinite(styled) ? styled : 0) || 0;
+  const visible = fvVisibleHeight(wrap);
+  const height = visible || (r && r.height) || (Number.isFinite(styled) ? styled : 0) || 0;
   const width = (r && r.width) || 0;
   return { width, height };
 }

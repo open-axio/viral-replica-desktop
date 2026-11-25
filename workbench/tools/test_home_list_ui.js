@@ -54,6 +54,11 @@ function homeRects(node) {
   else dockH = Math.min(dockH, cssCap);
   dockH = Math.max(0, dockH);
   const yielded = !!(dock && hasClass((dock.getAttribute && dock.getAttribute('class')) || '', 'is-yielded'));
+  if (id === 'homeBody') return box(0, 0, W, H - 12);
+  if (hasClass(cls, 'fv') || (node.className === 'fv')) {
+    const dockTop = H - 12 - dockH;
+    return box(left, 0, width, dockTop);
+  }
   if (id === 'fvCaptureHint') {
     if (hidden) return box(0, 0, 0, 0);
     return box(left, listTop - layoutState.hintH, width, layoutState.hintH);

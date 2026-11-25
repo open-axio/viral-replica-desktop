@@ -317,6 +317,126 @@ test('B站不走分类列表', async () => {
   assert.ok(t.opens.some((o) => o.platform === 'bilibili'));
 });
 
+function listItems(n) {
+  return Array.from({length: n}, (_, i) => ({
+    id: String(i + 1),
+    url: `https://www.douyin.com/video/${i + 1}`,
+    title: `条目${i + 1}`,
+    cover: `https://example.com/c${i + 1}.jpg`,
+  }));
+}
+async function loginWithItems(t, n) {
+  t.browse.search = (opts) => {
+    t.searches.push({...opts});
+    return Promise.resolve({ok: true, items: listItems(n), note: '目前只展示这一批', platform: opts.platform, keyword: opts.keyword});
+  };
+  t.browse._onState({url: 'https://www.douyin.com/', loggedIn: true, loginChecking: false, canBack: false, canForward: false});
+  await flush();
+}
+
+test('默认列表区高度下一页放不下 16 条时出现分页，翻页不重新搜索', async () => {
+  const t = await setup({desktop: true, seen: true});
+  await loginWithItems(t, 16);
+  const layout = t.run('fvComputeListPage(976, 420, 16, true)');
+  assert.equal(layout.pageSize, 2);
+  assert.equal(layout.pageCount, 8);
+  assert.equal(layout.showPager, true);
+  assert.ok(layout.coverH > 0);
+  assert.ok(layout.coverH < 616, '封面应缩短以便完整放下一行，而不是继续用 3:4 裁切');
+  assert.equal(t.document.querySelectorAll('.fv-card').length, 2);
+  assert.match(t.$('#fvResults').textContent, /条目1/);
+  assert.match(t.$('#fvResults').textContent, /条目2/);
+  assert.doesNotMatch(t.$('#fvResults').textContent, /条目3/);
+  assert.ok(t.$('.fv-pager'));
+  assert.match(t.$('.fv-page-status').textContent, /第 1 \/ 8 页/);
+  assert.equal(t.$('[data-fv-page-prev]').disabled, true);
+  assert.equal(t.$('[data-fv-page-next]').disabled, false);
+  assert.match(t.$('#fvStatus').textContent, /找到 16 条/);
+  assert.equal(t.$('.fv-card h3') && t.$('.fv-card h3').textContent, '条目1');
+  assert.equal(t.$('[data-fv-same]').textContent, '同款');
+  assert.match(t.$('.fv-grid').getAttribute('style') || '', /--fv-cover-height/);
+  const before = t.searches.length;
+  await t.click(t.$('[data-fv-page-next]'));
+  await flush();
+  assert.equal(t.searches.length, before, '翻页不应重新搜索');
+  assert.match(t.$('#fvStatus').textContent, /找到 16 条/);
+  assert.match(t.$('.fv-page-status').textContent, /第 2 \/ 8 页/);
+  assert.match(t.$('#fvResults').textContent, /条目3/);
+  assert.match(t.$('#fvResults').textContent, /条目4/);
+  assert.doesNotMatch(t.$('#fvResults').textContent, /条目1/);
+  assert.equal(t.$('[data-fv-page-prev]').disabled, false);
+  await t.click(t.$('[data-fv-page-prev]'));
+  await flush();
+  assert.match(t.$('.fv-page-status').textContent, /第 1 \/ 8 页/);
+  assert.match(t.$('#fvResults').textContent, /条目1/);
+  assert.equal(t.searches.length, before);
+});
+
+test('全部条目一页能放下时隐藏分页', async () => {
+  const t = await setup({desktop: true, seen: true});
+  await loginWithItems(t, 2);
+  assert.equal(t.document.querySelectorAll('.fv-card').length, 2);
+  assert.equal(t.$('.fv-pager'), null);
+  assert.doesNotMatch(t.$('#fvResults').textContent, /上一页|下一页|第 1 \/ 1 页/);
+  assert.match(t.$('#fvStatus').textContent, /找到 2 条/);
+});
+
+test('窗口变高后每页条数增多，尽量保住变化前该页第一张；全部放下时分页消失', async () => {
+  const t = await setup({desktop: true, seen: true});
+  await loginWithItems(t, 16);
+  await t.click(t.$('[data-fv-page-next]'));
+  await t.click(t.$('[data-fv-page-next]'));
+  await flush();
+  assert.match(t.$('.fv-page-status').textContent, /第 3 \/ 8 页/);
+  assert.equal(t.$('[data-fv-item="4"]') && t.$('[data-fv-item="4"]').textContent.includes('条目5'), true);
+  t.run('window.__fvListWrapRect = { width: 400, height: 900 }');
+  t.run('relayoutFvResults()');
+  const mid = t.run('fvComputeListPage(400, 900, 16, true)');
+  assert.equal(mid.pageSize, 4);
+  assert.equal(mid.showPager, true);
+  assert.ok(t.$('[data-fv-item="4"]'), '应保住变化前该页第一张');
+  assert.match(t.$('#fvResults').textContent, /条目5/);
+  assert.match(t.$('.fv-page-status').textContent, /第 2 \/ 4 页/);
+  t.run('window.__fvListWrapRect = { width: 400, height: 3200 }');
+  t.run('relayoutFvResults()');
+  assert.equal(t.$('.fv-pager'), null);
+  assert.equal(t.document.querySelectorAll('.fv-card').length, 16);
+  assert.ok(t.$('[data-fv-item="4"]'));
+  t.run('window.__fvListWrapRect = null');
+});
+
+test('从第二页进详情再返回，停留在原页原条', async () => {
+  const t = await setup({desktop: true, seen: true});
+  await loginWithItems(t, 16);
+  await t.click(t.$('[data-fv-page-next]'));
+  await flush();
+  assert.match(t.$('.fv-page-status').textContent, /第 2 \/ 8 页/);
+  await t.click(t.$('[data-fv-item="2"]'));
+  await flush();
+  assert.equal(t.$('#fvResults').hidden, true);
+  assert.ok(t.opens.some((o) => o.url === 'https://www.douyin.com/video/3' && o.detail));
+  await t.click(t.$('[data-fv-back-list]'));
+  await flush();
+  assert.equal(t.$('#fvResults').hidden, false);
+  assert.match(t.$('.fv-page-status').textContent, /第 2 \/ 8 页/);
+  assert.ok(t.$('[data-fv-item="2"]'));
+  assert.match(t.$('#fvResults').textContent, /条目3/);
+});
+
+test('换分类重新搜索后从第 1 页展示', async () => {
+  const t = await setup({desktop: true, seen: true});
+  await loginWithItems(t, 16);
+  await t.click(t.$('[data-fv-page-next]'));
+  await flush();
+  assert.match(t.$('.fv-page-status').textContent, /第 2 \/ 8 页/);
+  await t.click(t.$('[data-fv-cat-group="美业健康"]'));
+  await t.click(t.$('[data-fv-cat-item="美发美甲"]'));
+  await flush();
+  assert.match(t.$('.fv-page-status').textContent, /第 1 \/ 8 页/);
+  assert.match(t.$('#fvResults').textContent, /条目1/);
+  assert.match(t.$('#fvResults').textContent, /当前按「美业健康 \/ 美发美甲」搜索/);
+});
+
 (async () => {
   let failed = 0;
   for (const [name, fn] of tests) {

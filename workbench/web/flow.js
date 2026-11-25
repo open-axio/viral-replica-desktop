@@ -672,7 +672,7 @@ function inDesktop() { return !!(window.__browse && window.__browse.available); 
 function fvIsListPlatform(id) { return !!FV_LIST_PLATFORMS[id || fvCurrentPlatform()]; }
 function fvStateOf(id) {
   const p = id || fvCurrentPlatform();
-  if (!fvPlatformState[p]) fvPlatformState[p] = { mode: "idle", items: [], error: "", keyword: "", note: "", selected: null, listScroll: 0, kind: "category", group: "", item: "" };
+  if (!fvPlatformState[p]) fvPlatformState[p] = { mode: "idle", items: [], error: "", keyword: "", note: "", selected: null, listScroll: 0, page: 1, pageAnchor: 0, pageSize: 0, kind: "category", group: "", item: "" };
   return fvPlatformState[p];
 }
 function fvCatOf(name) { return FV_CATEGORIES.find((g) => g.name === name) || FV_CATEGORIES[0]; }
@@ -869,6 +869,7 @@ function fillDesktopEmbedHeight() {
     inner.style.height = "100%";
     inner.style.minHeight = "0";
   }
+  relayoutFvResults();
 }
 function anyOverlayOpen() {
   if (aboutIsOpen(aboutDialogEl())) return true;
@@ -891,6 +892,110 @@ function fvEmbedVisibleBounds() {
   if (width < 8 || height < 8) return null;
   return { x, y, width, height };
 }
+
+// 列表区分页：常量需与 style.css 中 .fv-results 的 padding、标题、按钮、分页条高度保持一致。
+const FV_LIST_PAD_Y = 48;
+const FV_LIST_PAD_X = 40;
+const FV_GRID_GAP = 12;
+const FV_CARD_CHROME = 128;
+const FV_QUERY_BLOCK = 32;
+const FV_PAGER_BLOCK = 44;
+const FV_NOTE_BLOCK = 24;
+const FV_COVER_RATIO = 4 / 3;
+const FV_MIN_PAGE_SIZE = 2;
+function fvListWrapSize() {
+  if (window.__fvListWrapRect && typeof window.__fvListWrapRect === "object") {
+    return { width: Number(window.__fvListWrapRect.width) || 0, height: Number(window.__fvListWrapRect.height) || 0 };
+  }
+  const wrap = $("#fvListWrap");
+  if (!wrap || typeof wrap.getBoundingClientRect !== "function") return { width: 0, height: 0 };
+  const r = wrap.getBoundingClientRect();
+  const height = (r && r.height) || (wrap.style && parseFloat(wrap.style.height)) || 0;
+  const width = (r && r.width) || 0;
+  return { width, height };
+}
+function fvComputeListPage(width, height, itemCount, hasNote) {
+  const w = Math.max(0, Number(width) || 0);
+  const h = Math.max(0, Number(height) || 0);
+  const n = Math.max(0, Number(itemCount) || 0);
+  const innerW = Math.max(0, w - FV_LIST_PAD_X);
+  const colW = Math.max(1, (innerW - FV_GRID_GAP) / 2);
+  const preferredCover = colW * FV_COVER_RATIO;
+  function pack(reservePager) {
+    const reserved = FV_LIST_PAD_Y + FV_QUERY_BLOCK + (hasNote ? FV_NOTE_BLOCK : 0) + (reservePager ? FV_PAGER_BLOCK : 0);
+    const avail = h - reserved;
+    const preferredCard = preferredCover + FV_CARD_CHROME;
+    let rows;
+    let coverH;
+    if (!(avail > 0) || preferredCard > avail) {
+      rows = 1;
+      coverH = Math.max(1, Math.floor(avail - FV_CARD_CHROME));
+    } else {
+      rows = Math.max(1, Math.floor((avail + FV_GRID_GAP) / (preferredCard + FV_GRID_GAP)));
+      coverH = Math.max(1, Math.floor(preferredCover));
+    }
+    const pageSize = Math.max(FV_MIN_PAGE_SIZE, rows * 2);
+    return { pageSize, coverH, rows, avail };
+  }
+  if (n <= 0) {
+    const base = pack(false);
+    return { pageSize: FV_MIN_PAGE_SIZE, pageCount: 1, coverH: base.coverH, showPager: false, rows: 1 };
+  }
+  const without = pack(false);
+  if (n <= without.pageSize) {
+    return { pageSize: without.pageSize, pageCount: 1, coverH: without.coverH, showPager: false, rows: without.rows };
+  }
+  const withPager = pack(true);
+  const pageSize = withPager.pageSize;
+  const pageCount = Math.max(1, Math.ceil(n / pageSize));
+  return { pageSize, pageCount, coverH: withPager.coverH, showPager: pageCount > 1, rows: withPager.rows };
+}
+function fvComputeListPageFromState(st) {
+  const size = fvListWrapSize();
+  const items = (st && st.items) || [];
+  return fvComputeListPage(size.width, size.height, items.length, !!(st && st.note));
+}
+function fvSyncListPage(st, opts) {
+  st = st || fvStateOf();
+  const layout = fvComputeListPageFromState(st);
+  const fallbackSize = st.pageSize || layout.pageSize || FV_MIN_PAGE_SIZE;
+  const anchor = Number.isFinite(Number(st.pageAnchor)) ? Number(st.pageAnchor) : ((Math.max(1, st.page || 1) - 1) * fallbackSize);
+  let page = Math.floor(Math.max(0, anchor) / layout.pageSize) + 1;
+  const pageCount = layout.pageCount || 1;
+  if (page > pageCount) page = pageCount;
+  if (page < 1) page = 1;
+  st.page = page;
+  st.pageSize = layout.pageSize;
+  if (!(opts && opts.keepAnchor)) st.pageAnchor = (page - 1) * layout.pageSize;
+  else st.pageAnchor = anchor;
+  return layout;
+}
+function fvTurnPage(delta) {
+  const st = fvStateOf();
+  const layout = fvSyncListPage(st, { keepAnchor: true });
+  if (!layout.showPager) return;
+  const next = Math.min(layout.pageCount, Math.max(1, (st.page || 1) + delta));
+  if (next === st.page) return;
+  st.page = next;
+  st.pageAnchor = (next - 1) * layout.pageSize;
+  const results = $("#fvResults");
+  if (results) results.innerHTML = renderFvResults(st);
+}
+function relayoutFvResults() {
+  const st = fvStateOf();
+  const results = $("#fvResults");
+  if (!results || results.hidden) return;
+  if (st.mode === "results") results.innerHTML = renderFvResults(st);
+  else if (st.items && st.items.length) fvSyncListPage(st, { keepAnchor: true });
+}
+function fvResetListPage(st) {
+  if (!st) return;
+  st.page = 1;
+  st.pageAnchor = 0;
+  st.pageSize = 0;
+  st.listScroll = 0;
+}
+
 function fvItemMeta(item) {
   if (!item) return "";
   const bits = [];
@@ -902,21 +1007,31 @@ function fvItemMeta(item) {
 }
 function renderFvResults(st) {
   const items = (st && st.items) || [];
+  const layout = fvSyncListPage(st, { keepAnchor: true });
+  const start = (Math.max(1, st.page || 1) - 1) * layout.pageSize;
+  const pageItems = items.slice(start, start + layout.pageSize);
   const q = fvQueryLabel({ kind: st.kind || fvQueryKind, group: st.group || fvCatGroup, item: st.item || fvCatItem, keyword: st.rawKeyword || fvKeywordText, city: fvCurrentCity() });
-  const cards = items.map((item, i) => {
+  const coverStyle = `--fv-cover-height: ${Math.max(1, Math.floor(layout.coverH))}px`;
+  const cards = pageItems.map((item, i) => {
+    const idx = start + i;
     const cover = item.cover ? `<img src="${esc(item.cover)}" alt="">` : `<div class="fv-cover-empty" aria-hidden="true"></div>`;
     const dur = item.duration ? `<span class="fv-dur">${esc(item.duration)}</span>` : "";
     const title = item.title ? `<h3>${esc(item.title)}</h3>` : "";
     const meta = fvItemMeta(item);
-    return `<article class="fv-card" data-fv-item="${i}">
+    return `<article class="fv-card" data-fv-item="${idx}">
         <div class="fv-cover">${cover}${dur}</div>
         ${title}
         ${meta ? `<p class="fv-card-meta">${esc(meta)}</p>` : ""}
-        <button type="button" class="fv-same" data-fv-same="${i}">同款</button>
+        <button type="button" class="fv-same" data-fv-same="${idx}">同款</button>
       </article>`;
   }).join("");
   const note = st && st.note ? `<p class="hint fv-results-note">${esc(st.note)}</p>` : "";
-  return `<p class="fv-results-query">${esc(q)}</p><div class="fv-grid">${cards}</div>${note}`;
+  const pager = layout.showPager ? `<nav class="fv-pager" aria-label="列表分页">
+      <button type="button" class="ghost" data-fv-page-prev${(st.page || 1) <= 1 ? " disabled" : ""}>上一页</button>
+      <span class="fv-page-status">第 ${st.page} / ${layout.pageCount} 页</span>
+      <button type="button" class="ghost" data-fv-page-next${(st.page || 1) >= layout.pageCount ? " disabled" : ""}>下一页</button>
+    </nav>` : "";
+  return `<p class="fv-results-query">${esc(q)}</p><div class="fv-grid" style="${coverStyle}">${cards}</div>${note}${pager}`;
 }
 function applyFvListView() {
   const list = fvIsListPlatform();
@@ -1189,6 +1304,7 @@ async function runListSearch(opts) {
   st.mode = "loading";
   st.error = "";
   st.keyword = keyword;
+  fvResetListPage(st);
   st.kind = query.kind;
   st.group = query.group || "";
   st.item = query.item || "";
@@ -1357,6 +1473,10 @@ document.addEventListener("click", (e) => {
   }
   if (e.target.closest("[data-fv-back-list]")) { backFvList(); return; }
   if (e.target.closest("[data-fv-retry]")) { runListSearch(fvPendingSearch || fvCurrentQuery()); return; }
+  const pagePrev = e.target.closest("[data-fv-page-prev]");
+  if (pagePrev) { if (!pagePrev.disabled) fvTurnPage(-1); return; }
+  const pageNext = e.target.closest("[data-fv-page-next]");
+  if (pageNext) { if (!pageNext.disabled) fvTurnPage(1); return; }
   const same = e.target.closest("[data-fv-same]");
   if (same) {
     const st = fvStateOf();

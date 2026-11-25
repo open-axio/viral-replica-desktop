@@ -593,9 +593,9 @@ function renderHome() {
   updateHtml(box, renderFindViral() + `<div class="home-dock"><p class="home-upload-entry"><button type="button" class="ghost" data-flow-new>自己放一条视频进来</button></p>` + recent + `</div>`);
   const city = $("#fvCity"); if (city && !city.value) city.value = storeGet("vrc.fvCity") || "";
   maybeOpenAbout();
+  syncCaptureHint(fvLastLoggedIn);
   syncDesktopHomeShell();
   syncFindViralEmbed();
-  syncCaptureHint(fvLastLoggedIn);
 }
 
 const ABOUT_SEEN_KEY = "vrc.aboutAutoSeen";
@@ -822,6 +822,7 @@ function syncCaptureHint(loggedIn) {
   const el = $("#fvCaptureHint");
   if (!el) return;
   el.hidden = !(loggedIn && fvCaptureHintAllowed());
+  if (inDesktop()) syncDesktopHomeShell();
 }
 function fvOpenShare(url) {
   if (!inDesktop()) {
@@ -852,16 +853,93 @@ function syncDesktopHomeShell() {
   setFlagClass(document.documentElement, "is-desktop-home", !!on);
   if (on) fillDesktopEmbedHeight();
 }
-function fillDesktopEmbedHeight() {
+function fvElemExtent(el) {
+  if (!el || el.hidden || (el.hasAttribute && el.hasAttribute("hidden"))) return 0;
+  const r = typeof el.getBoundingClientRect === "function" ? el.getBoundingClientRect() : null;
+  let h = Math.ceil((r && r.height) || 0);
+  try {
+    const cs = typeof window !== "undefined" && window.getComputedStyle ? window.getComputedStyle(el) : null;
+    if (cs) h += Math.ceil(parseFloat(cs.marginTop) || 0) + Math.ceil(parseFloat(cs.marginBottom) || 0);
+  } catch (_) { /* 测试 DOM 可能没有计算样式 */ }
+  return h;
+}
+function fvPadY(el) {
+  if (!el) return 0;
+  try {
+    const cs = typeof window !== "undefined" && window.getComputedStyle ? window.getComputedStyle(el) : null;
+    if (cs) return Math.ceil(parseFloat(cs.paddingTop) || 0) + Math.ceil(parseFloat(cs.paddingBottom) || 0);
+  } catch (_) { /* 同上 */ }
+  return 0;
+}
+function fvMeasureResultsChrome() {
+  const results = $("#fvResults");
+  if (!results || results.hidden) return null;
+  const pad = fvPadY(results);
+  const measured = {
+    pad,
+    query: fvElemExtent(results.querySelector(".fv-results-query")),
+    pager: fvElemExtent(results.querySelector(".fv-pager")),
+    note: fvElemExtent(results.querySelector(".fv-results-note")),
+  };
+  if (!measured.pad && !measured.query && !measured.pager && !measured.note) return null;
+  return measured;
+}
+function fvDockNaturalHeight(dock) {
+  if (!dock) return 0;
+  const prevMax = dock.style ? dock.style.maxHeight : "";
+  const yielded = !!(dock.getAttribute && /\bis-yielded\b/.test(dock.getAttribute("class") || ""));
+  if (dock.style) dock.style.maxHeight = "";
+  if (yielded) setFlagClass(dock, "is-yielded", false);
+  let h = 0;
+  if (typeof dock.scrollHeight === "number" && dock.scrollHeight > 0) h = dock.scrollHeight;
+  const r = typeof dock.getBoundingClientRect === "function" ? dock.getBoundingClientRect() : null;
+  if (r && r.height > h) h = r.height;
+  if (dock.style) dock.style.maxHeight = prevMax || "";
+  if (yielded) setFlagClass(dock, "is-yielded", true);
+  return Math.ceil(h);
+}
+function fvDockMinHeight(dock) {
+  // 码头可内部滚动，让位时只保证两块入口仍露在窗口里，不要按自然内容高度抬高下限。
+  return dock ? FV_DOCK_MIN : 0;
+}
+function fvMinCompleteListHeight(itemCount, hasNote, measured) {
+  const reservePager = (itemCount || 0) > FV_MIN_PAGE_SIZE;
+  const ch = fvListChromeHeights(hasNote, reservePager, measured, true, true);
+  return ch.reserved + FV_MIN_COVER + FV_CARD_CHROME_COMPACT + 2;
+}
+function applyListAndDockHeights() {
   const embed = $("#fvListWrap") || $("#fvEmbed");
   const dock = document.querySelector(".home-dock");
   if (!embed || typeof embed.getBoundingClientRect !== "function") return;
   const top = embed.getBoundingClientRect().top;
-  const dockH = dock && typeof dock.getBoundingClientRect === "function" ? (dock.getBoundingClientRect().height || 0) : 0;
   const vh = (typeof window !== "undefined" && window.innerHeight) || 0;
-  const height = Math.floor(vh - top - dockH - DESKTOP_HOME_PAD);
-  if (height >= 80 && embed.style) {
-    embed.style.height = height + "px";
+  const space = Math.floor(vh - top - DESKTOP_HOME_PAD);
+  const natural = fvDockNaturalHeight(dock);
+  const minDock = fvDockMinHeight(dock);
+  const st = typeof fvStateOf === "function" ? fvStateOf() : null;
+  const items = (st && st.items) || [];
+  const measured = fvMeasureResultsChrome();
+  const minList = fvMinCompleteListHeight(items.length, !!(st && st.note), measured);
+  let dockH = natural;
+  let listH = space - dockH;
+  if (listH < minList) {
+    dockH = Math.max(minDock, space - minList);
+    listH = space - dockH;
+    if (dock && dock.style) {
+      dock.style.maxHeight = Math.max(0, Math.floor(dockH)) + "px";
+      setFlagClass(dock, "is-yielded", true);
+    }
+  } else {
+    if (dock && dock.style) {
+      dock.style.maxHeight = "";
+      setFlagClass(dock, "is-yielded", false);
+    }
+    const cssCap = Math.floor(vh * 0.28);
+    dockH = Math.min(natural, cssCap || natural);
+    listH = space - dockH;
+  }
+  if (embed.style && listH >= 80) {
+    embed.style.height = Math.max(0, Math.floor(listH)) + "px";
     embed.style.minHeight = "0";
   }
   const inner = $("#fvEmbed");
@@ -869,6 +947,11 @@ function fillDesktopEmbedHeight() {
     inner.style.height = "100%";
     inner.style.minHeight = "0";
   }
+}
+function fillDesktopEmbedHeight() {
+  applyListAndDockHeights();
+  relayoutFvResults();
+  applyListAndDockHeights();
   relayoutFvResults();
 }
 function anyOverlayOpen() {
@@ -893,16 +976,20 @@ function fvEmbedVisibleBounds() {
   return { x, y, width, height };
 }
 
-// 列表区分页：常量需与 style.css 中 .fv-results 的 padding、标题、按钮、分页条高度保持一致。
+// 列表区分页：查询说明、分页条、内边距优先按真实渲染测量，下面是尚未量到时偏松的兜底，避免再写小。
 const FV_LIST_PAD_Y = 48;
 const FV_LIST_PAD_X = 40;
 const FV_GRID_GAP = 12;
 const FV_CARD_CHROME = 128;
-const FV_QUERY_BLOCK = 32;
-const FV_PAGER_BLOCK = 44;
-const FV_NOTE_BLOCK = 24;
+const FV_CARD_CHROME_COMPACT = 72;
+const FV_QUERY_BLOCK = 36;
+const FV_PAGER_BLOCK = 56;
+const FV_NOTE_BLOCK = 28;
 const FV_COVER_RATIO = 4 / 3;
+const FV_MIN_COVER = 64;
 const FV_MIN_PAGE_SIZE = 2;
+const FV_TIGHT_PAD_Y = 16;
+const FV_DOCK_MIN = 56;
 function fvListWrapSize() {
   if (window.__fvListWrapRect && typeof window.__fvListWrapRect === "object") {
     return { width: Number(window.__fvListWrapRect.width) || 0, height: Number(window.__fvListWrapRect.height) || 0 };
@@ -910,50 +997,80 @@ function fvListWrapSize() {
   const wrap = $("#fvListWrap");
   if (!wrap || typeof wrap.getBoundingClientRect !== "function") return { width: 0, height: 0 };
   const r = wrap.getBoundingClientRect();
-  const height = (r && r.height) || (wrap.style && parseFloat(wrap.style.height)) || 0;
+  const styled = wrap.style && parseFloat(wrap.style.height);
+  const height = (r && r.height) || (Number.isFinite(styled) ? styled : 0) || 0;
   const width = (r && r.width) || 0;
   return { width, height };
 }
-function fvComputeListPage(width, height, itemCount, hasNote) {
+function fvListChromeHeights(hasNote, reservePager, measured, tightPad, hideNote) {
+  const padH = (measured && measured.pad) ? measured.pad : (tightPad ? FV_TIGHT_PAD_Y : FV_LIST_PAD_Y);
+  const queryH = (measured && measured.query) || FV_QUERY_BLOCK;
+  const noteH = (hasNote && !hideNote) ? ((measured && measured.note) || FV_NOTE_BLOCK) : 0;
+  const pagerH = reservePager ? ((measured && measured.pager) || FV_PAGER_BLOCK) : 0;
+  return { padH, queryH, noteH, pagerH, reserved: padH + queryH + noteH + pagerH };
+}
+function fvPackRows(avail, preferredCover, compact) {
+  const chrome = compact ? FV_CARD_CHROME_COMPACT : FV_CARD_CHROME;
+  const preferredCard = preferredCover + chrome;
+  let rows;
+  let coverH;
+  if (!(avail > 0) || preferredCard > avail) {
+    rows = 1;
+    coverH = Math.floor(avail - chrome);
+  } else {
+    rows = Math.max(1, Math.floor((avail + FV_GRID_GAP) / (preferredCard + FV_GRID_GAP)));
+    coverH = Math.max(FV_MIN_COVER, Math.floor(preferredCover));
+  }
+  return { rows, coverH, chrome, compact, ok: coverH >= FV_MIN_COVER };
+}
+function fvComputeListPage(width, height, itemCount, hasNote, measured) {
   const w = Math.max(0, Number(width) || 0);
   const h = Math.max(0, Number(height) || 0);
   const n = Math.max(0, Number(itemCount) || 0);
   const innerW = Math.max(0, w - FV_LIST_PAD_X);
   const colW = Math.max(1, (innerW - FV_GRID_GAP) / 2);
   const preferredCover = colW * FV_COVER_RATIO;
-  function pack(reservePager) {
-    const reserved = FV_LIST_PAD_Y + FV_QUERY_BLOCK + (hasNote ? FV_NOTE_BLOCK : 0) + (reservePager ? FV_PAGER_BLOCK : 0);
-    const avail = h - reserved;
-    const preferredCard = preferredCover + FV_CARD_CHROME;
-    let rows;
-    let coverH;
-    if (!(avail > 0) || preferredCard > avail) {
-      rows = 1;
-      coverH = Math.max(1, Math.floor(avail - FV_CARD_CHROME));
-    } else {
-      rows = Math.max(1, Math.floor((avail + FV_GRID_GAP) / (preferredCard + FV_GRID_GAP)));
-      coverH = Math.max(1, Math.floor(preferredCover));
+  const attempts = [
+    { compact: false, hideNote: false, tightPad: false },
+    { compact: false, hideNote: true, tightPad: false },
+    { compact: true, hideNote: false, tightPad: true },
+    { compact: true, hideNote: true, tightPad: true },
+  ];
+  function pack(reservePager, opt) {
+    const ch = fvListChromeHeights(hasNote, reservePager, measured, opt.tightPad, opt.hideNote);
+    const packed = fvPackRows(h - ch.reserved, preferredCover, opt.compact);
+    return Object.assign({}, packed, ch, opt, { pageSize: Math.max(FV_MIN_PAGE_SIZE, packed.rows * 2) });
+  }
+  function choose(reservePager) {
+    let last = pack(reservePager, attempts[attempts.length - 1]);
+    for (let i = 0; i < attempts.length; i++) {
+      const p = pack(reservePager, attempts[i]);
+      if (p.ok) return p;
+      last = p;
     }
-    const pageSize = Math.max(FV_MIN_PAGE_SIZE, rows * 2);
-    return { pageSize, coverH, rows, avail };
+    last.coverH = FV_MIN_COVER;
+    last.rows = 1;
+    last.pageSize = Math.max(FV_MIN_PAGE_SIZE, 2);
+    last.needsMoreHeight = true;
+    return last;
   }
   if (n <= 0) {
-    const base = pack(false);
-    return { pageSize: FV_MIN_PAGE_SIZE, pageCount: 1, coverH: base.coverH, showPager: false, rows: 1 };
+    const base = choose(false);
+    return Object.assign({}, base, { pageSize: FV_MIN_PAGE_SIZE, pageCount: 1, showPager: false, rows: 1, coverH: Math.max(FV_MIN_COVER, base.coverH) });
   }
-  const without = pack(false);
+  const without = choose(false);
   if (n <= without.pageSize) {
-    return { pageSize: without.pageSize, pageCount: 1, coverH: without.coverH, showPager: false, rows: without.rows };
+    return Object.assign({}, without, { pageCount: 1, showPager: false });
   }
-  const withPager = pack(true);
+  const withPager = choose(true);
   const pageSize = withPager.pageSize;
   const pageCount = Math.max(1, Math.ceil(n / pageSize));
-  return { pageSize, pageCount, coverH: withPager.coverH, showPager: pageCount > 1, rows: withPager.rows };
+  return Object.assign({}, withPager, { pageSize, pageCount, showPager: pageCount > 1 });
 }
 function fvComputeListPageFromState(st) {
   const size = fvListWrapSize();
   const items = (st && st.items) || [];
-  return fvComputeListPage(size.width, size.height, items.length, !!(st && st.note));
+  return fvComputeListPage(size.width, size.height, items.length, !!(st && st.note), fvMeasureResultsChrome());
 }
 function fvSyncListPage(st, opts) {
   st = st || fvStateOf();
@@ -1011,7 +1128,7 @@ function renderFvResults(st) {
   const start = (Math.max(1, st.page || 1) - 1) * layout.pageSize;
   const pageItems = items.slice(start, start + layout.pageSize);
   const q = fvQueryLabel({ kind: st.kind || fvQueryKind, group: st.group || fvCatGroup, item: st.item || fvCatItem, keyword: st.rawKeyword || fvKeywordText, city: fvCurrentCity() });
-  const coverStyle = `--fv-cover-height: ${Math.max(1, Math.floor(layout.coverH))}px`;
+  const coverStyle = `--fv-cover-height: ${Math.max(FV_MIN_COVER, Math.floor(layout.coverH || 0))}px`;
   const cards = pageItems.map((item, i) => {
     const idx = start + i;
     const cover = item.cover ? `<img src="${esc(item.cover)}" alt="">` : `<div class="fv-cover-empty" aria-hidden="true"></div>`;
@@ -1025,13 +1142,16 @@ function renderFvResults(st) {
         <button type="button" class="fv-same" data-fv-same="${idx}">同款</button>
       </article>`;
   }).join("");
-  const note = st && st.note ? `<p class="hint fv-results-note">${esc(st.note)}</p>` : "";
+  const note = st && st.note && !layout.hideNote ? `<p class="hint fv-results-note">${esc(st.note)}</p>` : "";
   const pager = layout.showPager ? `<nav class="fv-pager" aria-label="列表分页">
       <button type="button" class="ghost" data-fv-page-prev${(st.page || 1) <= 1 ? " disabled" : ""}>上一页</button>
       <span class="fv-page-status">第 ${st.page} / ${layout.pageCount} 页</span>
       <button type="button" class="ghost" data-fv-page-next${(st.page || 1) >= layout.pageCount ? " disabled" : ""}>下一页</button>
     </nav>` : "";
-  return `<p class="fv-results-query">${esc(q)}</p><div class="fv-grid" style="${coverStyle}">${cards}</div>${note}${pager}`;
+  const gridCls = layout.compact ? "fv-grid is-compact" : "fv-grid";
+  const results = $("#fvResults");
+  if (results) setFlagClass(results, "is-tight", !!layout.tightPad);
+  return `<p class="fv-results-query">${esc(q)}</p><div class="${gridCls}" style="${coverStyle}">${cards}</div>${note}${pager}`;
 }
 function applyFvListView() {
   const list = fvIsListPlatform();
@@ -1164,6 +1284,7 @@ function applyFvState(s) {
   fvLastLoggedIn = !!s.loggedIn;
   syncCaptureHint(fvLastLoggedIn);
   applyFvListView();
+  if (inDesktop()) syncDesktopHomeShell();
   if (list && s.loggedIn && fvSearchOnNextLogin && !inDetail) {
     fvSearchOnNextLogin = false;
     runListSearch(fvPendingSearch || fvCurrentQuery());

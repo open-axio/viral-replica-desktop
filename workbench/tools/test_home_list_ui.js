@@ -16,11 +16,130 @@ Node.prototype.close = function () {
   const ev = { type: 'close', target: this };
   (this._listeners?.close || []).forEach((fn) => fn(ev));
 };
+const layoutState = {
+  mode: 'mock420',
+  width: 1280,
+  height: 800,
+  naturalDock: 100,
+  document: null,
+  listTop: 443,
+  hintH: 43,
+  dockNoProjects: 91,
+  dockTwoProjects: 218,
+};
+function box(left, top, width, height) {
+  return { left, top, width, height, right: left + width, bottom: top + height };
+}
+function hasClass(cls, name) {
+  return String(cls || '').trim().split(/\s+/).includes(name);
+}
+function homeRects(node) {
+  const doc = layoutState.document;
+  const W = layoutState.width;
+  const H = layoutState.height;
+  const left = 24;
+  const width = Math.max(0, W - 48);
+  const id = node.id || (typeof node.getAttribute === 'function' ? node.getAttribute('id') : '') || '';
+  const cls = (node.getAttribute && node.getAttribute('class')) || '';
+  const hidden = node.hidden || (node.hasAttribute && node.hasAttribute('hidden'));
+  const hint = doc && doc.querySelector && doc.querySelector('#fvCaptureHint');
+  const hintOn = !!(hint && !hint.hidden && !(hint.hasAttribute && hint.hasAttribute('hidden')));
+  const listTop = layoutState.listTop + (hintOn ? layoutState.hintH : 0);
+  const dock = doc && doc.querySelector && doc.querySelector('.home-dock');
+  const natural = layoutState.naturalDock;
+  const cssCap = Math.floor(H * 0.28);
+  const maxStyle = dock && dock.style && parseFloat(dock.style.maxHeight);
+  let dockH = natural;
+  if (Number.isFinite(maxStyle)) dockH = Math.min(dockH, maxStyle);
+  else dockH = Math.min(dockH, cssCap);
+  dockH = Math.max(0, dockH);
+  const yielded = !!(dock && hasClass((dock.getAttribute && dock.getAttribute('class')) || '', 'is-yielded'));
+  if (id === 'fvCaptureHint') {
+    if (hidden) return box(0, 0, 0, 0);
+    return box(left, listTop - layoutState.hintH, width, layoutState.hintH);
+  }
+  if (id === 'fvListWrap' || id === 'fvEmbed' || hasClass(cls, 'fv-embed-wrap') || hasClass(cls, 'fv-list-wrap')) {
+    const styled = node.style && parseFloat(node.style.height);
+    const h = Number.isFinite(styled) ? styled : Math.max(0, H - listTop - dockH - 12);
+    return box(left, listTop, width, h);
+  }
+  if (hasClass(cls, 'home-dock')) {
+    return box(left, H - 12 - dockH, width, dockH);
+  }
+  if (hasClass(cls, 'home-upload-entry')) return box(left, 0, width, (yielded ? 8 : 16) + 32);
+  if (hasClass(cls, 'home-recent-head')) return box(left, 0, width, yielded ? 36 : 62);
+  if (hasClass(cls, 'home-empty')) return box(left, 0, width, yielded ? 28 : 36);
+  const wrap = doc && doc.querySelector && doc.querySelector('#fvListWrap');
+  const wrapBox = wrap && wrap !== node ? homeRects(wrap) : box(left, listTop, width, 0);
+  const results = doc && doc.querySelector && doc.querySelector('#fvResults');
+  const tight = !!(results && hasClass((results.getAttribute && results.getAttribute('class')) || '', 'is-tight'));
+  const padY = tight ? 16 : 48;
+  const padTop = padY / 2;
+  const queryH = 32, noteH = 27, pagerH = 55;
+  if (id === 'fvResults' || hasClass(cls, 'fv-results')) return wrapBox;
+  if (hasClass(cls, 'fv-results-query')) return box(left + 20, wrapBox.top + padTop, width - 40, queryH);
+  if (hasClass(cls, 'fv-pager')) {
+    if (hidden) return box(0, 0, 0, 0);
+    return box(left + 20, wrapBox.bottom - padTop - pagerH, width - 40, pagerH);
+  }
+  if (hasClass(cls, 'fv-results-note')) {
+    if (hidden) return box(0, 0, 0, 0);
+    const pager = doc.querySelector('.fv-pager');
+    const ph = pager ? pagerH : 0;
+    return box(left + 20, wrapBox.bottom - padTop - ph - noteH, width - 40, noteH);
+  }
+  if (hasClass(cls, 'fv-grid')) {
+    const pager = doc.querySelector('.fv-pager');
+    const note = doc.querySelector('.fv-results-note');
+    const ph = pager ? pagerH : 0;
+    const nh = note && !note.hidden ? noteH : 0;
+    const top = wrapBox.top + padTop + queryH;
+    const bottom = wrapBox.bottom - padTop - ph - nh;
+    return box(left + 20, top, width - 40, Math.max(0, bottom - top));
+  }
+  const inCard = hasClass(cls, 'fv-card') || hasClass(cls, 'fv-cover') || hasClass(cls, 'fv-same') || hasClass(cls, 'fv-card-meta') || (node.tagName || '').toLowerCase() === 'h3';
+  if (inCard) {
+    const grid = doc.querySelector('.fv-grid');
+    const gridBox = grid ? homeRects(grid) : box(0, 0, 0, 0);
+    const compact = !!(grid && hasClass((grid.getAttribute && grid.getAttribute('class')) || '', 'is-compact'));
+    const style = (grid && grid.getAttribute && grid.getAttribute('style')) || '';
+    const m = /--fv-cover-height:\s*([\d.]+)px/.exec(style);
+    const coverH = m ? Number(m[1]) : 0;
+    const titleH = compact ? 20 : 40;
+    const btnH = compact ? 32 : 34;
+    const gap = compact ? 6 : 8;
+    const cardPad = compact ? 8 : 12;
+    const cards = grid ? [...grid.querySelectorAll('.fv-card')] : [];
+    let card = hasClass(cls, 'fv-card') ? node : node.parentNode;
+    while (card && !hasClass((card.getAttribute && card.getAttribute('class')) || '', 'fv-card')) card = card.parentNode;
+    const idx = Math.max(0, cards.indexOf(card));
+    const col = idx % 2;
+    const row = Math.floor(idx / 2);
+    const hasMeta = !!(card && card.querySelector && card.querySelector('.fv-card-meta') && !compact);
+    const metaH = hasMeta ? 18 : 0;
+    const gaps = 2 + (hasMeta ? 1 : 0);
+    const totalCardH = coverH + titleH + metaH + btnH + gap * gaps + cardPad;
+    const colW = Math.max(0, (gridBox.width - 12) / 2);
+    const x = gridBox.left + col * (colW + 12);
+    const y = gridBox.top + row * (totalCardH + 12);
+    const cardBox = box(x, y, colW, totalCardH);
+    if (hasClass(cls, 'fv-card')) return cardBox;
+    if (hasClass(cls, 'fv-cover')) return box(x, y, colW, coverH);
+    if ((node.tagName || '').toLowerCase() === 'h3') return box(x + 12, y + coverH + gap, colW - 24, titleH);
+    if (hasClass(cls, 'fv-card-meta')) return box(x + 12, y + coverH + gap + titleH + gap, colW - 24, metaH);
+    if (hasClass(cls, 'fv-same')) {
+      const top = y + coverH + gap + titleH + (hasMeta ? gap + metaH : 0) + gap;
+      return box(x + 12, top, colW - 24, btnH);
+    }
+  }
+  return box(0, 0, 0, 0);
+}
 Node.prototype.getBoundingClientRect = function () {
+  if (layoutState.mode === 'home') return homeRects(this);
   const id = this.id || (typeof this.getAttribute === 'function' ? this.getAttribute('id') : '');
   const cls = (this.getAttribute && this.getAttribute('class')) || '';
   if (id === 'fvEmbed' || id === 'fvListWrap') return { left: 24, top: 280, right: 1000, bottom: 700, width: 976, height: 420 };
-  if (/\bhome-dock\b/.test(cls)) return { left: 24, top: 700, right: 1000, bottom: 800, width: 976, height: 100 };
+  if (hasClass(cls, 'home-dock')) return { left: 24, top: 700, right: 1000, bottom: 800, width: 976, height: 100 };
   return { left: 0, top: 0, right: 0, bottom: 0, width: 0, height: 0 };
 };
 const origAdd = Node.prototype.addEventListener;
@@ -48,7 +167,10 @@ const HOME = {
 };
 
 async function setup({desktop = false, seen = true, ids = []} = {}) {
+  layoutState.mode = 'mock420';
+  layoutState.document = null;
   const document = createDocument(), events = {}, requests = [], timers = new Map(), storage = new Map();
+  layoutState.document = document;
   const classNames = (node) => (node.getAttribute('class') || '').trim().split(/\s+/).filter(Boolean);
   document.body.classList = {
     add(c) { document.body.setAttribute('class', [...new Set([...classNames(document.body), c])].join(' ')); },
@@ -435,6 +557,106 @@ test('换分类重新搜索后从第 1 页展示', async () => {
   assert.match(t.$('.fv-page-status').textContent, /第 1 \/ 8 页/);
   assert.match(t.$('#fvResults').textContent, /条目1/);
   assert.match(t.$('#fvResults').textContent, /当前按「美业健康 \/ 美发美甲」搜索/);
+});
+
+
+async function setupHome({width, height, projects, hint = false, items = 16} = {}) {
+  const t = await setup({desktop: true, seen: true, ids: projects ? ['p1', 'p2'] : []});
+  layoutState.mode = 'home';
+  layoutState.width = width;
+  layoutState.height = height;
+  layoutState.naturalDock = projects ? layoutState.dockTwoProjects : layoutState.dockNoProjects;
+  layoutState.document = t.document;
+  if (!hint) t.storage.set('vrc.fvCaptureHintDismissed', '1');
+  t.run(`window.innerWidth = ${width}; window.innerHeight = ${height};`);
+  t.run('syncDesktopHomeShell()');
+  await loginWithItems(t, items);
+  t.run('fillDesktopEmbedHeight()');
+  return t;
+}
+function assertCompleteCards(t, label) {
+  const grid = t.$('.fv-grid');
+  const results = t.$('#fvResults');
+  const cards = [...t.document.querySelectorAll('.fv-card')];
+  assert.ok(grid && results, label + ': 应渲染列表');
+  assert.ok(cards.length >= 2, label + ': 至少完整 1 行 / 2 张卡，实际 ' + cards.length);
+  const coverStyle = (grid.getAttribute('style') || '');
+  const coverVar = /--fv-cover-height:\s*([\d.]+)px/.exec(coverStyle);
+  assert.ok(coverVar && Number(coverVar[1]) > 0, label + ': 封面高度变量应大于 0，实际 ' + coverStyle);
+  assert.ok(Number(coverVar[1]) >= 64, label + ': 封面不得再是 0 或 1px，实际 ' + coverVar[1]);
+  const gridBox = grid.getBoundingClientRect();
+  const resultsBox = results.getBoundingClientRect();
+  const clipTop = Math.max(gridBox.top, resultsBox.top);
+  const clipBottom = Math.min(gridBox.bottom, resultsBox.bottom);
+  for (const card of cards) {
+    const cover = card.querySelector('.fv-cover');
+    const title = card.querySelector('h3');
+    const btn = card.querySelector('.fv-same');
+    assert.ok(cover && cover.getBoundingClientRect().height > 0, label + ': 封面可见');
+    assert.ok(title && String(title.textContent || '').trim(), label + ': 标题可见');
+    assert.ok(btn && String(btn.textContent || '').includes('同款'), label + ': 「同款」可见');
+    for (const el of [cover, title, btn]) {
+      const r = el.getBoundingClientRect();
+      assert.ok(r.height > 0, label + ' 元素高度应大于 0');
+      assert.ok(r.top >= clipTop - 1, `${label}: 元素顶部被裁切 ${r.top} < ${clipTop}`);
+      assert.ok(r.bottom <= clipBottom + 1, `${label}: 元素底部被裁切 ${r.bottom} > ${clipBottom}`);
+    }
+  }
+  const dock = t.document.querySelector('.home-dock');
+  const dockBox = dock.getBoundingClientRect();
+  assert.ok(dock && dockBox.height > 0, label + ': 码头仍在窗口内');
+  assert.ok(dockBox.top < layoutState.height, label + ': 码头顶部应在窗口内');
+  assert.ok(dockBox.bottom <= layoutState.height + 1, label + ': 码头不应被顶出窗口');
+  assert.match(dock.textContent, /自己放一条视频进来/);
+  assert.match(dock.textContent, /最近的项目|还没有项目/);
+  const wrap = t.$('#fvListWrap').getBoundingClientRect();
+  const coverBox = t.$('.fv-cover').getBoundingClientRect();
+  const page = t.$('.fv-page-status');
+  console.log(`  layout ${label}: list ${Math.round(wrap.width)}×${Math.round(wrap.height)} top=${Math.round(wrap.top)}, cover=${Math.round(coverBox.height)}px, dock=${Math.round(dockBox.height)}px, ${page ? page.textContent.trim() : '无分页'}`);
+  assert.ok(!t.$('#fvResults').querySelector('.fv-grid') || (t.$('.fv-grid').getBoundingClientRect().height >= t.$('.fv-card').getBoundingClientRect().height), label + ': 网格不应裁切卡片');
+}
+
+for (const [width, height] of [[1280, 800], [1440, 900]]) {
+  for (const projects of [true, false]) {
+    const title = `${width}×${height} ${projects ? '有最近项目' : '无最近项目'} 时卡片完整露出`;
+    test(title, async () => {
+      const t = await setupHome({width, height, projects, hint: false, items: 16});
+      assertCompleteCards(t, title);
+      assert.match(t.$('#fvStatus').textContent, /找到 16 条/);
+      assert.ok(t.$('.fv-pager'), title + ': 16 条在常见窗口应分页');
+      const before = t.searches.length;
+      if (t.$('[data-fv-page-next]') && !t.$('[data-fv-page-next]').disabled) {
+        await t.click(t.$('[data-fv-page-next]'));
+        await flush();
+        assert.equal(t.searches.length, before, '翻页不应重新搜索');
+        assert.match(t.$('#fvStatus').textContent, /找到 16 条/);
+      }
+      const dock = t.document.querySelector('.home-dock');
+      assert.ok(dock.getBoundingClientRect().height >= 56, title + ': 码头让位后仍保留最小高度');
+    });
+  }
+}
+
+test('登录轻提示出现或关闭后立刻重算列表高度，卡片仍完整', async () => {
+  const t = await setupHome({width: 1280, height: 800, projects: true, hint: false, items: 16});
+  assertCompleteCards(t, '提示关闭前');
+  const wrap1 = t.$('#fvListWrap').getBoundingClientRect();
+  const dock1 = t.document.querySelector('.home-dock').getBoundingClientRect().height;
+  t.storage.delete('vrc.fvCaptureHintDismissed');
+  t.run('syncCaptureHint(true)');
+  assert.equal(t.$('#fvCaptureHint').hidden, false);
+  const wrap2 = t.$('#fvListWrap').getBoundingClientRect();
+  const dock2 = t.document.querySelector('.home-dock').getBoundingClientRect().height;
+  assert.ok(wrap2.top > wrap1.top + 20, `提示出现后列表起点应下移（${wrap1.top} -> ${wrap2.top}）`);
+  assert.ok(dock2 < dock1 - 1 || wrap2.height < wrap1.height - 1, `提示出现后应立刻重算：码头或列表高度变化（list ${wrap1.height}->${wrap2.height}, dock ${dock1}->${dock2}）`);
+  assertCompleteCards(t, '提示出现后');
+  await t.click(t.$('[data-fv-hint-close]'));
+  await flush();
+  assert.equal(t.$('#fvCaptureHint').hidden, true);
+  const wrap3 = t.$('#fvListWrap').getBoundingClientRect();
+  assert.ok(Math.abs(wrap3.top - wrap1.top) <= 2, `关闭提示后列表起点应恢复（${wrap3.top} vs ${wrap1.top}）`);
+  assert.ok(Math.abs(wrap3.height - wrap1.height) <= 2, `关闭提示后列表高度应恢复（${wrap3.height} vs ${wrap1.height}）`);
+  assertCompleteCards(t, '提示再次关闭后');
 });
 
 (async () => {
